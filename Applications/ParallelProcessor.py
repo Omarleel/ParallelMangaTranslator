@@ -38,10 +38,15 @@ class ParallelProcessor:
             lotes_imagenes = self.utilities.convertir_a_diccionarios(lotes_imagenes)
             ruta_limpieza_salida = os.path.join(ruta_carpeta_salida, "Limpieza")
             ruta_traduccion_salida = os.path.join(ruta_carpeta_salida, "Traduccion")
+            os.makedirs(ruta_limpieza_salida, exist_ok=True)
+            os.makedirs(ruta_traduccion_salida, exist_ok=True)
 
             # Inicializar las colas y el proceso para escribir JSON
-            transcripcion_queue = mp.Queue()
-            traduccion_queue = mp.Queue()
+            transcripcion_queue = mp.Queue(maxsize=1000)
+            traduccion_queue = mp.Queue(maxsize=1000)
+            transcripcion_queue.put({'guardar_en_archivo': os.path.join(ruta_limpieza_salida, "Transcripción.json")})
+            traduccion_queue.put({'guardar_en_archivo': os.path.join(ruta_traduccion_salida, "Traducción.json")})
+
             transcripcion_process = JsonWriter(transcripcion_queue)
             traduccion_process = JsonWriter(traduccion_queue)
             transcripcion_process.start()
@@ -106,12 +111,9 @@ class ParallelProcessor:
                 }
             })
             # Señalizar que la escritura de JSON está completa
-            transcripcion_queue.put({
-                'guardar_en_archivo': os.path.join(ruta_limpieza_salida, "Transcripción.json")
-            })
-            traduccion_queue.put({
-                'guardar_en_archivo': os.path.join(ruta_traduccion_salida, "Traducción.json")
-            })
+            transcripcion_queue.put({'guardar_en_archivo': {'path': os.path.join(ruta_limpieza_salida, "Transcripción.json"), 'finalizar': True}})
+            traduccion_queue.put({'guardar_en_archivo': {'path': os.path.join(ruta_traduccion_salida, "Traducción.json"), 'finalizar': True}})
+
 
             # Esperar a que los procesos de escritura de JSON terminen
             transcripcion_process.join()
