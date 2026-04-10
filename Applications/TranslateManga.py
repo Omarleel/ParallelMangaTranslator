@@ -2,11 +2,15 @@ import re
 import cv2
 import numpy as np
 import torch
+import logging
+import transformers
 from PIL import Image, ImageDraw, ImageFont
 from manga_ocr import MangaOcr
 from paddleocr import PaddleOCR
 from Applications.TranslatorManager import TranslatorManager
 from Utils.Constantes import COLOR_BLANCO, COLOR_NEGRO, FACTOR_ESPACIO, RUTA_FUENTE, TAMANIO_MINIMO_FUENTE
+
+transformers.logging.set_verbosity_error()
 
 class TranslateManga:
     def __init__(self, idioma_entrada, idioma_salida, metodo_traduccion="Tradicional", groq_api_key="", trama_manga=""):
@@ -25,6 +29,16 @@ class TranslateManga:
         )
         
         self.historial_contexto = []
+        
+        if self.idioma_entrada == "Japonés":
+            self.mocr = MangaOcr()
+        else:
+            langs_paddle = {
+                "Inglés": "en", "Coreano": "korean", 
+                "Chino": "ch", "Español": "es"
+            }
+            lang = langs_paddle.get(self.idioma_entrada, "en")
+            self.paddle_ocr = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False)
     
     def insertar_json_queue(self, indice_imagen, transcripcion_queue, traduccion_queue):
         self.indice_imagen = indice_imagen
@@ -66,23 +80,14 @@ class TranslateManga:
     def obtener_textos(self, imagenes_interes):
         textos = []
         if self.idioma_entrada == "Japonés":
-            mocr = MangaOcr()
             for imagen_interes in imagenes_interes:
                 area_interes_pil = Image.fromarray(cv2.cvtColor(imagen_interes, cv2.COLOR_BGR2RGB))
-                text = mocr(area_interes_pil)
+                text = self.mocr(area_interes_pil)
                 textos.append(text)
-            del mocr
         else:
-            INSTANCIAS_PADDLE_OCR = {
-                "Inglés" : PaddleOCR(use_angle_cls=True, lang='en', show_log=False),
-                "Coreano" : PaddleOCR(use_angle_cls=True, lang='korean', show_log=False),
-                "Chino" : PaddleOCR(use_angle_cls=True, lang='ch', show_log=False),
-                "Español" : PaddleOCR(use_angle_cls=True, lang='es', show_log=False),
-            }
-            paddle_ocr = INSTANCIAS_PADDLE_OCR[self.idioma_entrada]
             for imagen_interes in imagenes_interes:
                 area_interes_pil = Image.fromarray(cv2.cvtColor(imagen_interes, cv2.COLOR_BGR2RGB))
-                resultado_paddle = paddle_ocr.ocr(
+                resultado_paddle = self.paddle_ocr.ocr(
                     img=np.array(area_interes_pil),
                     cls=True
                 )
