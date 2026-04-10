@@ -62,7 +62,7 @@ class TranslatorManager:
         groq_model: str = "llama-3.1-8b-instant",
         seed: int = 7,
         max_retries: int = 3,
-        trama_manga: str = ""
+        lore_manga: str = ""
     ):
         if idioma_entrada not in self.UI_LANGS:
             raise ValueError(f"Idioma de entrada no soportado: {idioma_entrada}")
@@ -78,7 +78,7 @@ class TranslatorManager:
 
         self.deepl_api_key = os.getenv("DEEPL_API_KEY")
         self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
-        self.trama_manga = trama_manga
+        self.lore_manga = lore_manga
 
         self.provider = None
         self.translator = self._build_traditional_translator()
@@ -229,7 +229,7 @@ class TranslatorManager:
         for page in list(contexto_previo or [])[-2:]:
             contexto.append([str(x) for x in page if str(x).strip()])
             
-        trama_str = f"Trama del manga: {self.trama_manga}. " if self.trama_manga else ""
+        trama_str = f"Trama del manga: {self.lore_manga}. " if self.lore_manga else ""
 
         system_prompt = (
             f"Eres un traductor profesional de manga del {self.idioma_entrada} al {self.idioma_salida}. "

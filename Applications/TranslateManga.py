@@ -13,7 +13,7 @@ from Utils.Constantes import COLOR_BLANCO, COLOR_NEGRO, FACTOR_ESPACIO, RUTA_FUE
 transformers.logging.set_verbosity_error()
 
 class TranslateManga:
-    def __init__(self, idioma_entrada, idioma_salida, metodo_traduccion="Tradicional", groq_api_key="", trama_manga=""):
+    def __init__(self, idioma_entrada, idioma_salida, metodo_traduccion="Tradicional", groq_api_key="", lore_manga=""):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.idioma_entrada = idioma_entrada
         self.idioma_salida = idioma_salida
@@ -25,7 +25,7 @@ class TranslateManga:
             idioma_salida, 
             metodo=metodo_traduccion, 
             groq_api_key=groq_api_key,
-            trama_manga=trama_manga,
+            lore_manga=lore_manga,
         )
         
         self.historial_contexto = []
