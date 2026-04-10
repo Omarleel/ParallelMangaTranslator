@@ -29,6 +29,7 @@ if __name__ == '__main__':
     ruta_carpeta_entrada = "Dataset"
     
     metodo_traduccion = "LLM" 
+    trama_manga = ""
     
     api_key_groq = os.getenv("GROQ_API_KEY", "")
     
@@ -49,7 +50,8 @@ if __name__ == '__main__':
         idioma_salida=idioma_salida,
         modelo_inpaint=modelo_inpaint,
         metodo_traduccion=metodo_traduccion,
-        groq_api_key=api_key_groq
+        groq_api_key=api_key_groq,
+        trama_manga=trama_manga
     )
 
     print(f"Iniciando procesamiento... Método: {metodo_traduccion} | Paralelismo: {usar_paralelismo}")

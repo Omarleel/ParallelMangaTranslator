@@ -62,6 +62,7 @@ class TranslatorManager:
         groq_model: str = "llama-3.1-8b-instant",
         seed: int = 7,
         max_retries: int = 3,
+        trama_manga: str = ""
     ):
         if idioma_entrada not in self.UI_LANGS:
             raise ValueError(f"Idioma de entrada no soportado: {idioma_entrada}")
@@ -77,6 +78,7 @@ class TranslatorManager:
 
         self.deepl_api_key = os.getenv("DEEPL_API_KEY")
         self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
+        self.trama_manga = trama_manga
 
         self.provider = None
         self.translator = self._build_traditional_translator()
@@ -226,9 +228,12 @@ class TranslatorManager:
         contexto = []
         for page in list(contexto_previo or [])[-2:]:
             contexto.append([str(x) for x in page if str(x).strip()])
+            
+        trama_str = f"Trama del manga: {self.trama_manga}. " if self.trama_manga else ""
 
         system_prompt = (
             f"Eres un traductor profesional de manga del {self.idioma_entrada} al {self.idioma_salida}. "
+            f"{trama_str}"
             "Mantén coherencia narrativa, tono, nombres propios y tratamiento entre personajes. "
             "No resumas, no censures, no expliques. "
             "Conserva intencionalidad, pausas y saltos de línea si existen. "
@@ -254,7 +259,7 @@ class TranslatorManager:
                             "content": json.dumps(user_payload, ensure_ascii=False),
                         },
                     ],
-                    response_format={"type": "json_object"}, # <- Cambiado aquí
+                    response_format={"type": "json_object"},
                     temperature=0,
                     seed=self.seed,
                     max_completion_tokens=max(256, len(items) * 96),
