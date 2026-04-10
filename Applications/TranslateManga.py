@@ -9,10 +9,21 @@ from Applications.TranslatorManager import TranslatorManager
 from Utils.Constantes import COLOR_BLANCO, COLOR_NEGRO, FACTOR_ESPACIO, RUTA_FUENTE, TAMANIO_MINIMO_FUENTE
 
 class TranslateManga:
-    def __init__(self, idioma_entrada, idioma_salida):
+    def __init__(self, idioma_entrada, idioma_salida, metodo_traduccion="Tradicional", groq_api_key=""):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.idioma_entrada = idioma_entrada
         self.idioma_salida = idioma_salida
+
+        self.metodo_traduccion = metodo_traduccion
+        
+        self.translator_manager = TranslatorManager(
+            idioma_entrada, 
+            idioma_salida, 
+            metodo=metodo_traduccion, 
+            groq_api_key=groq_api_key
+        )
+        
+        self.historial_contexto = []
     
     def insertar_json_queue(self, indice_imagen, transcripcion_queue, traduccion_queue):
         self.indice_imagen = indice_imagen
@@ -131,17 +142,29 @@ class TranslateManga:
         return ""
     
     def traducir_textos(self, textos):
-        translator_manager = TranslatorManager(self.idioma_entrada, self.idioma_salida)
-        textos_traducidos = []
-        for texto in textos:
-            texto_traducido = translator_manager.traducir_texto(texto)
-            if texto_traducido is None or len(texto_traducido) <= 1:
-                texto_traducido = ""
+        if self.metodo_traduccion == "LLM":
+            textos_traducidos_brutos = self.translator_manager.traducir_textos_llm(textos, self.historial_contexto)
+            
+            self.historial_contexto.append(textos)
+            if len(self.historial_contexto) > 2:
+                self.historial_contexto.pop(0) # Mantiene solo las últimas 2 páginas
+                
+        else:
+            textos_traducidos_brutos = []
+            for texto in textos:
+                traducido = self.translator_manager.traducir_texto(texto)
+                if traducido is None or len(traducido) <= 1:
+                    traducido = ""
+                textos_traducidos_brutos.append(traducido)
+
+        textos_traducidos_limpios = []
+        for texto_traducido in textos_traducidos_brutos:
             texto_traducido = self.reemplazar_caracter_especial(texto_traducido).strip()
             texto_traducido = self.suprimir_caracteres_repetidos(texto_traducido)
             texto_traducido = self.suprimir_simbolos_y_espacios(texto_traducido)
-            textos_traducidos.append(texto_traducido)
-        return textos_traducidos
+            textos_traducidos_limpios.append(texto_traducido)
+            
+        return textos_traducidos_limpios
     
     def obtener_color_texto_borde(self, imagen_limpia, x, y, w, h):
          # Calcula las coordenadas para la región con el margen

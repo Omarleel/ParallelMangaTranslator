@@ -19,11 +19,16 @@ fh.setFormatter(formatter)
 logger.addHandler(fh)
 
 class ImageProcessor:
-    def __init__(self, idioma_entrada, idioma_salida, modelo_inpaint):
+    def __init__(self, idioma_entrada, idioma_salida, modelo_inpaint, metodo_traduccion="Tradicional", groq_api_key=""):
         self.file_manager = FileManager()
         self.utilities =Utilities()
         self.clean_manga = CleanManga(modelo_inpaint)
-        self.translate_manga = TranslateManga(idioma_entrada, idioma_salida)
+        self.translate_manga = TranslateManga(
+            idioma_entrada, 
+            idioma_salida, 
+            metodo_traduccion=metodo_traduccion, 
+            groq_api_key=groq_api_key
+        )
 
     def procesar(self, ruta_carpeta_entrada, ruta_limpieza_salida, ruta_traduccion_salida, lote, transcripcion_queue, traduccion_queue):
         for indice_imagen, archivo in lote.items():

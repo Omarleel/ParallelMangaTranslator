@@ -10,3 +10,4 @@ nest_asyncio
 nest-asyncio
 python-dotenv
 pydrive2
+groq

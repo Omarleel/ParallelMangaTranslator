@@ -9,11 +9,18 @@ class ParallelProcessor:
     def __init__(self):
         self.utilities = Utilities()
         mp.set_start_method('spawn', force=True)
+        cpu_count = os.cpu_count()
+        self.multi_processor_count = max(1, cpu_count - 1) if cpu_count else 2
+        self.total_memory_gb = 8.0  # Asumimos 8GB de memoria RAM por defecto
+        
         if torch.cuda.is_available():
-            device = torch.device("cuda")
-            properties = torch.cuda.get_device_properties(device)
-            self.multi_processor_count = properties.multi_processor_count
-            self.total_memory_gb = properties.total_memory / 1024**3  # En Gb
+            try:
+                device = torch.device("cuda")
+                properties = torch.cuda.get_device_properties(device)
+                self.multi_processor_count = properties.multi_processor_count
+                self.total_memory_gb = properties.total_memory / 1024**3  # En Gb
+            except Exception as e:
+                print(f"Advertencia: No se pudo leer la info de la GPU. Usando valores de CPU. Error: {e}")
     
     def procesar(self, ruta_carpeta_entrada, ruta_carpeta_salida, process_func, batch_size=8, parallel=True):
         try:
