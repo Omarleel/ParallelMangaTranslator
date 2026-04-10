@@ -248,7 +248,7 @@ class TranslatorManager:
             "contexto_previo": contexto,
             "textos_a_traducir": items,
         }
-        print(user_payload)
+  
         last_error = None
 
         for attempt in range(1, self.max_retries + 1):
