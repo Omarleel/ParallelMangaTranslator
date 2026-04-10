@@ -59,7 +59,7 @@ class TranslatorManager:
         idioma_salida: str,
         metodo: str = "Tradicional",
         groq_api_key: Optional[str] = None,
-        groq_model: str = "llama-3.1-8b-instant",
+        groq_model: str = "llama-3.3-70b-versatile",
         seed: int = 7,
         max_retries: int = 3,
         lore_manga: str = ""
@@ -205,7 +205,7 @@ class TranslatorManager:
         contexto_previo: Optional[Sequence[Sequence[str]]] = None,
     ) -> List[str]:
         textos_actuales = list(textos_actuales)
-
+        
         if not textos_actuales:
             return []
 
@@ -229,15 +229,18 @@ class TranslatorManager:
         for page in list(contexto_previo or [])[-2:]:
             contexto.append([str(x) for x in page if str(x).strip()])
             
-        trama_str = f"Trama del manga: {self.lore_manga}. " if self.lore_manga else ""
+        lore_str = f"Trama general para contexto: {self.lore_manga}. " if hasattr(self, 'lore_manga') and self.lore_manga else ""
 
         system_prompt = (
-            f"Eres un traductor profesional de manga del {self.idioma_entrada} al {self.idioma_salida}. "
-            f"{trama_str}"
-            "Mantén coherencia narrativa, tono, nombres propios y tratamiento entre personajes. "
-            "No resumas, no censures, no expliques. "
-            "Conserva intencionalidad, pausas y saltos de línea si existen. "
-            "Debes responder ÚNICA y EXCLUSIVAMENTE con un objeto JSON válido con la siguiente estructura exacta: "
+            f"Eres un traductor profesional y experto en manga del {self.idioma_entrada} al {self.idioma_salida}. "
+            f"{lore_str}"
+            "REGLAS ESTRICTAS DE TRADUCCIÓN:\n"
+            "1. CORRECCIÓN DE OCR: El texto de entrada fue extraído por una máquina y puede contener errores tipográficos por kanjis o kanas mal leídos. Si una frase no tiene sentido, DEDUCE la palabra correcta basándote en la trama y el contexto de la escena antes de traducirla.\n"
+            "2. TONO Y GÉNERO: Ajusta el vocabulario al género del manga (Shonen, Shojo, Seinen, Hentai, etc.) guiándote por la 'Trama general'. Traduce onomatopeyas verbales, gemidos, gritos o jadeos de forma natural y fluida al español (ej. 'あっ' -> '¡Ah!', 'はぁ' -> 'Haa~'). No censures absolutamente nada.\n"
+            "3. ADAPTACIÓN COLOQUIAL: Adapta la jerga, los modismos y las expresiones (ej. 'マジで' = 'En serio / De verdad'). Los diálogos deben sonar como personas reales hablando, no suenes robótico ni literal.\n"
+            "4. FRAGMENTOS Y BASURA VISUAL: Si el texto es basura incomprensible producto del OCR (letras o símbolos al azar como 'ｙｑｎｙ'), devuélvelo como '...'. Si es una frase deliberadamente cortada ('き..が...'), complétala lógicamente usando puntos suspensivos.\n"
+            "5. COHERENCIA: Revisa estrictamente el 'contexto_previo' para mantener consistencia en los nombres, tratamientos (ej. Senpai, San) y estilo de habla de cada personaje de una página a otra.\n"
+            "6. FORMATO: Debes responder ÚNICA y EXCLUSIVAMENTE con un objeto JSON válido con esta estructura exacta: "
             '{"traducciones": [{"id": 0, "traduccion": "texto traducido"}]}'
         )
 
@@ -245,7 +248,7 @@ class TranslatorManager:
             "contexto_previo": contexto,
             "textos_a_traducir": items,
         }
-
+        print(user_payload)
         last_error = None
 
         for attempt in range(1, self.max_retries + 1):
@@ -260,7 +263,7 @@ class TranslatorManager:
                         },
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0,
+                    temperature=0.35, # <-- AUMENTAMOS LA TEMPERATURA PARA DARLE CREATIVIDAD
                     seed=self.seed,
                     max_completion_tokens=max(256, len(items) * 96),
                 )
@@ -311,7 +314,6 @@ class TranslatorManager:
 
         logger.error("LLM agotó reintentos. Último error: %s", last_error)
         return self.traducir_textos_tradicional(textos_actuales)
-
 
     def traducir_textos(
         self,

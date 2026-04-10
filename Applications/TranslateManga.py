@@ -148,13 +148,9 @@ class TranslateManga:
         return ""
     
     def traducir_textos(self, textos):
+        # 1. Traducir textos brutos
         if self.metodo_traduccion == "LLM":
             textos_traducidos_brutos = self.translator_manager.traducir_textos_llm(textos, self.historial_contexto)
-            
-            self.historial_contexto.append(textos)
-            if len(self.historial_contexto) > 2:
-                self.historial_contexto.pop(0) # Mantiene solo las últimas 2 páginas
-                
         else:
             textos_traducidos_brutos = []
             for texto in textos:
@@ -163,6 +159,7 @@ class TranslateManga:
                     traducido = ""
                 textos_traducidos_brutos.append(traducido)
 
+        # 2. Limpiar los textos traducidos
         textos_traducidos_limpios = []
         for texto_traducido in textos_traducidos_brutos:
             texto_traducido = self.reemplazar_caracter_especial(texto_traducido).strip()
@@ -170,6 +167,19 @@ class TranslateManga:
             texto_traducido = self.suprimir_simbolos_y_espacios(texto_traducido)
             textos_traducidos_limpios.append(texto_traducido)
             
+        # 3. Guardar en el historial un "Diccionario" de Original -> Traducción
+        if self.metodo_traduccion == "LLM":
+            # Creamos una lista con el formato: "Texto Japonés -> Texto Español"
+            contexto_bilingue = [
+                f"{orig} -> {trad}" 
+                for orig, trad in zip(textos, textos_traducidos_limpios) 
+                if orig.strip() and trad.strip()
+            ]
+            
+            self.historial_contexto.append(contexto_bilingue)
+            if len(self.historial_contexto) > 2:
+                self.historial_contexto.pop(0) # Mantiene solo las últimas 2 páginas
+
         return textos_traducidos_limpios
     
     def obtener_color_texto_borde(self, imagen_limpia, x, y, w, h):
