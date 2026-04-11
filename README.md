@@ -11,6 +11,7 @@ ParallelMangaTranslator es una herramienta diseñada para simplificar y optimiza
 - **Traducción Precisa con Google:** Utiliza GoogleTranslator de deep_translator para traducir el manga a varios idiomas, incluyendo japonés, inglés, español, coreano y chino, manteniendo la fidelidad del texto original.
 - **Almacenamiento y Organización de Imágenes Procesadas:** Todas las imágenes procesadas se almacenan en la carpeta "Outputs" y se organizan en subcarpetas según la acción realizada sobre ellas, ya sea "Limpieza" o "Traducción".
 - **Exportación de Datos en Formato JSON:** Genera archivos .json estructurados que contienen las transcripciones y traducciones de las páginas procesadas, facilitando su análisis o integración con otras aplicaciones.
+- **Traducción Contextual con LLM (Nuevo):** Además de la traducción tradicional (Google Translator), ahora integra **Modelos de Lenguaje (LLMs)** a través de Groq. Esto permite traducciones coherentes que entienden el contexto, el *lore* del manga, el tono de los personajes y la jerga, superando las limitaciones de la traducción literal.
 
 ##  Requerimientos
 
