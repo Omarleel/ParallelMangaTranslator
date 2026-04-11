@@ -33,7 +33,7 @@ class TranslateManga:
         )
         self.ocr_manager = OcrManager(idioma_entrada=idioma_entrada)
         self.text_renderer = TextRenderer(font_path=RUTA_FUENTE, min_font_size=TAMANIO_MINIMO_FUENTE)
-        self.historial_contexto = deque(maxlen=4)
+        self.historial_contexto = deque(maxlen=3)
         self.indice_imagen = 0
         self.transcripcion_queue = None
         self.traduccion_queue = None
@@ -72,10 +72,46 @@ class TranslateManga:
             x, y, w, h = cv2.boundingRect(contour)
             boxes.append((x, y, w, h))
 
-        for x, y, w, h in sorted(boxes, key=lambda item: (item[1], item[0])):
-            area_interes = imagen[y:y + h, x:x + w]
-            cuadros_delimitadores.append((x, y, w, h))
-            imagenes_interes.append(area_interes)
+        PADDING = 15
+        height_img, width_img = imagen.shape[:2]
+
+        if self.idioma_entrada == "Japonés":
+            # Manga: Arriba hacia abajo, Derecha a Izquierda (-item[0])
+            orden_lectura = lambda item: (item[1] // 50, -item[0])
+        else:
+            # Cómic/Manhwa/Webtoon: Arriba hacia abajo, Izquierda a Derecha (item[0])
+            orden_lectura = lambda item: (item[1] // 50, item[0])
+
+        for x, y, w, h in sorted(boxes, key=orden_lectura):
+            x1 = max(0, x - PADDING)
+            y1 = max(0, y - PADDING)
+            x2 = min(width_img, x + w + PADDING)
+            y2 = min(height_img, y + h + PADDING)
+            
+            # 1. Recorte original
+            area_interes = imagen[y1:y2, x1:x2]
+
+            # --- LIMPIEZA DE FONDO PARA OCR ---
+            # 2. Convertir a escala de grises
+            gris = cv2.cvtColor(area_interes, cv2.COLOR_BGR2GRAY)
+            
+            # 3. Binarización de Otsu (separa forzosamente en blanco puro y negro puro)
+            _, binaria = cv2.threshold(gris, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+            
+            # 4. Comprobación de texto invertido (Blanco sobre fondo negro)
+            pixeles_blancos = cv2.countNonZero(binaria)
+            pixeles_totales = binaria.size
+            pixeles_negros = pixeles_totales - pixeles_blancos
+            
+            if pixeles_negros > pixeles_blancos:
+                # Invertimos los colores para que el OCR reciba texto negro en fondo blanco.
+                binaria = cv2.bitwise_not(binaria)
+                
+            # 5. Convertimos de vuelta a 3 canales (RGB/BGR)
+            area_limpia = cv2.cvtColor(binaria, cv2.COLOR_GRAY2BGR)
+
+            cuadros_delimitadores.append((x, y, w, h)) 
+            imagenes_interes.append(area_limpia) 
 
         return cuadros_delimitadores, imagenes_interes
 
