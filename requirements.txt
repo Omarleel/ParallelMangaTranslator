@@ -1,7 +1,7 @@
 easyocr
 manga-ocr
-paddlepaddle-gpu>=2.6.0,<3.0.0
-paddleocr
+paddlepaddle-gpu==2.6.1
+paddleocr==2.7.3
 deep_translator
 Pillow>=10.0
 wget

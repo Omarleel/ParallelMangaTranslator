@@ -1,6 +1,8 @@
 from __future__ import annotations
 import os
 import logging
+
+from matplotlib.style import use
 os.environ['PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK'] = '1'
 
 import cv2
@@ -31,7 +33,7 @@ class OcrManager:
     def _get_paddle_ocr(self) -> PaddleOCR:
         if self._paddle_ocr is None:
             lang = self.PADDLE_LANGS.get(self.idioma_entrada, "en")
-            self._paddle_ocr = PaddleOCR(use_angle_cls=True, lang=lang)
+            self._paddle_ocr = PaddleOCR(use_angle_cls=True, lang=lang, use_gpu=False)
         return self._paddle_ocr
 
     def extract_texts(self, imagenes_interes):
