@@ -129,10 +129,12 @@ class Utilities:
             output_filename="aot.ckpt",
         )
 
-    def descargar_y_extraer_zip(self, drive_manager, url_drive: str) -> str | None:
+    def descargar_y_extraer_zip(self, manager, url_archivo: str) -> str | None:
+        from zipfile import ZipFile
+        from pathlib import Path
         try:
-            ruta_archivo_descargado = drive_manager.download_file_from_link(
-                file_link=url_drive,
+            ruta_archivo_descargado = manager.download_file_from_link(
+                file_link=url_archivo,
                 output_folder=RUTA_ACTUAL,
             )
             if not ruta_archivo_descargado:
@@ -142,6 +144,7 @@ class Utilities:
             ruta_extraccion = Path(RUTA_ACTUAL) / ruta_archivo.stem
             ruta_extraccion.mkdir(parents=True, exist_ok=True)
 
+            logger.info("Extrayendo archivo ZIP en: %s", ruta_extraccion)
             with ZipFile(ruta_archivo, "r") as zip_ref:
                 zip_ref.extractall(ruta_extraccion)
 
