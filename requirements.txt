@@ -12,3 +12,4 @@ python-dotenv
 pydrive2
 groq
 loguru
+numpy<2
