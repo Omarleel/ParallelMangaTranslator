@@ -1,9 +1,9 @@
 easyocr
 manga-ocr
-paddlepaddle-gpu
+paddlepaddle-gpu>=2.6.0,<3.0.0
 paddleocr
 deep_translator
-Pillow
+Pillow>=10.0
 wget
 colorama
 nest_asyncio

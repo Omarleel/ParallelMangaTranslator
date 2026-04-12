@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import logging
 os.environ['PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK'] = '1'
 
 import cv2
@@ -7,7 +8,7 @@ import numpy as np
 from PIL import Image
 from manga_ocr import MangaOcr
 from paddleocr import PaddleOCR
-
+logging.getLogger("ppocr").setLevel(logging.ERROR)
 
 class OcrManager:
     PADDLE_LANGS = {
@@ -30,7 +31,7 @@ class OcrManager:
     def _get_paddle_ocr(self) -> PaddleOCR:
         if self._paddle_ocr is None:
             lang = self.PADDLE_LANGS.get(self.idioma_entrada, "en")
-            self._paddle_ocr = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False)
+            self._paddle_ocr = PaddleOCR(use_angle_cls=True, lang=lang)
         return self._paddle_ocr
 
     def extract_texts(self, imagenes_interes):

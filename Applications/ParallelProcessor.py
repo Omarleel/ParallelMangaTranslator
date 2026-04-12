@@ -1,35 +1,31 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import List
-
+import re
 import torch
 import torch.multiprocessing as mp
+from dataclasses import dataclass
+from typing import List
+from pathlib import Path
+from PIL import Image
 
 from Applications.JsonGenerator import JsonWriter
 from Applications.Utilities import Utilities
 from .LoggingConfig import get_logger
 from Utils.Constantes import PESO_MODELOS
 
-from pathlib import Path
-import re
-
 logger = get_logger(__name__)
-
 
 @dataclass(frozen=True)
 class ResourceProfile:
     max_parallel_workers: int
     total_memory_gb: float
 
-
 @dataclass(frozen=True)
 class ExecutionPlan:
     batch_size: int
     num_processes: int
     parallel_enabled: bool
-
 
 class ParallelProcessor:
     IMAGE_EXTENSIONS = (".jpg", ".png", ".jpeg", ".bmp", ".webp")
@@ -62,7 +58,7 @@ class ParallelProcessor:
                 total_memory_gb = float(properties.total_memory / 1024 ** 3)
                 dispositivo_detectado = f"GPU ({properties.name})"
             except Exception as exc:
-                logger.warning("No se pudo leer la info de la GPU. Se usarán valores CPU. Error: %s", exc)
+                logger.warning("No se pudo leer la info de la GPU. Error: %s", exc)
     
         logger.info("Recursos inicializados | Dispositivo: %s | Workers máximos: %s | Memoria: %.2f GB", 
                     dispositivo_detectado, max_parallel_workers, total_memory_gb)
@@ -102,14 +98,44 @@ class ParallelProcessor:
             parallel_enabled=parallel and num_processes > 1,
         )
 
+    def _compilar_a_pdf(self, ruta_traduccion: str, titulo_manga: str):
+        try:
+            logger.info("Iniciando compilación de PDF para: %s", titulo_manga)
+            archivos = [
+                f for f in os.listdir(ruta_traduccion) 
+                if f.lower().endswith(self.IMAGE_EXTENSIONS)
+            ]
+            
+            if not archivos:
+                logger.warning("No hay imágenes en la carpeta de traducción para generar el PDF.")
+                return
+
+            archivos.sort(key=self._natural_sort_key)
+            
+            imagenes_pil = []
+            for nombre_archivo in archivos:
+                ruta_img = os.path.join(ruta_traduccion, nombre_archivo)
+                img = Image.open(ruta_img).convert("RGB")
+                imagenes_pil.append(img)
+
+            if imagenes_pil:
+                pdf_path = os.path.join(ruta_traduccion, f"{titulo_manga}_Traducido.pdf")
+                imagenes_pil[0].save(
+                    pdf_path, 
+                    save_all=True, 
+                    append_images=imagenes_pil[1:]
+                )
+                logger.info("¡PDF Generado con éxito! Ubicación: %s", pdf_path)
+
+        except Exception as e:
+            logger.error("Error al compilar el PDF: %s", e)
+
     @staticmethod
     def _start_json_writers(ruta_limpieza_salida: str, ruta_traduccion_salida: str):
         transcripcion_queue = mp.Queue(maxsize=1000)
         traduccion_queue = mp.Queue(maxsize=1000)
-
         transcripcion_queue.put({"guardar_en_archivo": os.path.join(ruta_limpieza_salida, "Transcripción.json")})
         traduccion_queue.put({"guardar_en_archivo": os.path.join(ruta_traduccion_salida, "Traducción.json")})
-
         transcripcion_process = JsonWriter(transcripcion_queue)
         traduccion_process = JsonWriter(traduccion_queue)
         transcripcion_process.start()
@@ -118,21 +144,14 @@ class ParallelProcessor:
 
     @staticmethod
     def _seed_json_metadata(queue, titulo: str, paginas: int) -> None:
-        queue.put({
-            "agregar_entrada": {
-                "Título": titulo,
-                "Páginas": paginas,
-            }
-        })
+        queue.put({"agregar_entrada": {"Título": titulo, "Páginas": paginas}})
 
     @staticmethod
     def _finalize_json_writers(ruta_limpieza_salida, ruta_traduccion_salida, transcripcion_queue, traduccion_queue, transcripcion_process, traduccion_process):
         transcripcion_queue.put({"ordenar_por_paginas": {"tipo": "Transcripción"}})
         traduccion_queue.put({"ordenar_por_paginas": {"tipo": "Traducción"}})
-
         transcripcion_queue.put({"guardar_en_archivo": {"path": os.path.join(ruta_limpieza_salida, "Transcripción.json"), "finalizar": True}})
         traduccion_queue.put({"guardar_en_archivo": {"path": os.path.join(ruta_traduccion_salida, "Traducción.json"), "finalizar": True}})
-
         transcripcion_process.join()
         traduccion_process.join()
         transcripcion_queue.close()
@@ -147,16 +166,9 @@ class ParallelProcessor:
                 return False
 
             plan = self._build_execution_plan(cantidad_archivos, batch_size, parallel)
-            
             hardware_usado = "GPU" if torch.cuda.is_available() else "CPU"
-            logger.info(
-                "Plan de ejecución | hardware=%s | imágenes=%s | batch=%s | procesos=%s | paralelo=%s",
-                hardware_usado,
-                cantidad_archivos,
-                plan.batch_size,
-                plan.num_processes,
-                plan.parallel_enabled,
-            )
+            logger.info("Plan de ejecución | hardware=%s | imágenes=%s | batch=%s | procesos=%s",
+                        hardware_usado, cantidad_archivos, plan.batch_size, plan.num_processes)
 
             lotes_imagenes = [lista_imagenes[i:i + plan.batch_size] for i in range(0, cantidad_archivos, plan.batch_size)]
             lotes_imagenes = self.utilities.convertir_a_diccionarios(lotes_imagenes)
@@ -167,9 +179,7 @@ class ParallelProcessor:
             os.makedirs(ruta_traduccion_salida, exist_ok=True)
 
             transcripcion_queue, traduccion_queue, transcripcion_process, traduccion_process = self._start_json_writers(
-                ruta_limpieza_salida,
-                ruta_traduccion_salida,
-            )
+                ruta_limpieza_salida, ruta_traduccion_salida)
 
             try:
                 self._seed_json_metadata(transcripcion_queue, os.path.basename(ruta_carpeta_entrada), cantidad_archivos)
@@ -178,47 +188,23 @@ class ParallelProcessor:
                 if plan.parallel_enabled:
                     processes = []
                     for lote in lotes_imagenes:
-                        process = mp.Process(
-                            target=process_func,
-                            args=(
-                                ruta_carpeta_entrada,
-                                ruta_limpieza_salida,
-                                ruta_traduccion_salida,
-                                lote,
-                                transcripcion_queue,
-                                traduccion_queue,
-                            ),
-                        )
-                        process.start()
-                        processes.append(process)
-
-                    for process in processes:
-                        process.join()
-
-                    alive_processes = [process for process in processes if process.is_alive()]
-                    for process in alive_processes:
-                        process.terminate()
+                        p = mp.Process(target=process_func, args=(ruta_carpeta_entrada, ruta_limpieza_salida, 
+                                       ruta_traduccion_salida, lote, transcripcion_queue, traduccion_queue))
+                        p.start()
+                        processes.append(p)
+                    for p in processes: p.join()
                 else:
                     for lote in lotes_imagenes:
-                        process_func(
-                            ruta_carpeta_entrada,
-                            ruta_limpieza_salida,
-                            ruta_traduccion_salida,
-                            lote,
-                            transcripcion_queue,
-                            traduccion_queue,
-                        )
+                        process_func(ruta_carpeta_entrada, ruta_limpieza_salida, 
+                                     ruta_traduccion_salida, lote, transcripcion_queue, traduccion_queue)
             finally:
-                self._finalize_json_writers(
-                    ruta_limpieza_salida,
-                    ruta_traduccion_salida,
-                    transcripcion_queue,
-                    traduccion_queue,
-                    transcripcion_process,
-                    traduccion_process,
-                )
+                self._finalize_json_writers(ruta_limpieza_salida, ruta_traduccion_salida, transcripcion_queue, 
+                                            traduccion_queue, transcripcion_process, traduccion_process)
+                
+                titulo_manga = os.path.basename(ruta_carpeta_entrada)
+                self._compilar_a_pdf(ruta_traduccion_salida, titulo_manga)
 
             return True
         except Exception as exc:
-            logger.exception("Error al procesar imágenes en paralelo: %s", exc)
+            logger.exception("Error al procesar: %s", exc)
             return False
