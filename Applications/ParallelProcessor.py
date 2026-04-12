@@ -53,14 +53,19 @@ class ParallelProcessor:
         cpu_count = os.cpu_count() or 2
         max_parallel_workers = max(1, cpu_count - 1)
         total_memory_gb = 8.0
+        dispositivo_detectado = "CPU"
 
         if torch.cuda.is_available():
             try:
                 properties = torch.cuda.get_device_properties(torch.device("cuda"))
                 max_parallel_workers = max(1, int(properties.multi_processor_count))
                 total_memory_gb = float(properties.total_memory / 1024 ** 3)
+                dispositivo_detectado = f"GPU ({properties.name})"
             except Exception as exc:
                 logger.warning("No se pudo leer la info de la GPU. Se usarán valores CPU. Error: %s", exc)
+    
+        logger.info("Recursos inicializados | Dispositivo: %s | Workers máximos: %s | Memoria: %.2f GB", 
+                    dispositivo_detectado, max_parallel_workers, total_memory_gb)
 
         return ResourceProfile(max_parallel_workers=max_parallel_workers, total_memory_gb=total_memory_gb)
 
@@ -142,8 +147,11 @@ class ParallelProcessor:
                 return False
 
             plan = self._build_execution_plan(cantidad_archivos, batch_size, parallel)
+            
+            hardware_usado = "GPU" if torch.cuda.is_available() else "CPU"
             logger.info(
-                "Plan de ejecución | imágenes=%s | batch=%s | procesos=%s | paralelo=%s",
+                "Plan de ejecución | hardware=%s | imágenes=%s | batch=%s | procesos=%s | paralelo=%s",
+                hardware_usado,
                 cantidad_archivos,
                 plan.batch_size,
                 plan.num_processes,

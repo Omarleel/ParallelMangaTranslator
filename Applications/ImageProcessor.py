@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 
@@ -47,6 +48,24 @@ class ImageProcessor:
 
     def procesar(self, ruta_carpeta_entrada, ruta_limpieza_salida, ruta_traduccion_salida, lote, transcripcion_queue, traduccion_queue):
         for indice_imagen, archivo in lote.items():
+            nombre_base, ext = os.path.splitext(archivo)
+            if ext.lower() == ".webp":
+                ext = ".jpg"
+            
+            match = re.search(r'(\d+)', nombre_base)
+            if match:
+                numero_archivo = int(match.group(1))
+                nuevo_archivo = f"{numero_archivo:04d}{ext}"
+            else:
+                nuevo_archivo = f"{nombre_base}{ext}"
+
+            archivo_limpieza_esperado = os.path.join(ruta_limpieza_salida, nuevo_archivo)
+            archivo_traduccion_esperado = os.path.join(ruta_traduccion_salida, nuevo_archivo)
+
+            if os.path.exists(archivo_limpieza_esperado) and os.path.exists(archivo_traduccion_esperado):
+                logger.info("Omitiendo %s: La imagen ya fue procesada en una ejecución anterior.", nuevo_archivo)
+                continue
+
             logger.info("Procesando archivo: %s", archivo)
             image_path = os.path.join(ruta_carpeta_entrada, archivo)
             imagen = self._read_image(image_path)
@@ -60,7 +79,7 @@ class ImageProcessor:
             try:
                 self._process_with_retry(
                     indice_imagen=indice_imagen,
-                    archivo=archivo,
+                    archivo=nuevo_archivo,
                     imagen=imagen,
                     ruta_limpieza_salida=ruta_limpieza_salida,
                     ruta_traduccion_salida=ruta_traduccion_salida,

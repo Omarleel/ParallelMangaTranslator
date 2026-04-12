@@ -3,7 +3,7 @@ manga-ocr
 paddlepaddle-gpu
 paddleocr
 deep_translator
-Pillow==10.0
+Pillow
 wget
 colorama
 nest_asyncio
@@ -11,3 +11,4 @@ nest-asyncio
 python-dotenv
 pydrive2
 groq
+loguru

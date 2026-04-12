@@ -263,7 +263,7 @@ class TranslatorManager:
                         },
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.35, # <-- AUMENTAMOS LA TEMPERATURA PARA DARLE CREATIVIDAD
+                    temperature=0.35,
                     seed=self.seed,
                     max_completion_tokens=max(256, len(items) * 96),
                 )
@@ -303,6 +303,13 @@ class TranslatorManager:
 
             except Exception as exc:
                 last_error = exc
+                err_str = str(exc).lower()
+
+                if "429" in err_str and "rate_limit_exceeded" in err_str and "tokens" in err_str:
+                    logger.error("Límite de tokens de Groq agotado. Cambiando a traductor tradicional de forma definitiva.")
+                    self.metodo = "Tradicional"
+                    return self.traducir_textos_tradicional(textos_actuales)
+
                 logger.warning(
                     "Fallo LLM intento %s/%s: %s",
                     attempt,
