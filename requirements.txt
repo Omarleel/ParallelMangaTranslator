@@ -1,7 +1,7 @@
 easyocr
 manga-ocr
-paddlepaddle-gpu==2.6.1
-paddleocr==2.7.3
+# PaddleOCR es opcional y se instala aparte para evitar conflictos CUDA con PyTorch/YOLO.
+# Usa requirements-paddle-optional.txt si quieres PMT_OCR_ENGINE=paddle o paddle_subprocess.
 deep_translator
 Pillow>=10.0
 wget
@@ -13,3 +13,8 @@ pydrive2
 groq
 loguru
 numpy<2
+PyYAML>=6.0
+ultralytics>=8.0.0
+huggingface_hub>=0.23.0
+# Evita que manga-ocr instale una versión de transformers que exige torch >= 2.4.
+transformers>=4.30,<4.46

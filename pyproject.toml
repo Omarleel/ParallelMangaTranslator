@@ -1,0 +1,9 @@
+[project]
+name = "parallel-manga-translator"
+version = "0.4.0-gpu-ocr-isolated"
+description = "Pipeline de traducción de manga con detección de globos, OCR, traducción y renderizado."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

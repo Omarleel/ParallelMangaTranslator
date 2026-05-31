@@ -7,12 +7,12 @@ import torch
 from dotenv import load_dotenv
 from loguru import logger as loguru_logger
 
-from Applications.AppConfig import ApplicationConfig, ProcessingConfig, TranslationConfig
+from Applications.AppConfig import ApplicationConfig
+from Applications.ConfigManager import ConfigManager
 from Applications.ImageProcessor import ImageProcessor
 from Applications.LoggingConfig import configure_logging, get_logger
 from Applications.ParallelProcessor import ParallelProcessor
 from Applications.Utilities import Utilities
-from Utils.Constantes import MODELOS_INPAINT
 
 loguru_logger.remove()
 configure_logging()
@@ -23,24 +23,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 
 def build_default_config() -> ApplicationConfig:
-    translation_method = "LLM"
-    groq_api_key = os.getenv("GROQ_API_KEY", "")
-    usar_paralelismo = translation_method != "LLM"
-
-    translation = TranslationConfig(
-        idioma_entrada="Japonés",
-        idioma_salida="Español",
-        metodo_traduccion=translation_method,
-        modelo_inpaint=MODELOS_INPAINT[1],
-        lore_manga="",
-        groq_api_key=groq_api_key,
-    )
-    processing = ProcessingConfig(
-        ruta_carpeta_entrada="Dataset",
-        batch_size=8,
-        usar_paralelismo=usar_paralelismo,
-    )
-    return ApplicationConfig(translation=translation, processing=processing)
+    return ConfigManager().build_application_config()
 
 
 def main() -> None:

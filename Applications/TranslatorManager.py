@@ -1,13 +1,17 @@
 import json
 import logging
 import os
+import re
 import time
-from typing import List, Sequence, Optional
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
 from groq import Groq
 
 from deep_translator import DeeplTranslator, GoogleTranslator
+
+from Applications.CacheManager import PersistentJsonCache
+from Applications.GlossaryManager import GlossaryManager
 from deep_translator.exceptions import (
     AuthorizationException,
     InvalidSourceOrTargetLanguage,
@@ -27,7 +31,7 @@ logger = logging.getLogger(__name__)
 class TranslatorManager:
     """
     - Tradicional: usa DeepL si hay DEEPL_API_KEY válida; si no, Google.
-    - LLM: usa Groq con schema estricto y fallback al tradicional.
+    - LLM: usa Groq con salida JSON estricta y fallback al modo tradicional.
     """
 
     UI_LANGS = {
@@ -62,7 +66,7 @@ class TranslatorManager:
         groq_model: str = "llama-3.3-70b-versatile",
         seed: int = 7,
         max_retries: int = 3,
-        lore_manga: str = ""
+        lore_manga: str = "",
     ):
         if idioma_entrada not in self.UI_LANGS:
             raise ValueError(f"Idioma de entrada no soportado: {idioma_entrada}")
@@ -78,7 +82,10 @@ class TranslatorManager:
 
         self.deepl_api_key = os.getenv("DEEPL_API_KEY")
         self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
-        self.lore_manga = lore_manga
+        self.lore_manga = (lore_manga or "").strip()
+        self._translation_cache: Dict[Tuple[str, str, str, str], str] = {}
+        self.cache = PersistentJsonCache("translations")
+        self.glossary = GlossaryManager(project_dir=os.getenv("PMT_PROJECT_DIR"))
 
         self.provider = None
         self.translator = self._build_traditional_translator()
@@ -86,7 +93,6 @@ class TranslatorManager:
         self.client = None
         if self.metodo == "LLM" and self.groq_api_key:
             self.client = Groq(api_key=self.groq_api_key)
-
 
     def _provider_lang_code(self, ui_lang: str, provider: str) -> str:
         code = self.UI_LANGS[ui_lang]
@@ -97,7 +103,13 @@ class TranslatorManager:
             return code
 
         if provider == "deepl":
-            return code
+            if code == "zh":
+                return "ZH"
+            if code == "pt":
+                return "PT-PT"
+            if code == "auto":
+                return "auto"
+            return code.upper()
 
         raise ValueError(f"Proveedor no soportado: {provider}")
 
@@ -134,16 +146,14 @@ class TranslatorManager:
         raise RuntimeError(f"No se pudo inicializar ningún traductor: {last_error}")
 
     def _same_language(self) -> bool:
-        """
-        Evita traducir cuando origen y destino son efectivamente iguales.
-        """
+        """Evita traducir cuando origen y destino son efectivamente iguales."""
         if self.provider is None:
             return False
 
         src = self._provider_lang_code(self.idioma_entrada, self.provider)
         tgt = self._provider_lang_code(self.idioma_salida, self.provider)
 
-        if src == "auto":
+        if src.lower() == "auto":
             return False
 
         return src.split("-")[0].lower() == tgt.split("-")[0].lower()
@@ -152,6 +162,36 @@ class TranslatorManager:
     def _is_blank(texto: Optional[str]) -> bool:
         return texto is None or not str(texto).strip()
 
+    @staticmethod
+    def _normalize_translation(texto: str) -> str:
+        texto = str(texto or "")
+        texto = texto.replace("\u3000", " ")
+        texto = re.sub(r"\s+", " ", texto).strip()
+        return texto
+
+    @staticmethod
+    def _chunk_payload(indices: Sequence[int], textos: Sequence[str], max_chars: int = 4200, max_items: int = 35):
+        chunk_indices = []
+        chunk_texts = []
+        total_chars = 0
+        for idx in indices:
+            texto = str(textos[idx])
+            if chunk_texts and (len(chunk_texts) >= max_items or total_chars + len(texto) > max_chars):
+                yield chunk_indices, chunk_texts
+                chunk_indices = []
+                chunk_texts = []
+                total_chars = 0
+            chunk_indices.append(idx)
+            chunk_texts.append(texto)
+            total_chars += len(texto)
+        if chunk_texts:
+            yield chunk_indices, chunk_texts
+
+    def _cache_key(self, texto: str) -> Tuple[str, str, str, str]:
+        return (self.provider or "unknown", self.idioma_entrada, self.idioma_salida, str(texto or ""))
+
+    def _persistent_key(self, texto: str, method: Optional[str] = None) -> str:
+        return self.cache.hash_text(method or self.metodo, self.provider or "unknown", self.idioma_entrada, self.idioma_salida, texto)
 
     def traducir_texto(self, texto: str) -> str:
         if self._is_blank(texto):
@@ -160,12 +200,28 @@ class TranslatorManager:
         if self._same_language():
             return texto
 
-        try:
-            traducido = self.translator.translate(texto)
-            return traducido if isinstance(traducido, str) and traducido else texto
-        except self.TRADITIONAL_EXCEPTIONS as exc:
-            logger.warning("Fallo en traducción tradicional: %s", exc)
-            return texto
+        cache_key = self._cache_key(texto)
+        if cache_key in self._translation_cache:
+            return self._translation_cache[cache_key]
+        persistent = self.cache.get(self._persistent_key(texto, "traditional"))
+        if persistent is not None:
+            persistent = self._normalize_translation(persistent)
+            self._translation_cache[cache_key] = persistent
+            return persistent
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                traducido = self.translator.translate(texto)
+                salida = self._normalize_translation(traducido) if isinstance(traducido, str) and traducido else texto
+                salida = self.glossary.apply_to_translation(texto, salida)
+                self._translation_cache[cache_key] = salida
+                self.cache.set(self._persistent_key(texto, "traditional"), salida)
+                return salida
+            except self.TRADITIONAL_EXCEPTIONS as exc:
+                logger.warning("Fallo en traducción tradicional intento %s/%s: %s", attempt, self.max_retries, exc)
+                if attempt < self.max_retries:
+                    time.sleep(0.5 * attempt)
+        return texto
 
     def traducir_textos_tradicional(self, textos: Sequence[str]) -> List[str]:
         textos = list(textos)
@@ -179,25 +235,92 @@ class TranslatorManager:
         if not indices:
             return textos[:]
 
-        payload = [textos[i] for i in indices]
         salida = textos[:]
+        pendientes_por_texto: Dict[str, List[int]] = {}
 
+        for idx in indices:
+            texto = textos[idx]
+            cache_key = self._cache_key(texto)
+            if cache_key in self._translation_cache:
+                salida[idx] = self._translation_cache[cache_key]
+            else:
+                persistent = self.cache.get(self._persistent_key(texto, "traditional"))
+                if persistent is not None:
+                    persistent = self._normalize_translation(persistent)
+                    self._translation_cache[cache_key] = persistent
+                    salida[idx] = persistent
+                else:
+                    pendientes_por_texto.setdefault(texto, []).append(idx)
+
+        textos_unicos = list(pendientes_por_texto.keys())
+        if not textos_unicos:
+            return salida
+
+        indices_unicos = list(range(len(textos_unicos)))
+        for chunk_indices, payload in self._chunk_payload(indices_unicos, textos_unicos):
+            try:
+                traducidos = self.translator.translate_batch(payload)
+                if not isinstance(traducidos, list) or len(traducidos) != len(payload):
+                    raise ValueError("translate_batch devolvió un tamaño inesperado.")
+
+                for local_idx, traducido in zip(chunk_indices, traducidos):
+                    original = textos_unicos[local_idx]
+                    salida_normalizada = self._normalize_translation(traducido) if isinstance(traducido, str) and traducido else original
+                    salida_normalizada = self.glossary.apply_to_translation(original, salida_normalizada)
+                    self._translation_cache[self._cache_key(original)] = salida_normalizada
+                    self.cache.set(self._persistent_key(original, "traditional"), salida_normalizada)
+                    for original_idx in pendientes_por_texto[original]:
+                        salida[original_idx] = salida_normalizada
+
+            except self.TRADITIONAL_EXCEPTIONS as exc:
+                logger.warning("Fallo batch tradicional, usando fallback item por item: %s", exc)
+                for local_idx in chunk_indices:
+                    original = textos_unicos[local_idx]
+                    traducido = self.traducir_texto(original)
+                    for original_idx in pendientes_por_texto[original]:
+                        salida[original_idx] = traducido
+            except Exception as exc:
+                logger.warning("Fallo inesperado en batch tradicional, usando fallback item por item: %s", exc)
+                for local_idx in chunk_indices:
+                    original = textos_unicos[local_idx]
+                    traducido = self.traducir_texto(original)
+                    for original_idx in pendientes_por_texto[original]:
+                        salida[original_idx] = traducido
+
+        return salida
+
+    def _build_llm_system_prompt(self) -> str:
+        lore_str = f"Contexto general de la obra: {self.lore_manga}\n" if self.lore_manga else ""
+        glossary_text = self.glossary.as_prompt_text()
+        glossary_str = f"Glosario obligatorio:\n{glossary_text}\n" if glossary_text else ""
+        return (
+            f"Eres un traductor profesional de manga del {self.idioma_entrada} al {self.idioma_salida}.\n"
+            f"{lore_str}"
+            f"{glossary_str}"
+            "Objetivo: entregar diálogos naturales, breves y fáciles de insertar en globos de texto.\n"
+            "Reglas estrictas:\n"
+            "1. Corrige errores evidentes de OCR solo cuando el contexto lo permita; no inventes contenido que no esté sugerido por el texto.\n"
+            "2. Mantén nombres propios, tratamientos, apodos y consistencia de una página a otra usando contexto_previo.\n"
+            "3. Adapta modismos, partículas, interjecciones y onomatopeyas de forma natural en el idioma destino.\n"
+            "4. Si un elemento parece efecto de sonido u onomatopeya, devuelve un equivalente breve de cómic, no una explicación. Ejemplo: 'ドン' -> '¡BUM!'.\n"
+            "5. Si el OCR trae basura visual incomprensible, devuelve '...'. Si el diálogo está entrecortado, conserva esa sensación con puntos suspensivos.\n"
+            "6. Evita traducciones innecesariamente largas: prioriza frases compactas que quepan en un globo sin perder sentido.\n"
+            "7. Responde única y exclusivamente con JSON válido usando esta estructura exacta: "
+            '{"traducciones": [{"id": 0, "traduccion": "texto traducido"}]}'
+        )
+
+    @staticmethod
+    def _parse_llm_json(content: str):
+        content = (content or "").strip()
         try:
-            traducidos = self.translator.translate_batch(payload)
-            if not isinstance(traducidos, list) or len(traducidos) != len(payload):
-                raise ValueError("translate_batch devolvió un tamaño inesperado.")
-
-            for idx, traducido in zip(indices, traducidos):
-                salida[idx] = traducido if isinstance(traducido, str) and traducido else textos[idx]
-
-            return salida
-
-        except self.TRADITIONAL_EXCEPTIONS as exc:
-            logger.warning("Fallo batch tradicional, usando fallback item por item: %s", exc)
-            for idx in indices:
-                salida[idx] = self.traducir_texto(textos[idx])
-            return salida
-
+            return json.loads(content)
+        except json.JSONDecodeError:
+            # Algunos modelos envuelven el JSON con texto extra pese a la instrucción.
+            start = content.find("{")
+            end = content.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                raise
+            return json.loads(content[start:end + 1])
 
     def traducir_textos_llm(
         self,
@@ -205,7 +328,7 @@ class TranslatorManager:
         contexto_previo: Optional[Sequence[Sequence[str]]] = None,
     ) -> List[str]:
         textos_actuales = list(textos_actuales)
-        
+
         if not textos_actuales:
             return []
 
@@ -216,39 +339,31 @@ class TranslatorManager:
             logger.warning("Groq no está configurado; usando fallback tradicional.")
             return self.traducir_textos_tradicional(textos_actuales)
 
-        items = [
-            {"id": i, "texto": t}
-            for i, t in enumerate(textos_actuales)
-            if not self._is_blank(t)
-        ]
+        salida = textos_actuales[:]
+        items = []
+        for i, t in enumerate(textos_actuales):
+            if self._is_blank(t):
+                continue
+            persistent = self.cache.get(self._persistent_key(t, "llm"))
+            if persistent is not None:
+                salida[i] = self._normalize_translation(persistent)
+            else:
+                items.append({"id": i, "texto": t})
 
         if not items:
-            return textos_actuales[:]
+            return salida
 
         contexto = []
-        for page in list(contexto_previo or [])[-2:]:
+        for page in list(contexto_previo or [])[-3:]:
             contexto.append([str(x) for x in page if str(x).strip()])
-            
-        lore_str = f"Trama general para contexto: {self.lore_manga}. " if hasattr(self, 'lore_manga') and self.lore_manga else ""
 
-        system_prompt = (
-            f"Eres un traductor profesional y experto en manga del {self.idioma_entrada} al {self.idioma_salida}. "
-            f"{lore_str}"
-            "REGLAS ESTRICTAS DE TRADUCCIÓN:\n"
-            "1. CORRECCIÓN DE OCR: El texto de entrada fue extraído por una máquina y puede contener errores tipográficos por kanjis o kanas mal leídos. Si una frase no tiene sentido, DEDUCE la palabra correcta basándote en la trama y el contexto de la escena antes de traducirla.\n"
-            "2. TONO Y GÉNERO: Ajusta el vocabulario al género del manga (Shonen, Shojo, Seinen, Hentai, etc.) guiándote por la 'Trama general'. Traduce onomatopeyas verbales, gemidos, gritos o jadeos de forma natural y fluida al español (ej. 'あっ' -> '¡Ah!', 'はぁ' -> 'Haa~'). No censures absolutamente nada.\n"
-            "3. ADAPTACIÓN COLOQUIAL: Adapta la jerga, los modismos y las expresiones (ej. 'マジで' = 'En serio / De verdad'). Los diálogos deben sonar como personas reales hablando, no suenes robótico ni literal.\n"
-            "4. FRAGMENTOS Y BASURA VISUAL: Si el texto es basura incomprensible producto del OCR (letras o símbolos al azar como 'ｙｑｎｙ'), devuélvelo como '...'. Si es una frase deliberadamente cortada ('き..が...'), complétala lógicamente usando puntos suspensivos.\n"
-            "5. COHERENCIA: Revisa estrictamente el 'contexto_previo' para mantener consistencia en los nombres, tratamientos (ej. Senpai, San) y estilo de habla de cada personaje de una página a otra.\n"
-            "6. FORMATO: Debes responder ÚNICA y EXCLUSIVAMENTE con un objeto JSON válido con esta estructura exacta: "
-            '{"traducciones": [{"id": 0, "traduccion": "texto traducido"}]}'
-        )
-
+        system_prompt = self._build_llm_system_prompt()
         user_payload = {
             "contexto_previo": contexto,
             "textos_a_traducir": items,
+            "idioma_destino": self.idioma_salida,
         }
-  
+
         last_error = None
 
         for attempt in range(1, self.max_retries + 1):
@@ -257,27 +372,23 @@ class TranslatorManager:
                     model=self.modelo,
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {
-                            "role": "user",
-                            "content": json.dumps(user_payload, ensure_ascii=False),
-                        },
+                        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.35,
+                    temperature=0.25,
                     seed=self.seed,
-                    max_completion_tokens=max(256, len(items) * 96),
+                    max_completion_tokens=max(384, len(items) * 140),
                 )
 
                 content = resp.choices[0].message.content
                 if not content:
                     raise ValueError("Respuesta vacía del LLM.")
 
-                data = json.loads(content)
+                data = self._parse_llm_json(content)
                 traducciones = data["traducciones"]
 
                 esperados = {item["id"] for item in items}
                 vistos = set()
-                salida = textos_actuales[:]
 
                 for row in traducciones:
                     idx = row["id"]
@@ -292,7 +403,10 @@ class TranslatorManager:
                     if not isinstance(traducido, str):
                         raise TypeError(f"traduccion inválida para id={idx}")
 
-                    salida[idx] = traducido
+                    normalized = self._normalize_translation(traducido)
+                    normalized = self.glossary.apply_to_translation(textos_actuales[idx], normalized)
+                    salida[idx] = normalized
+                    self.cache.set(self._persistent_key(textos_actuales[idx], "llm"), normalized)
                     vistos.add(idx)
 
                 if vistos != esperados:
@@ -310,12 +424,7 @@ class TranslatorManager:
                     self.metodo = "Tradicional"
                     return self.traducir_textos_tradicional(textos_actuales)
 
-                logger.warning(
-                    "Fallo LLM intento %s/%s: %s",
-                    attempt,
-                    self.max_retries,
-                    exc,
-                )
+                logger.warning("Fallo LLM intento %s/%s: %s", attempt, self.max_retries, exc)
                 if attempt < self.max_retries:
                     time.sleep(2 ** (attempt - 1))
 

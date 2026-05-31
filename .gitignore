@@ -5,6 +5,7 @@ __pycache__/
 venv/
 env/
 .env
+.cache/
 *.log
 config.ini
 credentials.json

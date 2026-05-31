@@ -21,7 +21,7 @@ Antes de utilizar ParallelMangaTranslator, asegúrate de tener instalados los si
 - OpenCV: Una biblioteca de procesamiento de imágenes y visión por computadora.
 - EasyOCR: Una biblioteca para el reconocimiento óptico de caracteres (OCR) fácil de usar.
 - Manga-OCR: Una biblioteca para el reconocimiento óptico de caracteres (OCR) especializada en mangas.
-- PaddleOCR: Una biblioteca de OCR basada en PaddlePaddle que admite varios idiomas.
+- PaddleOCR: OCR opcional. Si se usa junto a YOLO/PyTorch GPU, se ejecuta en un subproceso aislado para evitar conflictos CUDA.
 - Deep_Translator: Una biblioteca flexible, gratuita e ilimitada para traducir entre diferentes idiomas de forma sencilla utilizando varios traductores.
 - Pillow: Una biblioteca para manipulación de imágenes en Python.
 - pydrive2: Una biblioteca de Python que envuelve la API de Google Drive, facilitando las operaciones de carga y descarga de archivos.
@@ -33,8 +33,8 @@ Ejecuta los siguientes comandos:
 pip uninstall torch torchvision torchaudio
 # Limpia la caché de pip para evitar conflictos
 pip cache purge
-# Instala la versión específica de Torch compatible con CUDA 12.1:
-pip install torch==2.1.0+cu121 torchvision==0.16.0+cu121 --extra-index-url https://download.pytorch.org/whl/cu121
+# Instala la versión específica de Torch compatible con CUDA 12.4:
+pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
 ```
 
 ## Contribuciones
@@ -54,3 +54,95 @@ pip install -r requirements.txt
 py ParallelMangaTranslator.py
 ```
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Omarleel/ParallelMangaTranslator/blob/main/ParallelMangaTranslator.ipynb)
+## Mejoras profesionales incluidas
+
+Esta versión usa **solo modelos preentrenados** para detectar globos de texto mediante YOLO/Ultralytics. El objetivo principal es limpiar y renderizar sobre la **máscara del globo**, no solo sobre la caja OCR de las letras. La detección heurística de globos fue eliminada: si el modelo profesional no está instalado, no se puede descargar o no existe la ruta indicada, el programa lanza error en vez de inventar globos por reglas OpenCV.
+
+### Uso recomendado
+
+```bash
+python ParallelMangaTranslator.py
+```
+
+Para máxima velocidad durante pruebas:
+
+```bash
+PMT_INPAINT_MODE=bubble_only PMT_SKIP_PDF=1 PMT_CACHE=1 python ParallelMangaTranslator.py
+```
+
+Para calidad equilibrada:
+
+```bash
+PMT_BUBBLE_DETECTOR=professional PMT_INPAINT_MODE=auto PMT_CACHE=1 python ParallelMangaTranslator.py
+```
+
+El modelo profesional es obligatorio por defecto. Para comprobarlo explícitamente:
+
+```bash
+PMT_REQUIRE_PROFESSIONAL_BUBBLE=1 python ParallelMangaTranslator.py
+```
+
+Para usar un modelo local de segmentación de globos:
+
+```bash
+PMT_BUBBLE_MODEL_PATH=/ruta/al/modelo/best.pt python ParallelMangaTranslator.py
+```
+
+Para conservar onomatopeyas originales:
+
+```bash
+PMT_ONOMATOPOEIA_MODE=keep python ParallelMangaTranslator.py
+```
+
+Para dejar onomatopeya original más traducción pequeña:
+
+```bash
+PMT_ONOMATOPOEIA_MODE=subtitle python ParallelMangaTranslator.py
+```
+
+
+### OCR y PaddleOCR aislado
+
+Por defecto, el modo `auto` usa MangaOCR/EasyOCR sin cargar PaddleOCR en el proceso principal:
+
+```bash
+PMT_OCR_ENGINE=auto python ParallelMangaTranslator.py
+```
+
+Para usar PaddleOCR con GPU sin chocar con YOLO/PyTorch, usa el worker aislado:
+
+```bash
+PMT_OCR_ENGINE=paddle PMT_OCR_GPU=1 PMT_PADDLE_SUBPROCESS=1 python ParallelMangaTranslator.py
+```
+
+También puedes pedirlo directamente:
+
+```bash
+PMT_OCR_ENGINE=paddle_subprocess PMT_OCR_GPU=1 python ParallelMangaTranslator.py
+```
+
+Instala PaddleOCR solo si lo vas a usar:
+
+```bash
+pip install -r requirements-paddle-optional.txt
+```
+
+### Configuración YAML
+
+Puedes copiar el ejemplo:
+
+```bash
+cp config.example.yaml pmt_config.yaml
+```
+
+Y modificar idiomas, modo de inpainting, exportación, caché y onomatopeyas desde ese archivo. Las variables `PMT_*` tienen prioridad sobre el YAML.
+
+### Métricas
+
+Después de procesar se genera:
+
+```text
+Dataset/Outputs/Metricas/reporte.json
+```
+
+Ahí puedes revisar duración, globos detectados, onomatopeyas, OCR vacío, traducciones vacías y páginas fallidas.

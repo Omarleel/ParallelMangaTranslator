@@ -1,0 +1,51 @@
+translation:
+  source_language: Japonés
+  target_language: Español
+  method: LLM          # LLM | Tradicional
+  inpaint_model: lama_mpe
+  lore: ""
+
+processing:
+  input_dir: Dataset
+  batch_size: 8
+  parallel: false
+  cache_dir: .cache
+
+ocr:
+  # auto: Japonés intenta MangaOCR y cae a EasyOCR; otros idiomas usan EasyOCR.
+  # easyocr | mangaocr | paddle | paddle_subprocess | auto
+  engine: auto
+  # Para PaddleOCR GPU + YOLO GPU, usa subprocess para aislar Paddle de PyTorch.
+  gpu: false
+  paddle_subprocess: auto   # auto | true | false
+
+quality:
+  # La detección de globos ahora SOLO usa modelo preentrenado. Sin modelo válido se lanza error.
+  bubble_detection: true
+  bubble_fill: true
+  bubble_detector: professional
+  require_professional: true
+  bubble_first: true
+  # bubble: OCR en el globo/máscara completa; text_hint: OCR en caja de texto asociada si existe.
+  ocr_region_mode: bubble
+  # Modelo de segmentación de globos. Si bubble_model_path está vacío, se descarga de Hugging Face.
+  bubble_model_repo: huyvux3005/manga109-segmentation-bubble
+  bubble_model_file: best.pt
+  bubble_model_path: ""
+  # Usa 0/cuda/cuda:0 para GPU, cpu para CPU, o vacío para que Ultralytics decida.
+  bubble_device: ""
+  bubble_confidence: 0.35
+  bubble_img_size: 1024
+  # auto: globo por relleno + SFX por inpainting rápido
+  # quality: usa el modelo de inpainting para SFX
+  # bubble_only: solo limpia interiores de globos, máximo rendimiento
+  # legacy fue desactivado porque dependía de máscaras OCR/heurísticas.
+  inpaint_mode: auto
+
+onomatopoeia:
+  # translate | keep | subtitle | auto
+  mode: translate
+
+export:
+  pdf: true
+  cbz: false

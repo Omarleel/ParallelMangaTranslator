@@ -7,10 +7,11 @@ import torch.multiprocessing as mp
 from dataclasses import dataclass
 from typing import List
 from pathlib import Path
-from PIL import Image
 
 from Applications.JsonGenerator import JsonWriter
 from Applications.Utilities import Utilities
+from Applications.ExportManager import ExportManager
+from Applications.MetricsManager import MetricsWriter
 from .LoggingConfig import get_logger
 from Utils.Constantes import PESO_MODELOS
 
@@ -54,12 +55,21 @@ class ParallelProcessor:
         if torch.cuda.is_available():
             try:
                 properties = torch.cuda.get_device_properties(torch.device("cuda"))
-                max_parallel_workers = max(1, int(properties.multi_processor_count))
                 total_memory_gb = float(properties.total_memory / 1024 ** 3)
                 dispositivo_detectado = f"GPU ({properties.name})"
+                # No conviene crear un proceso por SM de la GPU: cada proceso vuelve a cargar OCR/inpainting
+                # y normalmente termina siendo más lento o causa OOM. Por defecto, 1 worker GPU.
+                max_parallel_workers = 2 if total_memory_gb >= 20 else 1
             except Exception as exc:
                 logger.warning("No se pudo leer la info de la GPU. Error: %s", exc)
-    
+
+        override_workers = os.getenv("PMT_MAX_WORKERS")
+        if override_workers:
+            try:
+                max_parallel_workers = max(1, int(override_workers))
+            except ValueError:
+                logger.warning("PMT_MAX_WORKERS inválido: %s", override_workers)
+
         logger.info("Recursos inicializados | Dispositivo: %s | Workers máximos: %s | Memoria: %.2f GB", 
                     dispositivo_detectado, max_parallel_workers, total_memory_gb)
 
@@ -99,36 +109,10 @@ class ParallelProcessor:
         )
 
     def _compilar_a_pdf(self, ruta_traduccion: str, titulo_manga: str):
-        try:
-            logger.info("Iniciando compilación de PDF para: %s", titulo_manga)
-            archivos = [
-                f for f in os.listdir(ruta_traduccion) 
-                if f.lower().endswith(self.IMAGE_EXTENSIONS)
-            ]
-            
-            if not archivos:
-                logger.warning("No hay imágenes en la carpeta de traducción para generar el PDF.")
-                return
+        ExportManager.export_pdf(ruta_traduccion, titulo_manga)
 
-            archivos.sort(key=self._natural_sort_key)
-            
-            imagenes_pil = []
-            for nombre_archivo in archivos:
-                ruta_img = os.path.join(ruta_traduccion, nombre_archivo)
-                img = Image.open(ruta_img).convert("RGB")
-                imagenes_pil.append(img)
-
-            if imagenes_pil:
-                pdf_path = os.path.join(ruta_traduccion, f"{titulo_manga}_Traducido.pdf")
-                imagenes_pil[0].save(
-                    pdf_path, 
-                    save_all=True, 
-                    append_images=imagenes_pil[1:]
-                )
-                logger.info("¡PDF Generado con éxito! Ubicación: %s", pdf_path)
-
-        except Exception as e:
-            logger.error("Error al compilar el PDF: %s", e)
+    def _compilar_a_cbz(self, ruta_traduccion: str, titulo_manga: str):
+        ExportManager.export_cbz(ruta_traduccion, titulo_manga)
 
     @staticmethod
     def _start_json_writers(ruta_limpieza_salida: str, ruta_traduccion_salida: str):
@@ -203,6 +187,10 @@ class ParallelProcessor:
                 
                 titulo_manga = os.path.basename(ruta_carpeta_entrada)
                 self._compilar_a_pdf(ruta_traduccion_salida, titulo_manga)
+                self._compilar_a_cbz(ruta_traduccion_salida, titulo_manga)
+                reporte_metricas = MetricsWriter.aggregate(ruta_carpeta_salida)
+                if reporte_metricas:
+                    logger.info("Reporte de métricas generado: %s", reporte_metricas)
 
             return True
         except Exception as exc:
