@@ -1,0 +1,6 @@
+# Compatible con torch 2.6.0 + CUDA 12.4 usado en tu entorno actual.
+# Instala con:
+# pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+transformers>=4.30,<4.46
