@@ -313,8 +313,9 @@ class BubbleDetector:
     def detect_primary_bubble_regions(self, image: np.ndarray) -> List[TextRegion]:
         candidates = self._get_professional_candidates(image)
         regions: List[TextRegion] = []
-        for candidate in candidates:
+        for i, candidate in enumerate(candidates):
             kind = self._kind_from_professional_candidate(candidate, fallback_sfx=False)
+            
             metadata = {
                 "mask_source": candidate.source,
                 "detector": "professional",
@@ -397,20 +398,52 @@ class BubbleDetector:
 
     def _free_text_regions_from_detections(self, image: np.ndarray, detections: Sequence) -> List[TextRegion]:
         free_regions: List[TextRegion] = []
-        for group in self._group_detections(detections):
+        
+        # Obtener el tamaño total de la página para hacer cálculos de proporción
+        img_height, img_width = image.shape[:2]
+        img_area = img_height * img_width
+
+        for i, group in enumerate(self._group_detections(detections)):
             boxes = [self._to_rect(det) for det in group]
             text_box = boxes[0]
             for box in boxes[1:]:
                 text_box = self._union(text_box, box)
+                
+            # --- NUEVO FILTRO DE SEGURIDAD PARA FALSOS POSITIVOS ---
+            bx, by, bw, bh = text_box
+            box_area = bw * bh
+            
+            # Regla 1: Si "texto" ocupa más del 4% de TODA la página, es basura.
+            # (Un texto libre real casi nunca es tan grande)
+            if box_area > img_area * 0.04:
+                continue
+                
+            # Regla 2: Si es una franja vertical absurda (más del 25% del alto de la página).
+            if bh > img_height * 0.25:
+                continue
+                
+            # Regla 3: Si es una franja horizontal (más del 50% del ancho).
+            if bw > img_width * 0.50:
+                continue
+            # -------------------------------------------------------
+
             text_hint = " ".join(self._text(det).strip() for det in group if self._text(det).strip())
             conf = float(np.mean([self._confidence(det) for det in group])) if group else 0.0
+            
             looks_sfx = self._looks_like_sfx(group)
-            mask, bbox, score, source = self._text_box_mask(image.shape, text_box, kind="sfx" if looks_sfx else "free_text")
+            kind = "sfx" if looks_sfx else "free_text"
+            
+            if looks_sfx:
+                razon = "Texto OCR fuera de globo, detectado por proporciones o diccionario como Onomatopeya (SFX)"
+            else:
+                razon = "Texto OCR agrupado que quedó huérfano (no está dentro de ningún globo de la IA)"
+                
+            mask, bbox, score, source = self._text_box_mask(image.shape, text_box, kind=kind)
             free_regions.append(TextRegion(
                 bbox=bbox,
                 text_bbox=text_box,
                 mask=mask,
-                kind="sfx" if looks_sfx else "free_text",
+                kind=kind,
                 confidence=max(conf, score),
                 source_text_hint=text_hint,
                 detections_count=len(group),
@@ -422,7 +455,7 @@ class BubbleDetector:
                 },
             ))
         return free_regions
-
+    
     def build_regions_from_bubbles_and_text(
         self,
         image: np.ndarray,

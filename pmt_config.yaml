@@ -1,7 +1,7 @@
 translation:
   source_language: Japonés
   target_language: Español
-  method: LLM          # LLM | Tradicional
+  method: Tradicional          # LLM | Tradicional
   inpaint_model: lama_mpe
   lore: ""
 
@@ -34,7 +34,7 @@ quality:
   bubble_model_path: ""
   # Usa 0/cuda/cuda:0 para GPU, cpu para CPU, o vacío para que Ultralytics decida.
   bubble_device: ""
-  bubble_confidence: 0.35
+  bubble_confidence: 0.45
   bubble_img_size: 1024
   # auto: globo por relleno + SFX por inpainting rápido
   # quality: usa el modelo de inpainting para SFX
@@ -44,7 +44,7 @@ quality:
 
 onomatopoeia:
   # translate | keep | subtitle | auto
-  mode: translate
+  mode: keep
 
 export:
   pdf: true
