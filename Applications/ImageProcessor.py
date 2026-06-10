@@ -15,6 +15,13 @@ from Applications.CleanManga import CleanManga
 from Applications.FileManager import FileManager
 from Applications.TranslateManga import TranslateManga
 from Applications.MetricsManager import MetricsWriter, PageMetrics
+from Applications.ErrorHandling import (
+    PageFailureReport,
+    StageProcessingError,
+    processing_stage,
+    unwrap_original_exception,
+    write_failure_report,
+)
 from .LoggingConfig import get_logger
 
 logger = get_logger(__name__)
@@ -46,8 +53,9 @@ class ImageProcessor:
 
     @staticmethod
     def _is_retryable_memory_error(exc: Exception) -> bool:
-        message = str(exc).lower()
-        return isinstance(exc, torch.cuda.OutOfMemoryError) or "cuda" in message or "out of memory" in message
+        root = unwrap_original_exception(exc)
+        message = str(root).lower()
+        return isinstance(root, torch.cuda.OutOfMemoryError) or "cuda" in message or "out of memory" in message
 
     def procesar(self, ruta_carpeta_entrada, ruta_limpieza_salida, ruta_traduccion_salida, lote, transcripcion_queue, traduccion_queue):
         for indice_imagen, archivo in lote.items():
@@ -104,9 +112,27 @@ class ImageProcessor:
         try:
             if Path(image_path).exists():
                 shutil.copy2(image_path, fallidas / Path(image_path).name)
-        except Exception:
-            pass
-        metrics = PageMetrics(page_index=indice_imagen, filename=archivo, status="failed", error=str(exc))
+        except Exception as copy_exc:
+            logger.warning("No se pudo copiar imagen fallida %s: %s", image_path, copy_exc)
+
+        report = PageFailureReport.from_exception(
+            exc,
+            page_index=indice_imagen,
+            filename=archivo,
+            metadata={"source_path": image_path},
+        )
+        try:
+            report_path = write_failure_report(output_root, report)
+            logger.error("Reporte de fallo guardado: %s", report_path)
+        except Exception as report_exc:
+            logger.warning("No se pudo escribir reporte de fallo estructurado: %s", report_exc)
+
+        metrics = PageMetrics(
+            page_index=indice_imagen,
+            filename=archivo,
+            status="failed",
+            error=f"{report.stage}: {report.error_type}: {report.error_message}",
+        )
         MetricsWriter(output_root).write_page(metrics)
 
     def _registrar_pagina(self, queue, tipo: str, indice_imagen: int, imagen) -> None:
@@ -143,14 +169,16 @@ class ImageProcessor:
         for intento in range(1, max_retries + 1):
             try:
                 t0 = time.perf_counter()
-                mascara_capa, imagen_limpia, regiones = self.clean_manga.limpiar_manga(imagen_actual)
+                with processing_stage("limpieza", logger=logger, page_index=indice_imagen, filename=archivo):
+                    mascara_capa, imagen_limpia, regiones = self.clean_manga.limpiar_manga(imagen_actual)
                 metrics.timings["limpieza"] = round(time.perf_counter() - t0, 4)
                 metrics.detected_regions = len(regiones)
                 metrics.detected_bubbles = sum(1 for r in regiones if r.kind in {"dialogue", "narration", "unknown"})
                 metrics.detected_sfx = sum(1 for r in regiones if r.kind in {"sfx", "free_text"})
 
                 archivo_limpieza_salida = os.path.join(ruta_limpieza_salida, archivo)
-                self._write_image(archivo_limpieza_salida, imagen_limpia)
+                with processing_stage("guardar_limpieza", logger=logger, page_index=indice_imagen, filename=archivo):
+                    self._write_image(archivo_limpieza_salida, imagen_limpia)
 
                 self.translate_manga.insertar_json_queue(
                     indice_imagen=indice_imagen,
@@ -158,17 +186,19 @@ class ImageProcessor:
                     traduccion_queue=traduccion_queue,
                 )
                 t1 = time.perf_counter()
-                imagen_traducida = self.translate_manga.traducir_manga(imagen_actual, imagen_limpia, mascara_capa, text_regions=regiones)
+                with processing_stage("ocr_traduccion_render", logger=logger, page_index=indice_imagen, filename=archivo):
+                    imagen_traducida = self.translate_manga.traducir_manga(imagen_actual, imagen_limpia, mascara_capa, text_regions=regiones)
                 metrics.timings["ocr_traduccion_render"] = round(time.perf_counter() - t1, 4)
                 metrics.ocr_empty = sum(1 for t in getattr(self.translate_manga, "ultimos_textos_originales", []) if not str(t).strip())
                 metrics.translations_empty = sum(1 for t in getattr(self.translate_manga, "ultimos_textos_traducidos", []) if not str(t).strip())
 
                 archivo_traduccion_salida = os.path.join(ruta_traduccion_salida, archivo)
-                self._write_image(archivo_traduccion_salida, imagen_traducida)
+                with processing_stage("guardar_traduccion", logger=logger, page_index=indice_imagen, filename=archivo):
+                    self._write_image(archivo_traduccion_salida, imagen_traducida)
                 metrics.retries = intento - 1
                 MetricsWriter(output_root).write_page(metrics)
                 return
-            except (torch.cuda.OutOfMemoryError, RuntimeError) as exc:
+            except (torch.cuda.OutOfMemoryError, RuntimeError, StageProcessingError) as exc:
                 logger.warning("Error potencial de memoria al procesar %s (intento %s/%s): %s", archivo, intento, max_retries, exc)
                 if intento >= max_retries or not self._is_retryable_memory_error(exc):
                     metrics.status = "failed"

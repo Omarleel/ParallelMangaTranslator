@@ -14,10 +14,14 @@ from Applications.TextNormalization import OcrTextNormalizer
 from Applications.TextRendering import TextRenderer
 from Applications.TranslatorManager import TranslatorManager
 from Applications.ProcessingModels import TextRegion
+from Applications.ReadingOrderResolver import ReadingOrderResolver
+from .LoggingConfig import get_logger
 from Utils.Constantes import RUTA_FUENTE, TAMANIO_MINIMO_FUENTE
 
 
 Box = Tuple[int, int, int, int]
+
+logger = get_logger(__name__)
 
 
 class TranslateManga:
@@ -35,6 +39,7 @@ class TranslateManga:
             lore_manga=lore_manga,
         )
         self.ocr_manager = OcrManager(idioma_entrada=idioma_entrada)
+        self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
         self.text_renderer = TextRenderer(font_path=RUTA_FUENTE, min_font_size=TAMANIO_MINIMO_FUENTE)
         self.text_normalizer = OcrTextNormalizer()
         self.onomatopoeia_manager = OnomatopoeiaManager()
@@ -239,10 +244,22 @@ class TranslateManga:
         return cv2.cvtColor(binaria, cv2.COLOR_GRAY2BGR)
 
     def _reading_order_key(self, item):
-        x, y, w, h = item.bbox if isinstance(item, TextRegion) else item
-        if self.idioma_entrada == "Japonés":
-            return (y // 50, -(x + w / 2))
-        return (y // 50, x + w / 2)
+        box = item.bbox if isinstance(item, TextRegion) else item
+        return self.reading_order_resolver.key_for_page_box(box)
+
+    def _sort_regions_for_reading(self, regiones: Sequence[TextRegion]) -> List[TextRegion]:
+        try:
+            return self.reading_order_resolver.sort_regions(regiones)
+        except Exception as exc:
+            logger.warning("No se pudo ordenar regiones por lectura; usando fallback: %s", exc)
+            return sorted(list(regiones), key=self._reading_order_key)
+
+    def _sort_boxes_for_reading(self, boxes: Sequence[Box]) -> List[Box]:
+        try:
+            return self.reading_order_resolver.sort_boxes(boxes)
+        except Exception as exc:
+            logger.warning("No se pudo ordenar cajas por lectura; usando fallback: %s", exc)
+            return sorted(list(boxes), key=self._reading_order_key)
 
     @staticmethod
     def _clip_box_to_image(box: Box, width_img: int, height_img: int) -> Box:
@@ -285,7 +302,7 @@ class TranslateManga:
     def obtener_areas_interes_desde_regiones(self, imagen, regiones):
         cuadros_delimitadores: List[Box] = []
         imagenes_interes = []
-        regiones_ordenadas = sorted(list(regiones), key=self._reading_order_key)
+        regiones_ordenadas = self._sort_regions_for_reading(list(regiones))
         height_img, width_img = imagen.shape[:2]
 
         for region in regiones_ordenadas:
@@ -302,7 +319,7 @@ class TranslateManga:
 
         boxes = self._mask_to_boxes(mascara_capa)
 
-        for box in sorted(boxes, key=self._reading_order_key):
+        for box in self._sort_boxes_for_reading(boxes):
             x, y, w, h = self._expand_box(box, width_img, height_img)
             area_interes = imagen[y:y + h, x:x + w]
             area_limpia = self._prepare_crop_for_ocr(area_interes)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import re
 from typing import Dict, List, Tuple
@@ -13,8 +12,10 @@ from PIL import Image
 
 from Applications.CacheManager import PersistentJsonCache
 from Applications.PaddleOcrSubprocess import PaddleOcrSubprocess
+from Applications.ReadingOrderResolver import ReadingOrderResolver
+from .LoggingConfig import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class OcrManager:
@@ -51,6 +52,7 @@ class OcrManager:
         self._paddle_ocr = None
         self._paddle_worker = None
         self.cache = PersistentJsonCache("ocr")
+        self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
 
     def _engine_for_cache(self) -> str:
         engine = self.ocr_engine
@@ -183,14 +185,18 @@ class OcrManager:
     def _sort_lines(self, lines) -> List:
         if not lines:
             return []
-        enriched = []
-        for line in lines:
-            x1, y1, x2, y2 = self._line_rect(line)
-            h = max(1.0, y2 - y1)
-            enriched.append((line, x1, y1, x2, y2, h))
-        median_h = float(np.median([row[5] for row in enriched])) if enriched else 12.0
-        row_step = max(8.0, median_h * 0.70)
-        return [row[0] for row in sorted(enriched, key=lambda r: (round(r[2] / row_step), r[1]))]
+        try:
+            return self.reading_order_resolver.sort_ocr_items(lines)
+        except Exception as exc:
+            logger.warning("No se pudo resolver orden de lectura OCR; usando fallback horizontal: %s", exc)
+            enriched = []
+            for line in lines:
+                x1, y1, x2, y2 = self._line_rect(line)
+                h = max(1.0, y2 - y1)
+                enriched.append((line, x1, y1, x2, y2, h))
+            median_h = float(np.median([row[5] for row in enriched])) if enriched else 12.0
+            row_step = max(8.0, median_h * 0.70)
+            return [row[0] for row in sorted(enriched, key=lambda r: (round(r[2] / row_step), r[1]))]
 
     @staticmethod
     def _paddle_line_text(line) -> Tuple[str, float]:

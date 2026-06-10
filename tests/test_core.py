@@ -1,4 +1,7 @@
 import os
+import json
+import logging
+import tempfile
 import unittest
 
 os.environ.setdefault("PMT_BUBBLE_DETECTOR", "professional")
@@ -12,6 +15,97 @@ from Applications.ProfessionalBubbleDetector import ProfessionalBubbleCandidate
 from Applications.OnomatopoeiaManager import OnomatopoeiaManager
 from Applications.TextRendering import TextRenderer
 from Applications.ProcessingModels import TextRegion
+from Applications.ReadingOrderResolver import ReadingOrderResolver
+from Applications.ErrorHandling import PageFailureReport, StageProcessingError, processing_stage, write_failure_report
+
+
+class ReadingOrderResolverTests(unittest.TestCase):
+    @staticmethod
+    def _region(box, width=400, height=300):
+        mask = np.zeros((height, width), dtype=np.uint8)
+        x, y, w, h = box
+        mask[y:y + h, x:x + w] = 255
+        return TextRegion(bbox=box, text_bbox=box, mask=mask, kind="dialogue", confidence=0.8)
+
+    def test_japanese_regions_read_right_to_left_then_down(self):
+        resolver = ReadingOrderResolver("Japonés")
+        left_top = self._region((40, 20, 50, 42))
+        right_top = self._region((240, 22, 50, 42))
+        bottom_right = self._region((230, 130, 50, 42))
+
+        ordered = resolver.sort_regions([left_top, bottom_right, right_top])
+
+        self.assertEqual([r.bbox for r in ordered], [right_top.bbox, left_top.bbox, bottom_right.bbox])
+
+    def test_western_regions_read_left_to_right_then_down(self):
+        resolver = ReadingOrderResolver("Español")
+        left_top = self._region((40, 20, 50, 42))
+        right_top = self._region((240, 22, 50, 42))
+        bottom_left = self._region((35, 130, 50, 42))
+
+        ordered = resolver.sort_regions([right_top, bottom_left, left_top])
+
+        self.assertEqual([r.bbox for r in ordered], [left_top.bbox, right_top.bbox, bottom_left.bbox])
+
+    def test_japanese_ocr_vertical_columns_read_top_to_bottom_right_to_left(self):
+        resolver = ReadingOrderResolver("Japonés")
+        right_top = ([[240, 20], [260, 20], [260, 70], [240, 70]], "右上", 0.92)
+        right_bottom = ([[240, 82], [260, 82], [260, 132], [240, 132]], "右下", 0.91)
+        left_top = ([[120, 20], [140, 20], [140, 70], [120, 70]], "左上", 0.90)
+        left_bottom = ([[120, 82], [140, 82], [140, 132], [120, 132]], "左下", 0.89)
+
+        ordered = resolver.sort_ocr_items([left_bottom, right_bottom, left_top, right_top])
+
+        self.assertEqual([item[1] for item in ordered], ["右上", "右下", "左上", "左下"])
+
+    def test_western_ocr_horizontal_rows_read_left_to_right(self):
+        resolver = ReadingOrderResolver("Inglés")
+        top_left = ([[20, 20], [80, 20], [80, 40], [20, 40]], "Hello", 0.95)
+        top_right = ([[100, 20], [170, 20], [170, 40], [100, 40]], "world", 0.95)
+        second_row = ([[20, 65], [125, 65], [125, 85], [20, 85]], "again", 0.95)
+
+        ordered = resolver.sort_ocr_items([top_right, second_row, top_left])
+
+        self.assertEqual([item[1] for item in ordered], ["Hello", "world", "again"])
+
+    def test_bubble_detector_returns_reading_order_metadata(self):
+        img = np.full((220, 360, 3), 255, dtype=np.uint8)
+        right = self._region((235, 40, 70, 70), width=360, height=220)
+        left = self._region((55, 42, 70, 70), width=360, height=220)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [left, right], [])
+
+        self.assertEqual([r.bbox for r in regions], [right.bbox, left.bbox])
+        self.assertEqual([r.metadata.get("reading_order_index") for r in regions], [0, 1])
+        self.assertEqual(regions[0].metadata.get("reading_order_flow"), "rtl_vertical")
+
+
+class ErrorHandlingTests(unittest.TestCase):
+    def test_processing_stage_wraps_error_with_stage_context_and_report(self):
+        logger = logging.getLogger("pmt_test_error_handling")
+        logger.addHandler(logging.NullHandler())
+
+        with self.assertRaises(StageProcessingError) as raised:
+            with processing_stage("ocr_traduccion_render", logger=logger, page_index=2, filename="0003.png"):
+                raise ValueError("boom OCR")
+
+        error = raised.exception
+        self.assertEqual(error.stage, "ocr_traduccion_render")
+        self.assertEqual(error.original_error_type, "ValueError")
+        self.assertIn("boom OCR", error.original_error_message)
+
+        report = PageFailureReport.from_exception(error, page_index=2, filename="0003.png")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            report_path = write_failure_report(tmpdir, report)
+            data = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(data["page_index"], 2)
+        self.assertEqual(data["filename"], "0003.png")
+        self.assertEqual(data["stage"], "ocr_traduccion_render")
+        self.assertEqual(data["error_type"], "ValueError")
+        self.assertIn("boom OCR", data["error_message"])
+        self.assertIn("ValueError", data["traceback"])
 
 
 class CoreQualityTests(unittest.TestCase):

@@ -12,6 +12,7 @@ from Applications.Environment import env_float, env_int
 from Applications.Geometry import BoxGeometry
 from Applications.OnomatopoeiaManager import OnomatopoeiaManager
 from Applications.ProcessingModels import Box, TextRegion
+from Applications.ReadingOrderResolver import ReadingOrderResolver
 from Applications.ProfessionalBubbleDetector import ProfessionalBubbleCandidate, ProfessionalBubbleDetector
 from .LoggingConfig import get_logger
 
@@ -36,6 +37,7 @@ class BubbleDetector:
     def __init__(self, idioma_entrada: str = "Japonés") -> None:
         self.idioma_entrada = idioma_entrada
         self.onomatopoeia_manager = OnomatopoeiaManager()
+        self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
         self._apply_settings(BubbleDetectorSettings.from_env())
         self._debug_page_index = 0
         if self.merge_debug:
@@ -1113,7 +1115,13 @@ class BubbleDetector:
     def _free_text_regions_from_detections(self, image: np.ndarray, detections: Sequence) -> List[TextRegion]:
         free_regions: List[TextRegion] = []
 
-        for i, group in enumerate(self._group_detections(detections)):
+        grouped_detections = self._group_detections(detections)
+        try:
+            grouped_detections = self.reading_order_resolver.sort_detection_groups(grouped_detections, self._to_rect)
+        except Exception as exc:
+            logger.warning("No se pudo ordenar grupos de texto libre por lectura: %s", exc)
+
+        for i, group in enumerate(grouped_detections):
             boxes = [self._to_rect(det) for det in group]
             text_box = boxes[0]
             for box in boxes[1:]:
@@ -1235,6 +1243,18 @@ class BubbleDetector:
         pad_y = max(5, min(18, int(round(mh * 0.08))))
         return self._clip_box_to_image((mx - pad_x, my - pad_y, mw + 2 * pad_x, mh + 2 * pad_y), img_w, img_h)
 
+    def _order_regions_for_reading(self, regions: Sequence[TextRegion]) -> List[TextRegion]:
+        try:
+            ordered = self.reading_order_resolver.sort_regions(list(regions))
+        except Exception as exc:
+            logger.warning("No se pudo ordenar regiones por lectura; se mantiene orden de detección: %s", exc)
+            ordered = list(regions)
+        for index, region in enumerate(ordered):
+            region.metadata["reading_order_index"] = index
+            region.metadata["reading_order_language"] = self.idioma_entrada
+            region.metadata["reading_order_flow"] = "rtl_vertical" if self.reading_order_resolver.page_reads_right_to_left else "ltr_horizontal"
+        return ordered
+
     def _recover_free_text_gaps(self, image: np.ndarray, regions: Sequence[TextRegion]) -> List[TextRegion]:
         if not self.free_text_gap_recovery:
             return []
@@ -1334,8 +1354,9 @@ class BubbleDetector:
         regions.extend(self._free_text_regions_from_detections(image, remaining))
         regions.extend(self._recover_free_text_gaps(image, regions))
         merged_regions = self._merge_region_masks(regions)
-        self._save_merge_debug_artifacts(image, merged_regions, debug_records)
-        return merged_regions
+        ordered_regions = self._order_regions_for_reading(merged_regions)
+        self._save_merge_debug_artifacts(image, ordered_regions, debug_records)
+        return ordered_regions
 
     def detect_regions(self, image: np.ndarray, detections: Sequence) -> List[TextRegion]:
         bubble_regions = self.detect_primary_bubble_regions(image)
