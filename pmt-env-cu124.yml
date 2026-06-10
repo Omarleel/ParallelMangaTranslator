@@ -1,0 +1,37 @@
+name: ParallelMangaTranslator-gpu
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10.10
+  - pip>=23
+  - setuptools
+  - wheel
+  - git
+  - pip:
+      # PyTorch GPU CUDA 12.4, alineado con requirements-torch-cu124.txt
+      - --extra-index-url https://download.pytorch.org/whl/cu124
+      - torch==2.6.0+cu124
+      - torchvision==0.21.0+cu124
+      - transformers>=4.30,<4.46
+      # Dependencias principales del proyecto
+      - easyocr
+      - manga-ocr
+      - deep_translator
+      - Pillow>=10.0
+      - wget
+      - colorama
+      - nest_asyncio
+      - nest-asyncio
+      - python-dotenv
+      - pydrive2
+      - groq
+      - loguru
+      - numpy<2
+      - PyYAML>=6.0
+      - ultralytics>=8.0.0
+      - huggingface_hub>=0.23.0
+      # Importado como cv2 en el código; falta en requirements.txt del adjunto
+      - opencv-python-headless>=4.8
+      # Utilidad para probar/importar el proyecto
+      - pytest

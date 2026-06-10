@@ -18,3 +18,5 @@ ultralytics>=8.0.0
 huggingface_hub>=0.23.0
 # Evita que manga-ocr instale una versión de transformers que exige torch >= 2.4.
 transformers>=4.30,<4.46
+opencv-python-headless>=4.8
+pytest
