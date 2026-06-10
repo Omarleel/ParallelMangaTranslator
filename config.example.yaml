@@ -42,6 +42,39 @@ quality:
   # legacy fue desactivado porque dependía de máscaras OCR/heurísticas.
   inpaint_mode: auto
 
+  # Control técnico para evitar que globos cercanos terminen como una sola región.
+  # En flujo normal esto no muestra nada al usuario; solo afecta la lógica interna.
+  # La división se hace por clusters lógicos de OCR: columnas cercanas del mismo globo
+  # se mantienen juntas, pero bloques separados pasan a regiones independientes.
+  split_merged_bubbles: true
+  bubble_split_min_ocr_groups: 2
+  # Si dos grupos OCR dentro de una misma región detectada están separados por al menos este gap,
+  # se asumen globos independientes y la región se divide. Sube este valor si divide demasiado.
+  bubble_split_min_gap_px: 18
+  bubble_split_gap_ratio: 0.70
+  # Segunda etapa: cuando ya se agruparon columnas de un mismo globo, estos umbrales
+  # deciden si dos clusters lógicos dentro de una misma detección son globos distintos.
+  # Bajar estos valores divide más globos cercanos; subirlos divide menos.
+  bubble_split_cluster_min_gap_px: 12
+  bubble_split_cluster_gap_ratio: 0.35
+  bubble_split_pad_x: 0.85
+  bubble_split_pad_y: 1.05
+  bubble_split_min_pad: 18
+  # Agrupación OCR conservadora: subir valores separa más textos/globos cercanos; bajar valores une más.
+  # Importante para manga vertical: por defecto NO se fusionan columnas CJK adyacentes solo por cercanía.
+  ocr_group_merge_x_overlap: 0.52
+  ocr_group_merge_y_gap_ratio: 0.55
+  ocr_group_merge_cjk_y_overlap: 0.80
+  ocr_group_merge_cjk_x_gap_ratio: 0.35
+  ocr_group_merge_cjk_columns: false
+  ocr_group_merge_line_y_overlap: 0.72
+  ocr_group_merge_line_x_gap_ratio: 0.20
+  ocr_group_merge_line_horizontal_only: true
+  # Activa archivos técnicos para tests en Dataset/Outputs/DebugGlobos.
+  bubble_merge_debug: false
+  bubble_merge_debug_dir: ""
+  bubble_merge_debug_pair_limit: 160
+
 onomatopoeia:
   # translate | keep | subtitle | auto
   mode: translate
