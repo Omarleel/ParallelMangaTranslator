@@ -5,7 +5,10 @@ import os
 from typing import Iterable, List, Sequence, Tuple
 
 import cv2
-import easyocr
+try:
+    import easyocr
+except ModuleNotFoundError:  # EasyOCR es opcional si se usa MangaOCR/Paddle o en tests de limpieza.
+    easyocr = None  # type: ignore[assignment]
 import nest_asyncio
 import numpy as np
 import torch
@@ -49,6 +52,8 @@ class CleanManga:
         self.fast_mode = env_flag("PMT_FAST_MODE", False)
         self.inpaint_mode = os.getenv("PMT_INPAINT_MODE", "auto").strip().lower()
         self.bubble_fill = env_flag("PMT_BUBBLE_FILL", True)
+        self.bubble_fill_edge_margin = self._int_env("PMT_BUBBLE_FILL_EDGE_MARGIN", 6)
+        self.bubble_fill_feather = self._float_env("PMT_BUBBLE_FILL_FEATHER", 1.0)
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.bubble_detector = BubbleDetector(idioma_entrada=idioma_entrada)
         self.inpainter = self._build_inpainter(modelo_inpaint)
@@ -60,11 +65,61 @@ class CleanManga:
             raise ValueError(f"Modelo de inpainting no soportado: {model_name}")
         return self.INPAINTER_FACTORIES[model_name]()
 
-    def _get_reader(self) -> easyocr.Reader:
+    def _get_reader(self):
+        if easyocr is None:
+            raise RuntimeError("EasyOCR no está instalado. Instala easyocr o usa PMT_OCR_ENGINE=mangaocr/paddle.")
         if self._ocr_reader is None:
             langs = self.EASY_OCR_LANGS.get(self.idioma_entrada, ["ja", "en"])
             self._ocr_reader = easyocr.Reader(langs, gpu=self.device == "cuda")
         return self._ocr_reader
+
+    @staticmethod
+    def _int_env(name: str, default: int) -> int:
+        raw = os.getenv(name)
+        if raw is None or not raw.strip():
+            return default
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _float_env(name: str, default: float) -> float:
+        raw = os.getenv(name)
+        if raw is None or not raw.strip():
+            return default
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _safe_bubble_fill_mask(local_mask: np.ndarray, edge_margin_px: int) -> np.ndarray:
+        """Devuelve una máscara interior que no toca el borde del globo.
+
+        Las máscaras de segmentación suelen incluir parte del contorno negro del globo o
+        quedar demasiado pegadas a él. Para limpiar diálogos por relleno plano no debemos
+        pintar sobre ese borde, así que erosionamos la máscara hacia adentro antes de
+        mezclar el color de limpieza. Si el globo es muy pequeño, reducimos el margen
+        automáticamente para no dejar la máscara vacía.
+        """
+        if local_mask.size == 0:
+            return local_mask
+
+        binary = (local_mask > 0).astype(np.uint8) * 255
+        if edge_margin_px <= 0 or cv2.countNonZero(binary) == 0:
+            return binary
+
+        max_margin = max(0, (min(binary.shape[:2]) - 3) // 2)
+        margin = min(int(edge_margin_px), max_margin)
+        while margin > 0:
+            kernel_size = margin * 2 + 1
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+            safe = cv2.erode(binary, kernel, iterations=1)
+            if cv2.countNonZero(safe) > 0:
+                return safe
+            margin -= 1
+        return binary
 
     def limpiar_manga(self, imagen: np.ndarray):
         # Flujo profesional: primero detectar todos los globos con el segmentador entrenado.
@@ -147,10 +202,24 @@ class CleanManga:
             local_mask = region.mask[y:y + h, x:x + w]
             if local_mask.size == 0 or cv2.countNonZero(local_mask) == 0:
                 continue
-            # Suaviza el borde de la máscara para evitar cortes duros contra el contorno del globo.
-            blur = cv2.GaussianBlur(local_mask, (0, 0), sigmaX=1.2, sigmaY=1.2)
+
+            # No pintamos el borde real del globo: la segmentación puede incluirlo o
+            # quedar demasiado pegada a él. Primero hacemos una máscara interior segura
+            # y recién sobre esa zona aplicamos un feather suave.
+            edge_margin = getattr(self, "bubble_fill_edge_margin", 6)
+            safe_mask = self._safe_bubble_fill_mask(local_mask, edge_margin)
+            if cv2.countNonZero(safe_mask) == 0:
+                continue
+
+            feather = getattr(self, "bubble_fill_feather", 1.0)
+            if feather > 0:
+                blur = cv2.GaussianBlur(safe_mask, (0, 0), sigmaX=feather, sigmaY=feather)
+                # El blur no puede reactivar píxeles fuera de la máscara original.
+                blur = cv2.bitwise_and(blur, (local_mask > 0).astype(np.uint8) * 255)
+            else:
+                blur = safe_mask
             alpha = (blur.astype(np.float32) / 255.0)[..., None]
-            fill_color = np.array(self._dominant_fill_color(salida[y:y + h, x:x + w], local_mask), dtype=np.float32)
+            fill_color = np.array(self._dominant_fill_color(salida[y:y + h, x:x + w], safe_mask), dtype=np.float32)
             patch = salida[y:y + h, x:x + w].astype(np.float32)
             cleaned = patch * (1.0 - alpha) + fill_color * alpha
             salida[y:y + h, x:x + w] = np.clip(cleaned, 0, 255).astype(np.uint8)

@@ -140,6 +140,8 @@ class ConfigManager:
             "PMT_BUBBLE_CONF": q.get("bubble_confidence"),
             "PMT_BUBBLE_IMGSZ": q.get("bubble_img_size"),
             "PMT_INPAINT_MODE": q.get("inpaint_mode"),
+            "PMT_BUBBLE_FILL_EDGE_MARGIN": q.get("bubble_fill_edge_margin"),
+            "PMT_BUBBLE_FILL_FEATHER": q.get("bubble_fill_feather"),
             "PMT_SPLIT_MERGED_BUBBLES": q.get("split_merged_bubbles"),
             "PMT_BUBBLE_SPLIT_MIN_OCR_GROUPS": q.get("bubble_split_min_ocr_groups"),
             "PMT_BUBBLE_SPLIT_MIN_GAP_PX": q.get("bubble_split_min_gap_px"),

@@ -11,6 +11,7 @@ from Applications.BubbleDetector import BubbleDetector, BUBBLE_SPLIT_DEBUG_VERSI
 from Applications.ProfessionalBubbleDetector import ProfessionalBubbleCandidate
 from Applications.OnomatopoeiaManager import OnomatopoeiaManager
 from Applications.TextRendering import TextRenderer
+from Applications.CleanManga import CleanManga
 from Applications.ProcessingModels import TextRegion
 
 
@@ -275,6 +276,43 @@ class CoreQualityTests(unittest.TestCase):
         self.assertFalse(any(r.metadata.get("detector") == "visual_free_text_gap" for r in regions))
 
 
+    def test_bubble_fill_uses_inner_safe_mask_without_touching_outline(self):
+        img = np.full((180, 260, 3), 255, dtype=np.uint8)
+        center = (130, 90)
+        axes = (82, 45)
+
+        # Contorno negro del globo; la máscara de segmentación simulada incluye
+        # todo el globo y puede tocar/contener el borde.
+        cv2.ellipse(img, center, axes, 0, 0, 360, (0, 0, 0), 3)
+        cv2.putText(img, "SI", (112, 94), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2, cv2.LINE_AA)
+
+        mask = np.zeros(img.shape[:2], dtype=np.uint8)
+        cv2.ellipse(mask, center, axes, 0, 0, 360, 255, -1)
+        outline_mask = np.zeros(img.shape[:2], dtype=np.uint8)
+        cv2.ellipse(outline_mask, center, axes, 0, 0, 360, 255, 3)
+
+        region = TextRegion(
+            bbox=(45, 42, 170, 96),
+            text_bbox=(100, 70, 60, 42),
+            mask=mask,
+            kind="dialogue",
+            confidence=0.9,
+        )
+        cleaner = CleanManga.__new__(CleanManga)
+        cleaner.bubble_fill_edge_margin = 8
+        cleaner.bubble_fill_feather = 0.8
+
+        out = cleaner._fill_bubble_interiors(img, [region])
+
+        # El texto interior se limpia.
+        text_roi_before = cv2.cvtColor(img[68:112, 98:164], cv2.COLOR_BGR2GRAY)
+        text_roi_after = cv2.cvtColor(out[68:112, 98:164], cv2.COLOR_BGR2GRAY)
+        self.assertLess(int((text_roi_after < 80).sum()), int((text_roi_before < 80).sum()) // 4)
+
+        # El contorno del globo queda visualmente intacto.
+        outline_diff = cv2.absdiff(img, out)[outline_mask > 0]
+        self.assertLessEqual(int(outline_diff.max()), 2)
+
     def test_renderer_uses_mask_inner_area_for_dialogue_fit(self):
         # Simula un globo ovalado: la bbox rectangular es más ancha que la zona real
         # disponible cerca de las curvas. El renderer debe ajustar el texto usando un
@@ -353,6 +391,41 @@ class CoreQualityTests(unittest.TestCase):
         # Una frase libre real no debe confundirse con SFX.
         self.assertFalse(manager.is_free_text_onomatopoeia("こちらはあとがきです", "Japonés"))
 
+    def test_free_text_onomatopoeia_debug_metadata(self):
+        img = np.full((260, 260, 3), 255, dtype=np.uint8)
+        fuzzy_sfx = ([[80, 110], [145, 110], [145, 150], [80, 150]], "ドソ", 0.83)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [], [fuzzy_sfx])
+
+        self.assertEqual(len(regions), 1)
+        region = regions[0]
+        self.assertEqual(region.kind, "sfx")
+        self.assertTrue(region.metadata.get("free_text_is_onomatopoeia"))
+        self.assertEqual(region.metadata.get("free_text_sfx_detection_reason"), "onomatopoeia_similarity")
+        self.assertEqual(region.metadata.get("free_text_onomatopoeia_semantic_key"), "impact")
+        self.assertGreaterEqual(region.metadata.get("free_text_onomatopoeia_similarity"), 0.80)
+
+    def test_bubble_debug_json_lists_final_region_onomatopoeia_flag(self):
+        import json
+        import tempfile
+
+        img = np.full((260, 260, 3), 255, dtype=np.uint8)
+        fuzzy_sfx = ([[80, 110], [145, 110], [145, 150], [80, 150]], "ドソ", 0.83)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            detector = BubbleDetector("Japonés")
+            detector.merge_debug = True
+            detector.merge_debug_dir = __import__("pathlib").Path(tmpdir)
+            detector.build_regions_from_bubbles_and_text(img, [], [fuzzy_sfx])
+
+            debug_json = next(detector.merge_debug_dir.glob("*_decisiones.json"))
+            payload = json.loads(debug_json.read_text(encoding="utf-8"))
+
+        self.assertIn("final_regions", payload)
+        self.assertTrue(payload["final_regions"][0]["free_text_is_onomatopoeia"])
+        self.assertEqual(payload["final_regions"][0]["kind"], "sfx")
+
     def test_renderer_accepts_clip_masks(self):
         img = np.full((120, 200, 3), 255, dtype=np.uint8)
         mask = np.zeros((80, 160), dtype=np.uint8)
@@ -374,4 +447,4 @@ if __name__ == "__main__":
 
 class TestBubbleSplitDebugVersion(unittest.TestCase):
     def test_debug_version_marker_exists(self):
-        self.assertEqual(BUBBLE_SPLIT_DEBUG_VERSION, "v5_cluster_bbox_logic_2026_06_10")
+        self.assertEqual(BUBBLE_SPLIT_DEBUG_VERSION, "v6_onomatopoeia_debug_2026_06_10")

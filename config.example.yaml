@@ -41,6 +41,11 @@ quality:
   # bubble_only: solo limpia interiores de globos, máximo rendimiento
   # legacy fue desactivado porque dependía de máscaras OCR/heurísticas.
   inpaint_mode: auto
+  # Margen interior en píxeles para no pintar encima del contorno del globo.
+  # Súbelo si el relleno aún toca bordes; bájalo si deja restos de texto muy cerca del borde.
+  bubble_fill_edge_margin: 6
+  # Suavizado del borde del área limpiada dentro del margen seguro.
+  bubble_fill_feather: 1.0
 
   # Control técnico para evitar que globos cercanos terminen como una sola región.
   # En flujo normal esto no muestra nada al usuario; solo afecta la lógica interna.
