@@ -331,6 +331,28 @@ class CoreQualityTests(unittest.TestCase):
         self.assertTrue(manager.is_onomatopoeia("ドン", "Japonés"))
         self.assertEqual(manager.translate("ドン", "Japonés", "Español"), "¡BUM!")
 
+    def test_onomatopoeia_dictionary_is_loaded_from_yaml_resource(self):
+        import yaml
+        from pathlib import Path
+
+        yaml_path = Path("Applications/resources/onomatopoeias/ja/onomatopoeias.yaml")
+        payload = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["language"], "Japonés")
+        self.assertTrue(any(entry["key"] == "impact" and "ドン" in entry.get("sources", []) for entry in payload["entries"]))
+
+    def test_japanese_free_text_onomatopoeia_similarity(self):
+        manager = OnomatopoeiaManager()
+
+        # Variantes con alargamiento, puntuación, hiragana y errores OCR típicos
+        # deben detectarse para poder conservarlas sin traducir cuando son free_text.
+        self.assertTrue(manager.is_free_text_onomatopoeia("ドォォンッ!!", "Japonés"))
+        self.assertTrue(manager.is_free_text_onomatopoeia("どーーん", "Japonés"))
+        self.assertTrue(manager.is_free_text_onomatopoeia("ドソ", "Japonés"))
+
+        # Una frase libre real no debe confundirse con SFX.
+        self.assertFalse(manager.is_free_text_onomatopoeia("こちらはあとがきです", "Japonés"))
+
     def test_renderer_accepts_clip_masks(self):
         img = np.full((120, 200, 3), 255, dtype=np.uint8)
         mask = np.zeros((80, 160), dtype=np.uint8)

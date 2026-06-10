@@ -1,0 +1,53 @@
+language: Italiano
+aliases:
+- it
+- ita
+- Italian
+- Italiano
+entries:
+- key: impact
+  target: BUM!
+- key: hit
+  target: BAM!
+- key: slash
+  target: ZAC!
+- key: step
+  target: TAP
+- key: footsteps
+  target: TAP TAP
+- key: heartbeat
+  target: TUM TUM
+- key: surprise
+  target: EH!
+- key: gasp
+  target: AH!
+- key: scream
+  target: AAAH!
+- key: laugh
+  target: AH AH
+- key: chuckle
+  target: EHEH
+- key: cry
+  target: BUA
+- key: silence
+  target: '...'
+- key: stare
+  target: FISSA
+- key: sparkle
+  target: LUCCICHIO
+- key: running
+  target: TAC TAC
+- key: rumble
+  target: GRRR
+- key: whisper
+  target: SUSSURRO
+- key: kiss
+  target: SMACK
+- key: doorbell
+  target: DIN DON
+- key: phone
+  target: DRIN DRIN
+- key: splash
+  target: SPLASH!
+- key: whoosh
+  target: FUUU!

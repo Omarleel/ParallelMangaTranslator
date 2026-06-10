@@ -1,0 +1,224 @@
+language: Japonés
+aliases:
+- ja
+- jp
+- jpn
+- Japanese
+- Japonés
+- Japones
+entries:
+- key: impact
+  target: ドン!
+  sources:
+  - ドン
+  - ドーン
+  - ズドン
+  - ガン
+  - ゴン
+  - どん
+  - どーん
+  - ドォン
+  - ドカ
+  - ドカン
+  - ドゴ
+  - ゴンッ
+  - ガーン
+  - ズーン
+  - ズドーン
+  - ドサ
+  - ドサッ
+  - ドタ
+  - ドタッ
+  - ドタン
+- key: hit
+  target: バン!
+  sources:
+  - バン
+  - パン
+  - ボコ
+  - バキ
+  - ガツ
+  - バンッ
+  - バァン
+  - パンッ
+  - パァン
+  - ベシ
+  - ペシ
+  - ビシ
+  - ビシッ
+  - バシ
+  - バシッ
+  - ボカ
+  - ボカッ
+  - ゲシ
+  - ガシ
+  - ガシッ
+- key: slash
+  target: ザシュ!
+  sources:
+  - ザシュ
+  - ザク
+  - スパ
+  - ザシュッ
+  - ザクッ
+  - ズバ
+  - ズバッ
+  - スパッ
+  - シャキン
+  - キン
+- key: step
+  target: トン
+  sources:
+  - トン
+  - タッ
+  - ザッ
+  - コツ
+  - コツン
+- key: footsteps
+  target: トコトコ
+  sources:
+  - トコトコ
+  - ザザッ
+  - コツコツ
+- key: heartbeat
+  target: ドキドキ
+  sources:
+  - ドキドキ
+  - ドキ
+  - ドキッ
+  - ドクン
+  - ドクドク
+  - ワクワク
+- key: surprise
+  target: ハッ!
+  sources:
+  - ハッ
+  - びく
+  - ビク
+  - ビクッ
+  - ギク
+  - ギクッ
+- key: gasp
+  target: はっ!
+  sources:
+  - はっ
+  - ハァ
+  - はぁ
+  - ゼェ
+  - ぜぇ
+- key: scream
+  target: キャー!
+  sources:
+  - キャー
+  - キャッ
+  - ギャー
+  - ワー
+- key: laugh
+  target: ハハ
+  sources:
+  - ハハ
+  - アハハ
+- key: chuckle
+  target: フフ
+  sources:
+  - フフ
+  - フッ
+  - クス
+  - クスクス
+  - ニヤ
+  - ニヤリ
+- key: cry
+  target: うう
+  sources:
+  - うう
+  - うっ
+  - ぐす
+  - グス
+  - グスッ
+  - しくしく
+  - シクシク
+- key: silence
+  target: シーン
+  sources:
+  - シーン
+  - しーん
+  - シーーン
+- key: stare
+  target: じー
+  sources:
+  - じー
+  - じっ
+  - ジッ
+  - ジー
+  - ジロ
+  - ジロッ
+- key: sparkle
+  target: キラキラ
+  sources:
+  - キラキラ
+  - キラ
+  - キラーン
+  - ピカ
+  - ピカッ
+  - ピカピカ
+- key: running
+  target: ダダダ
+  sources:
+  - ダダダ
+  - タタタ
+  - ドドド
+  - ダッ
+  - ダダッ
+- key: rumble
+  target: ゴゴゴ
+  sources:
+  - ゴゴゴ
+  - ゴオ
+  - ゴォ
+  - ゴォォ
+  - ゴロゴロ
+  - イライラ
+  - モヤモヤ
+- key: whisper
+  target: ヒソヒソ
+  sources:
+  - ヒソヒソ
+  - ヒソ
+  - ボソ
+  - ボソッ
+  - ぼそ
+  - ぼそっ
+- key: kiss
+  target: チュ
+  sources:
+  - チュ
+  - チュッ
+  - ちゅ
+  - ちゅっ
+- key: doorbell
+  target: ピンポーン
+  sources:
+  - ピンポーン
+- key: phone
+  target: プルル
+  sources:
+  - プルル
+- key: splash
+  target: バシャ
+  sources:
+  - バシャ
+  - ザバ
+  - ザバッ
+  - バシャッ
+  - ポタ
+  - ポタポタ
+- key: whoosh
+  target: ヒュッ
+  sources:
+  - シュッ
+  - ヒュ
+  - シュ
+  - ヒュッ
+  - ヒュー
+  - サッ
+  - ササッ

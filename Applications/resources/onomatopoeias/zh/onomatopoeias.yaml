@@ -1,0 +1,100 @@
+language: Chino
+aliases:
+- zh
+- zho
+- chi
+- Chinese
+- Chino
+entries:
+- key: impact
+  target: 砰!
+  sources:
+  - 砰
+  - 轰
+- key: hit
+  target: 啪!
+  sources:
+  - 啪
+  - 啪啪
+- key: slash
+  target: 唰!
+  sources:
+  - 唰
+- key: step
+  target: 嗒
+  sources:
+  - 嗒
+- key: footsteps
+  target: 嗒嗒
+  sources:
+  - 嗒嗒
+- key: heartbeat
+  target: 怦怦
+  sources:
+  - 怦怦
+- key: surprise
+  target: 啊!
+- key: gasp
+  target: 哈!
+  sources:
+  - 啊
+- key: scream
+  target: 啊啊!
+  sources:
+  - 啊啊
+- key: laugh
+  target: 哈哈
+  sources:
+  - 哈哈
+- key: chuckle
+  target: 呵呵
+  sources:
+  - 呵呵
+- key: cry
+  target: 呜呜
+  sources:
+  - 呜呜
+- key: silence
+  target: 静
+  sources:
+  - 静
+- key: stare
+  target: 盯
+  sources:
+  - 盯
+- key: sparkle
+  target: 闪闪
+  sources:
+  - 闪闪
+- key: running
+  target: 哒哒哒
+  sources:
+  - 哒哒哒
+- key: rumble
+  target: 轰隆
+  sources:
+  - 轰隆
+- key: whisper
+  target: 窃窃
+  sources:
+  - 窃窃
+- key: kiss
+  target: 啵
+  sources:
+  - 啵
+- key: doorbell
+  target: 叮咚
+  sources:
+  - 叮咚
+- key: phone
+  target: 铃铃
+  sources:
+  - 铃铃
+- key: splash
+  target: 哗啦
+  sources:
+  - 哗啦
+- key: whoosh
+  target: 呼
+  sources:
+  - 呼

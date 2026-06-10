@@ -1,0 +1,99 @@
+language: Coreano
+aliases:
+- ko
+- kor
+- Korean
+- Coreano
+entries:
+- key: impact
+  target: 쾅!
+  sources:
+  - 쾅
+  - 쿵
+- key: hit
+  target: 퍽!
+  sources:
+  - 퍽
+  - 짝
+- key: slash
+  target: 슥!
+  sources:
+  - 슥
+- key: step
+  target: 톡
+  sources:
+  - 톡
+- key: footsteps
+  target: 뚜벅뚜벅
+  sources:
+  - 뚜벅뚜벅
+- key: heartbeat
+  target: 두근두근
+  sources:
+  - 두근두근
+- key: surprise
+  target: 헉!
+- key: gasp
+  target: 헉!
+  sources:
+  - 헉
+- key: scream
+  target: 꺄악!
+  sources:
+  - 꺄악
+- key: laugh
+  target: 하하
+  sources:
+  - 하하
+- key: chuckle
+  target: 흐흐
+  sources:
+  - 흐흐
+- key: cry
+  target: 엉엉
+  sources:
+  - 엉엉
+- key: silence
+  target: 고요
+  sources:
+  - 고요
+- key: stare
+  target: 빤히
+  sources:
+  - 빤히
+- key: sparkle
+  target: 반짝반짝
+  sources:
+  - 반짝반짝
+- key: running
+  target: 다다다
+  sources:
+  - 다다다
+- key: rumble
+  target: 우르릉
+  sources:
+  - 우르릉
+- key: whisper
+  target: 소곤소곤
+  sources:
+  - 소곤소곤
+- key: kiss
+  target: 쪽
+  sources:
+  - 쪽
+- key: doorbell
+  target: 딩동
+  sources:
+  - 딩동
+- key: phone
+  target: 따르릉
+  sources:
+  - 따르릉
+- key: splash
+  target: 첨벙
+  sources:
+  - 첨벙
+- key: whoosh
+  target: 휙
+  sources:
+  - 휙

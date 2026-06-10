@@ -2,311 +2,111 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Dict, Optional
+from difflib import SequenceMatcher
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+
+import yaml
 
 
 class OnomatopoeiaManager:
     """
     Reconoce y adapta onomatopeyas frecuentes en manga/manhwa/manhua/cómic.
 
-    La idea no es traducir literalmente cada ruido, sino entregar una equivalencia
-    corta, natural y fácil de insertar en la imagen. Si no hay una equivalencia
-    segura, el flujo normal de traducción se mantiene como fallback.
+    Los diccionarios viven fuera del código, agrupados por idioma en:
+    Applications/resources/onomatopoeias/<codigo_idioma>/onomatopoeias.yaml
+
+    Cada entrada YAML usa una clave semántica compartida. `sources` son las
+    formas que pueden aparecer en OCR/texto fuente y `target` es la forma natural
+    para renderizar en ese idioma cuando el modo de onomatopeyas permite traducir.
     """
 
-    TARGET_BY_KEY: Dict[str, Dict[str, str]] = {
-        "impact": {
-            "Español": "¡BUM!",
-            "Inglés": "BOOM!",
-            "Portugués": "BUM!",
-            "Francés": "BOUM !",
-            "Italiano": "BUM!",
-            "Japonés": "ドン!",
-            "Coreano": "쾅!",
-            "Chino": "砰!",
-        },
-        "hit": {
-            "Español": "¡PAM!",
-            "Inglés": "BAM!",
-            "Portugués": "PÁ!",
-            "Francés": "BAM !",
-            "Italiano": "BAM!",
-            "Japonés": "バン!",
-            "Coreano": "퍽!",
-            "Chino": "啪!",
-        },
-        "slash": {
-            "Español": "¡ZAS!",
-            "Inglés": "SLASH!",
-            "Portugués": "ZÁS!",
-            "Francés": "SCHLAK !",
-            "Italiano": "ZAC!",
-            "Japonés": "ザシュ!",
-            "Coreano": "슥!",
-            "Chino": "唰!",
-        },
-        "step": {
-            "Español": "TAP",
-            "Inglés": "TAP",
-            "Portugués": "TOC",
-            "Francés": "TAP",
-            "Italiano": "TAP",
-            "Japonés": "トン",
-            "Coreano": "톡",
-            "Chino": "嗒",
-        },
-        "footsteps": {
-            "Español": "TAP TAP",
-            "Inglés": "TAP TAP",
-            "Portugués": "TOC TOC",
-            "Francés": "TAP TAP",
-            "Italiano": "TAP TAP",
-            "Japonés": "トコトコ",
-            "Coreano": "뚜벅뚜벅",
-            "Chino": "嗒嗒",
-        },
-        "heartbeat": {
-            "Español": "DOKI DOKI",
-            "Inglés": "THUMP THUMP",
-            "Portugués": "TUM TUM",
-            "Francés": "BOUM BOUM",
-            "Italiano": "TUM TUM",
-            "Japonés": "ドキドキ",
-            "Coreano": "두근두근",
-            "Chino": "怦怦",
-        },
-        "surprise": {
-            "Español": "¡EH!",
-            "Inglés": "HUH!",
-            "Portugués": "HÃ!",
-            "Francés": "HEIN !",
-            "Italiano": "EH!",
-            "Japonés": "ハッ!",
-            "Coreano": "헉!",
-            "Chino": "啊!",
-        },
-        "gasp": {
-            "Español": "¡AH!",
-            "Inglés": "GASP!",
-            "Portugués": "AH!",
-            "Francés": "AH !",
-            "Italiano": "AH!",
-            "Japonés": "はっ!",
-            "Coreano": "헉!",
-            "Chino": "哈!",
-        },
-        "scream": {
-            "Español": "¡AAAH!",
-            "Inglés": "AAAH!",
-            "Portugués": "AAAH!",
-            "Francés": "AAAH !",
-            "Italiano": "AAAH!",
-            "Japonés": "キャー!",
-            "Coreano": "꺄악!",
-            "Chino": "啊啊!",
-        },
-        "laugh": {
-            "Español": "JA JA",
-            "Inglés": "HA HA",
-            "Portugués": "HA HA",
-            "Francés": "HA HA",
-            "Italiano": "AH AH",
-            "Japonés": "ハハ",
-            "Coreano": "하하",
-            "Chino": "哈哈",
-        },
-        "chuckle": {
-            "Español": "JE JE",
-            "Inglés": "HEH HEH",
-            "Portugués": "HE HE",
-            "Francés": "HÉ HÉ",
-            "Italiano": "EHEH",
-            "Japonés": "フフ",
-            "Coreano": "흐흐",
-            "Chino": "呵呵",
-        },
-        "cry": {
-            "Español": "BUA",
-            "Inglés": "WAAH",
-            "Portugués": "BUÁ",
-            "Francés": "OUIN",
-            "Italiano": "BUA",
-            "Japonés": "うう",
-            "Coreano": "엉엉",
-            "Chino": "呜呜",
-        },
-        "silence": {
-            "Español": "...",
-            "Inglés": "...",
-            "Portugués": "...",
-            "Francés": "...",
-            "Italiano": "...",
-            "Japonés": "シーン",
-            "Coreano": "고요",
-            "Chino": "静",
-        },
-        "stare": {
-            "Español": "MIRA FIJO",
-            "Inglés": "STARE",
-            "Portugués": "ENCARA",
-            "Francés": "FIXE",
-            "Italiano": "FISSA",
-            "Japonés": "じー",
-            "Coreano": "빤히",
-            "Chino": "盯",
-        },
-        "sparkle": {
-            "Español": "BRILLO",
-            "Inglés": "SPARKLE",
-            "Portugués": "BRILHO",
-            "Francés": "ÉCLAT",
-            "Italiano": "LUCCICHIO",
-            "Japonés": "キラキラ",
-            "Coreano": "반짝반짝",
-            "Chino": "闪闪",
-        },
-        "running": {
-            "Español": "TAC TAC",
-            "Inglés": "DASH",
-            "Portugués": "TAC TAC",
-            "Francés": "TAC TAC",
-            "Italiano": "TAC TAC",
-            "Japonés": "ダダダ",
-            "Coreano": "다다다",
-            "Chino": "哒哒哒",
-        },
-        "rumble": {
-            "Español": "GRRR",
-            "Inglés": "RUMBLE",
-            "Portugués": "GRRR",
-            "Francés": "GRRR",
-            "Italiano": "GRRR",
-            "Japonés": "ゴゴゴ",
-            "Coreano": "우르릉",
-            "Chino": "轰隆",
-        },
-        "whisper": {
-            "Español": "SUSURRO",
-            "Inglés": "WHISPER",
-            "Portugués": "SUSSURRO",
-            "Francés": "CHUCHOTE",
-            "Italiano": "SUSSURRO",
-            "Japonés": "ヒソヒソ",
-            "Coreano": "소곤소곤",
-            "Chino": "窃窃",
-        },
-        "kiss": {
-            "Español": "MUAC",
-            "Inglés": "SMOOCH",
-            "Portugués": "SMACK",
-            "Francés": "SMACK",
-            "Italiano": "SMACK",
-            "Japonés": "チュ",
-            "Coreano": "쪽",
-            "Chino": "啵",
-        },
-        "doorbell": {
-            "Español": "DING DONG",
-            "Inglés": "DING DONG",
-            "Portugués": "DING DONG",
-            "Francés": "DING DONG",
-            "Italiano": "DIN DON",
-            "Japonés": "ピンポーン",
-            "Coreano": "딩동",
-            "Chino": "叮咚",
-        },
-        "phone": {
-            "Español": "RING RING",
-            "Inglés": "RING RING",
-            "Portugués": "TRIM TRIM",
-            "Francés": "DRING",
-            "Italiano": "DRIN DRIN",
-            "Japonés": "プルル",
-            "Coreano": "따르릉",
-            "Chino": "铃铃",
-        },
-        "splash": {
-            "Español": "¡CHOF!",
-            "Inglés": "SPLASH!",
-            "Portugués": "SPLASH!",
-            "Francés": "PLOUF !",
-            "Italiano": "SPLASH!",
-            "Japonés": "バシャ",
-            "Coreano": "첨벙",
-            "Chino": "哗啦",
-        },
-        "whoosh": {
-            "Español": "¡FIU!",
-            "Inglés": "WHOOSH!",
-            "Portugués": "VUSH!",
-            "Francés": "VOUF !",
-            "Italiano": "FUUU!",
-            "Japonés": "ヒュッ",
-            "Coreano": "휙",
-            "Chino": "呼",
-        },
-    }
+    DEFAULT_DATA_DIR = Path(__file__).resolve().parent / "resources" / "onomatopoeias"
 
+    TARGET_BY_KEY: Dict[str, Dict[str, str]] = {}
+    RAW_SOURCE_MAP: Dict[str, Dict[str, str]] = {}
     SOURCE_TO_KEY: Dict[str, str] = {}
-
-    RAW_SOURCE_MAP: Dict[str, Dict[str, str]] = {
-        "Japonés": {
-            "ドン": "impact", "ドーン": "impact", "ズドン": "impact", "ガン": "impact", "ゴン": "impact",
-            "バン": "hit", "パン": "hit", "ボコ": "hit", "バキ": "hit", "ガツ": "hit",
-            "ザシュ": "slash", "ザク": "slash", "スパ": "slash", "シュッ": "whoosh", "ヒュ": "whoosh",
-            "トン": "step", "トコトコ": "footsteps", "タッ": "step", "ダダダ": "running",
-            "ドキドキ": "heartbeat", "ハッ": "surprise", "はっ": "gasp", "キャー": "scream",
-            "ハハ": "laugh", "フフ": "chuckle", "うう": "cry", "シーン": "silence", "じー": "stare",
-            "キラキラ": "sparkle", "ゴゴゴ": "rumble", "ヒソヒソ": "whisper", "チュ": "kiss",
-            "ピンポーン": "doorbell", "プルル": "phone", "バシャ": "splash",
-        },
-        "Inglés": {
-            "boom": "impact", "booom": "impact", "kaboom": "impact", "thud": "impact", "slam": "impact",
-            "bam": "hit", "pow": "hit", "wham": "hit", "smack": "hit", "bonk": "hit",
-            "slash": "slash", "slice": "slash", "shing": "slash", "whoosh": "whoosh", "woosh": "whoosh",
-            "tap": "step", "tap tap": "footsteps", "step": "step", "dash": "running",
-            "thump thump": "heartbeat", "thump": "heartbeat", "gasp": "gasp", "huh": "surprise",
-            "aaah": "scream", "aah": "scream", "haha": "laugh", "ha ha": "laugh", "hehe": "chuckle",
-            "sob": "cry", "sniff": "cry", "silence": "silence", "stare": "stare", "sparkle": "sparkle",
-            "rumble": "rumble", "grrr": "rumble", "whisper": "whisper", "smooch": "kiss", "kiss": "kiss",
-            "ding dong": "doorbell", "ring ring": "phone", "splash": "splash",
-        },
-        "Español": {
-            "bum": "impact", "boom": "impact", "pum": "impact", "zas": "slash", "pam": "hit", "plaf": "hit",
-            "toc": "step", "toc toc": "footsteps", "tap tap": "footsteps", "tac tac": "running",
-            "doki doki": "heartbeat", "ah": "gasp", "eh": "surprise", "aaah": "scream",
-            "jaja": "laugh", "ja ja": "laugh", "jeje": "chuckle", "bua": "cry", "silencio": "silence",
-            "brillo": "sparkle", "grrr": "rumble", "susurro": "whisper", "muac": "kiss",
-            "ding dong": "doorbell", "ring ring": "phone", "chof": "splash", "fiu": "whoosh",
-        },
-        "Coreano": {
-            "쾅": "impact", "쿵": "impact", "퍽": "hit", "짝": "hit", "슥": "slash", "휙": "whoosh",
-            "톡": "step", "뚜벅뚜벅": "footsteps", "다다다": "running", "두근두근": "heartbeat",
-            "헉": "gasp", "꺄악": "scream", "하하": "laugh", "흐흐": "chuckle", "엉엉": "cry",
-            "고요": "silence", "빤히": "stare", "반짝반짝": "sparkle", "우르릉": "rumble",
-            "소곤소곤": "whisper", "쪽": "kiss", "딩동": "doorbell", "따르릉": "phone", "첨벙": "splash",
-        },
-        "Chino": {
-            "砰": "impact", "轰": "impact", "轰隆": "rumble", "啪": "hit", "啪啪": "hit",
-            "唰": "slash", "呼": "whoosh", "嗒": "step", "嗒嗒": "footsteps", "哒哒哒": "running",
-            "怦怦": "heartbeat", "啊": "gasp", "啊啊": "scream", "哈哈": "laugh", "呵呵": "chuckle",
-            "呜呜": "cry", "静": "silence", "盯": "stare", "闪闪": "sparkle", "窃窃": "whisper",
-            "啵": "kiss", "叮咚": "doorbell", "铃铃": "phone", "哗啦": "splash",
-        },
-    }
+    LANGUAGE_ALIASES: Dict[str, str] = {}
+    _DATA_LOADED = False
 
     _LATIN_REPEATED = re.compile(r"\b([a-z]{1,4})(?:[-\s]*\1){1,}\b", re.IGNORECASE)
     _MOSTLY_PUNCT_RE = re.compile(r"^[\W_]+$", re.UNICODE)
-    _JAPANESE_KANA_RE = re.compile(r"^[ぁ-ゟ゠-ヿーｯっ゛゜\s!！?？…\.・~〜\-]+$")
+    _JAPANESE_KANA_RE = re.compile(r"^[ぁ-ゟ゠-ヿーｯっ゛゜\s!！?？…\.｡。・･、,~〜\-]+$")
     _HANGUL_RE = re.compile(r"^[\uac00-\ud7af\s!！?？…\.~〜\-]+$")
     _CJK_RE = re.compile(r"^[\u4e00-\u9fff\s!！?？…\.~〜\-]+$")
 
     def __init__(self) -> None:
-        if not self.SOURCE_TO_KEY:
-            self._build_source_map()
+        self._ensure_data_loaded()
+
+    @classmethod
+    def _ensure_data_loaded(cls) -> None:
+        if cls._DATA_LOADED:
+            return
+        cls._load_yaml_dictionaries(cls.DEFAULT_DATA_DIR)
+        cls._build_source_map()
+        cls._DATA_LOADED = True
+
+    @classmethod
+    def _load_yaml_dictionaries(cls, data_dir: Path) -> None:
+        cls.TARGET_BY_KEY = {}
+        cls.RAW_SOURCE_MAP = {}
+        cls.LANGUAGE_ALIASES = {}
+
+        if not data_dir.exists():
+            return
+
+        for yaml_path in sorted(data_dir.glob("*/onomatopoeias.yaml")):
+            with yaml_path.open("r", encoding="utf-8") as fh:
+                payload = yaml.safe_load(fh) or {}
+
+            language = str(payload.get("language") or yaml_path.parent.name).strip()
+            if not language:
+                continue
+
+            aliases = payload.get("aliases") or []
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            for alias in [language, yaml_path.parent.name, *aliases]:
+                normalized_alias = cls.normalize_key(alias)
+                if normalized_alias:
+                    cls.LANGUAGE_ALIASES[normalized_alias] = language
+
+            entries = payload.get("entries") or []
+            if not isinstance(entries, list):
+                continue
+
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                key = str(entry.get("key") or "").strip()
+                if not key:
+                    continue
+
+                target = entry.get("target")
+                if target is not None and str(target).strip():
+                    cls.TARGET_BY_KEY.setdefault(key, {})[language] = str(target)
+
+                for source in cls._coerce_sources(entry):
+                    source = str(source).strip()
+                    if source:
+                        cls.RAW_SOURCE_MAP.setdefault(language, {})[source] = key
+
+    @staticmethod
+    def _coerce_sources(entry: Dict[str, Any]) -> list[str]:
+        sources: list[str] = []
+        for field in ("sources", "variants", "source"):
+            value = entry.get(field)
+            if value is None:
+                continue
+            if isinstance(value, str):
+                sources.append(value)
+            elif isinstance(value, list):
+                sources.extend(str(item) for item in value if item is not None)
+        return sources
 
     @classmethod
     def _build_source_map(cls) -> None:
+        cls.SOURCE_TO_KEY = {}
         for _lang, rows in cls.RAW_SOURCE_MAP.items():
             for source, key in rows.items():
                 cls.SOURCE_TO_KEY[cls.normalize_key(source)] = key
@@ -332,6 +132,14 @@ class OnomatopoeiaManager:
         text = re.sub(r"([a-z])\1{2,}", r"\1\1", text)
         return text
 
+    @classmethod
+    def _canonical_language(cls, idioma: Optional[str]) -> Optional[str]:
+        if not idioma:
+            return None
+        cls._ensure_data_loaded()
+        normalized = cls.normalize_key(idioma)
+        return cls.LANGUAGE_ALIASES.get(normalized, idioma)
+
     @staticmethod
     def _mostly_short(text: str) -> bool:
         stripped = re.sub(r"\s+", "", str(text or ""))
@@ -351,7 +159,108 @@ class OnomatopoeiaManager:
                 return True
         return False
 
+    @staticmethod
+    def _hiragana_to_katakana(text: str) -> str:
+        return "".join(
+            chr(ord(ch) + 0x60) if "ぁ" <= ch <= "ゖ" else ch
+            for ch in str(text or "")
+        )
+
+    @classmethod
+    def _normalize_for_similarity(cls, text: str, idioma: Optional[str] = None) -> str:
+        idioma = cls._canonical_language(idioma)
+        text = unicodedata.normalize("NFKC", str(text or "")).strip()
+        if idioma == "Japonés":
+            text = cls._hiragana_to_katakana(text)
+            text = re.sub(r'[\s　!！?？…｡。・･,.:;"\'“”‘’`´_*=+|/\\()[\]{}<>]+', "", text)
+            text = re.sub(r"[ー〜~\-]+", "", text)
+            text = text.replace("ッ", "").replace("っ", "")
+            small_to_large = str.maketrans("ァィゥェォャュョヮ", "アイウエオヤユヨワ")
+            text = text.translate(small_to_large)
+            # Confusiones frecuentes de OCR japonés en texto estilizado. La meta no
+            # es traducir mejor, sino evitar que estos SFX terminen en el traductor.
+            ocr_confusions = str.maketrans({
+                "ソ": "ン",
+                "ツ": "シ",
+                "ヅ": "ジ",
+                "口": "ロ",
+                "〇": "ロ",
+                "○": "ロ",
+            })
+            text = text.translate(ocr_confusions)
+            text = re.sub(r"(.)\1{2,}", r"\1\1", text)
+            return text
+        return cls.normalize_key(text).replace(" ", "")
+
+    @classmethod
+    def _source_rows_for_language(cls, idioma: Optional[str]) -> Dict[str, str]:
+        cls._ensure_data_loaded()
+        canonical = cls._canonical_language(idioma)
+        if canonical and canonical in cls.RAW_SOURCE_MAP:
+            return cls.RAW_SOURCE_MAP[canonical]
+        return {source: key for rows in cls.RAW_SOURCE_MAP.values() for source, key in rows.items()}
+
+    @classmethod
+    def _similarity_threshold(cls, normalized_text: str, idioma: Optional[str]) -> float:
+        idioma = cls._canonical_language(idioma)
+        length = len(normalized_text)
+        if idioma == "Japonés":
+            if length <= 2:
+                return 1.0
+            if length <= 4:
+                return 0.80
+            return 0.74
+        return 0.84
+
+    def similar_semantic_key(
+        self,
+        text: str,
+        idioma: Optional[str] = None,
+        min_similarity: Optional[float] = None,
+    ) -> Optional[Tuple[str, float, str]]:
+        """Devuelve (clave_semantica, similitud, fuente) si el texto se parece a una onomatopeya.
+
+        Se usa sobre todo para texto libre: allí el OCR suele deformar SFX
+        estilizados y no conviene mandarlos al traductor.
+        """
+        idioma = self._canonical_language(idioma)
+        normalized = self._normalize_for_similarity(text, idioma)
+        if not normalized:
+            return None
+
+        if idioma == "Japonés":
+            raw = unicodedata.normalize("NFKC", str(text or "")).strip()
+            if not self._mostly_short(raw):
+                return None
+            if not self._JAPANESE_KANA_RE.match(raw):
+                return None
+
+        best_key: Optional[str] = None
+        best_source = ""
+        best_score = 0.0
+        rows = self._source_rows_for_language(idioma)
+        for source, key in rows.items():
+            normalized_source = self._normalize_for_similarity(source, idioma)
+            if not normalized_source:
+                continue
+            if normalized == normalized_source:
+                return key, 1.0, source
+            score = SequenceMatcher(None, normalized, normalized_source).ratio()
+            if score > best_score:
+                best_key = key
+                best_source = source
+                best_score = score
+
+        threshold = min_similarity if min_similarity is not None else self._similarity_threshold(normalized, idioma)
+        if best_key is not None and best_score >= threshold:
+            return best_key, best_score, best_source
+        return None
+
+    def is_free_text_onomatopoeia(self, text: str, idioma: Optional[str] = None) -> bool:
+        return self.similar_semantic_key(text, idioma) is not None
+
     def semantic_key(self, text: str, idioma: Optional[str] = None) -> Optional[str]:
+        idioma = self._canonical_language(idioma)
         normalized = self.normalize_key(text)
         if not normalized:
             return None
@@ -413,6 +322,7 @@ class OnomatopoeiaManager:
         key = self.semantic_key(text, idioma_entrada)
         if key is None:
             return None
+        idioma_salida = self._canonical_language(idioma_salida) or idioma_salida
         translated = self.TARGET_BY_KEY.get(key, {}).get(idioma_salida)
         if not translated:
             return None

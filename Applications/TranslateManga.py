@@ -357,6 +357,31 @@ class TranslateManga:
         texto = self.suprimir_caracteres_repetidos(texto, min_reps=4)
         return self.suprimir_simbolos_y_espacios(texto)
 
+    def _es_onomatopeya_de_texto_libre(self, indice: int, texto: str) -> bool:
+        """Detecta SFX/onomatopeyas que el detector dejó como free_text.
+
+        En ese caso se conserva el original y no se envía al traductor normal/LLM,
+        porque las onomatopeyas grandes fuera de globo suelen ser parte del arte.
+        """
+        if not (self.ultimas_regiones and indice < len(self.ultimas_regiones)):
+            return False
+        region = self.ultimas_regiones[indice]
+        if region.kind != "free_text":
+            return False
+
+        candidatos = [texto, getattr(region, "source_text_hint", "")]
+        for candidato in candidatos:
+            if self.onomatopoeia_manager.is_free_text_onomatopoeia(candidato, self.idioma_entrada):
+                if hasattr(region, "metadata"):
+                    match = self.onomatopoeia_manager.similar_semantic_key(candidato, self.idioma_entrada)
+                    if match:
+                        _key, score, source = match
+                        region.metadata["free_text_onomatopoeia_keep"] = True
+                        region.metadata["free_text_onomatopoeia_similarity"] = round(float(score), 4)
+                        region.metadata["free_text_onomatopoeia_source"] = source
+                return True
+        return False
+
     def _clasificar_estilos_texto(self, textos: Sequence[str]) -> List[str]:
         estilos = [
             self.onomatopoeia_manager.render_style(texto, self.idioma_entrada)
@@ -365,6 +390,8 @@ class TranslateManga:
         if self.ultimas_regiones and len(self.ultimas_regiones) == len(estilos):
             for i, region in enumerate(self.ultimas_regiones):
                 if region.kind in {"sfx", "onomatopoeia"}:
+                    estilos[i] = "onomatopeya"
+                elif region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(i, textos[i]):
                     estilos[i] = "onomatopeya"
                 elif region.kind == "narration":
                     estilos[i] = "narracion"
@@ -378,7 +405,10 @@ class TranslateManga:
         Las posiciones con None quedan para el traductor normal o LLM.
         """
         parciales = []
-        for texto in textos:
+        for indice, texto in enumerate(textos):
+            if self._es_onomatopeya_de_texto_libre(indice, texto):
+                parciales.append(texto)
+                continue
             if self.onomatopoeia_mode in {"keep", "original", "none", "off"}:
                 parciales.append(texto if self.onomatopoeia_manager.is_onomatopoeia(texto, self.idioma_entrada) else None)
                 continue

@@ -1,0 +1,55 @@
+language: Francés
+aliases:
+- fr
+- fre
+- fra
+- French
+- Francés
+- Frances
+entries:
+- key: impact
+  target: BOUM !
+- key: hit
+  target: BAM !
+- key: slash
+  target: SCHLAK !
+- key: step
+  target: TAP
+- key: footsteps
+  target: TAP TAP
+- key: heartbeat
+  target: BOUM BOUM
+- key: surprise
+  target: HEIN !
+- key: gasp
+  target: AH !
+- key: scream
+  target: AAAH !
+- key: laugh
+  target: HA HA
+- key: chuckle
+  target: HÉ HÉ
+- key: cry
+  target: OUIN
+- key: silence
+  target: '...'
+- key: stare
+  target: FIXE
+- key: sparkle
+  target: ÉCLAT
+- key: running
+  target: TAC TAC
+- key: rumble
+  target: GRRR
+- key: whisper
+  target: CHUCHOTE
+- key: kiss
+  target: SMACK
+- key: doorbell
+  target: DING DONG
+- key: phone
+  target: DRING
+- key: splash
+  target: PLOUF !
+- key: whoosh
+  target: VOUF !

@@ -1,0 +1,103 @@
+language: Español
+aliases:
+- es
+- spa
+- Spanish
+- Español
+- Espanol
+entries:
+- key: impact
+  target: ¡BUM!
+  sources:
+  - bum
+  - boom
+  - pum
+- key: hit
+  target: ¡PAM!
+  sources:
+  - pam
+  - plaf
+- key: slash
+  target: ¡ZAS!
+  sources:
+  - zas
+- key: step
+  target: TAP
+  sources:
+  - toc
+- key: footsteps
+  target: TAP TAP
+  sources:
+  - toc toc
+  - tap tap
+- key: heartbeat
+  target: DOKI DOKI
+  sources:
+  - doki doki
+- key: surprise
+  target: ¡EH!
+  sources:
+  - eh
+- key: gasp
+  target: ¡AH!
+  sources:
+  - ah
+- key: scream
+  target: ¡AAAH!
+  sources:
+  - aaah
+- key: laugh
+  target: JA JA
+  sources:
+  - jaja
+  - ja ja
+- key: chuckle
+  target: JE JE
+  sources:
+  - jeje
+- key: cry
+  target: BUA
+  sources:
+  - bua
+- key: silence
+  target: '...'
+  sources:
+  - silencio
+- key: stare
+  target: MIRA FIJO
+- key: sparkle
+  target: BRILLO
+  sources:
+  - brillo
+- key: running
+  target: TAC TAC
+  sources:
+  - tac tac
+- key: rumble
+  target: GRRR
+  sources:
+  - grrr
+- key: whisper
+  target: SUSURRO
+  sources:
+  - susurro
+- key: kiss
+  target: MUAC
+  sources:
+  - muac
+- key: doorbell
+  target: DING DONG
+  sources:
+  - ding dong
+- key: phone
+  target: RING RING
+  sources:
+  - ring ring
+- key: splash
+  target: ¡CHOF!
+  sources:
+  - chof
+- key: whoosh
+  target: ¡FIU!
+  sources:
+  - fiu

@@ -1,0 +1,118 @@
+language: Inglés
+aliases:
+- en
+- eng
+- English
+- Inglés
+- Ingles
+entries:
+- key: impact
+  target: BOOM!
+  sources:
+  - boom
+  - booom
+  - kaboom
+  - thud
+  - slam
+- key: hit
+  target: BAM!
+  sources:
+  - bam
+  - pow
+  - wham
+  - smack
+  - bonk
+- key: slash
+  target: SLASH!
+  sources:
+  - slash
+  - slice
+  - shing
+- key: step
+  target: TAP
+  sources:
+  - tap
+  - step
+- key: footsteps
+  target: TAP TAP
+  sources:
+  - tap tap
+- key: heartbeat
+  target: THUMP THUMP
+  sources:
+  - thump thump
+  - thump
+- key: surprise
+  target: HUH!
+  sources:
+  - huh
+- key: gasp
+  target: GASP!
+  sources:
+  - gasp
+- key: scream
+  target: AAAH!
+  sources:
+  - aaah
+  - aah
+- key: laugh
+  target: HA HA
+  sources:
+  - haha
+  - ha ha
+- key: chuckle
+  target: HEH HEH
+  sources:
+  - hehe
+- key: cry
+  target: WAAH
+  sources:
+  - sob
+  - sniff
+- key: silence
+  target: '...'
+  sources:
+  - silence
+- key: stare
+  target: STARE
+  sources:
+  - stare
+- key: sparkle
+  target: SPARKLE
+  sources:
+  - sparkle
+- key: running
+  target: DASH
+  sources:
+  - dash
+- key: rumble
+  target: RUMBLE
+  sources:
+  - rumble
+  - grrr
+- key: whisper
+  target: WHISPER
+  sources:
+  - whisper
+- key: kiss
+  target: SMOOCH
+  sources:
+  - smooch
+  - kiss
+- key: doorbell
+  target: DING DONG
+  sources:
+  - ding dong
+- key: phone
+  target: RING RING
+  sources:
+  - ring ring
+- key: splash
+  target: SPLASH!
+  sources:
+  - splash
+- key: whoosh
+  target: WHOOSH!
+  sources:
+  - whoosh
+  - woosh

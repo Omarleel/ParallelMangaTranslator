@@ -1,0 +1,54 @@
+language: Portugués
+aliases:
+- pt
+- por
+- Portuguese
+- Portugués
+- Portugues
+entries:
+- key: impact
+  target: BUM!
+- key: hit
+  target: PÁ!
+- key: slash
+  target: ZÁS!
+- key: step
+  target: TOC
+- key: footsteps
+  target: TOC TOC
+- key: heartbeat
+  target: TUM TUM
+- key: surprise
+  target: HÃ!
+- key: gasp
+  target: AH!
+- key: scream
+  target: AAAH!
+- key: laugh
+  target: HA HA
+- key: chuckle
+  target: HE HE
+- key: cry
+  target: BUÁ
+- key: silence
+  target: '...'
+- key: stare
+  target: ENCARA
+- key: sparkle
+  target: BRILHO
+- key: running
+  target: TAC TAC
+- key: rumble
+  target: GRRR
+- key: whisper
+  target: SUSSURRO
+- key: kiss
+  target: SMACK
+- key: doorbell
+  target: DING DONG
+- key: phone
+  target: TRIM TRIM
+- key: splash
+  target: SPLASH!
+- key: whoosh
+  target: VUSH!
