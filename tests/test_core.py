@@ -240,6 +240,37 @@ class CoreQualityTests(unittest.TestCase):
 
         self.assertEqual(regions, [])
 
+
+    def test_renderer_uses_mask_inner_area_for_dialogue_fit(self):
+        # Simula un globo ovalado: la bbox rectangular es más ancha que la zona real
+        # disponible cerca de las curvas. El renderer debe ajustar el texto usando un
+        # rectángulo interior seguro antes de aplicar la máscara final.
+        img = np.full((180, 280, 3), 255, dtype=np.uint8)
+        mask = np.zeros((120, 200), dtype=np.uint8)
+        cv2.ellipse(mask, (100, 60), (95, 55), 0, 0, 360, 255, -1)
+
+        renderer = TextRenderer(absolute_min_font_size=7, inner_margin_ratio=0.03)
+        safe_x, safe_y, safe_w, safe_h = renderer._safe_text_area_from_mask(mask, 200, 120, "dialogo")
+
+        self.assertGreater(safe_x, 0)
+        self.assertGreater(safe_y, 0)
+        self.assertLess(safe_w, 200)
+        self.assertLess(safe_h, 120)
+
+        out = renderer.render(
+            img,
+            [(40, 30, 200, 120)],
+            ["ESTE TEXTO LARGO NO DEBE SER COMIDO POR LA MASCARA DEL GLOBO"],
+            text_styles=["dialogo"],
+            clip_masks=[mask],
+        )
+        crop = out[30:150, 40:240]
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        ink = gray < 245
+        eroded = cv2.erode(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (13, 13)), iterations=1) > 0
+
+        self.assertEqual(int(np.logical_and(ink, ~eroded).sum()), 0)
+
     def test_heuristic_bubble_detector_is_rejected(self):
         previous = os.environ.get("PMT_BUBBLE_DETECTOR")
         os.environ["PMT_BUBBLE_DETECTOR"] = "heuristic"
