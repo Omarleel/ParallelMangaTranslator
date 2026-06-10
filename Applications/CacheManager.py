@@ -11,12 +11,12 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 
+from Applications.Environment import env_bool
+
 
 def env_flag(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on", "si", "sí"}
+    """Alias histórico. El parseo centralizado vive en Applications.Environment."""
+    return env_bool(name, default)
 
 
 class PersistentJsonCache:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import re
 from collections import deque
 from typing import List, Sequence, Tuple
 
@@ -11,6 +10,7 @@ import torch
 
 from Applications.OcrManager import OcrManager
 from Applications.OnomatopoeiaManager import OnomatopoeiaManager
+from Applications.TextNormalization import OcrTextNormalizer
 from Applications.TextRendering import TextRenderer
 from Applications.TranslatorManager import TranslatorManager
 from Applications.ProcessingModels import TextRegion
@@ -36,6 +36,7 @@ class TranslateManga:
         )
         self.ocr_manager = OcrManager(idioma_entrada=idioma_entrada)
         self.text_renderer = TextRenderer(font_path=RUTA_FUENTE, min_font_size=TAMANIO_MINIMO_FUENTE)
+        self.text_normalizer = OcrTextNormalizer()
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.historial_contexto = deque(maxlen=3)
         self.ultimo_estilos_texto = []
@@ -315,47 +316,17 @@ class TranslateManga:
         textos = self.ocr_manager.extract_texts(imagenes_interes)
         return [self.normalizar_texto_ocr(texto) for texto in textos]
 
-    @staticmethod
-    def reemplazar_caracter_especial(texto):
-        caracteres_especiales = {
-            "。": ".",
-            "·": ".",
-            "？": "?",
-            "．": ".",
-            "・": ".",
-            "！": "!",
-            "０": "",
-            "“": '"',
-            "”": '"',
-            "’": "'",
-        }
-        for especial, normal in caracteres_especiales.items():
-            texto = texto.replace(especial, normal)
-        return texto
+    def reemplazar_caracter_especial(self, texto):
+        return self.text_normalizer.replace_special_characters(texto)
 
-    @staticmethod
-    def suprimir_caracteres_repetidos(texto, min_reps=3):
-        patron = r"(.)\1{{{},}}".format(min_reps)
+    def suprimir_caracteres_repetidos(self, texto, min_reps=3):
+        return self.text_normalizer.suppress_repeated_characters(texto, min_reps=min_reps)
 
-        def reemplazo(match):
-            return match.group(1) * 3
-
-        return re.sub(patron, reemplazo, texto)
-
-    @staticmethod
-    def suprimir_simbolos_y_espacios(texto):
-        for char in texto:
-            if char.isalnum():
-                return texto
-        return ""
+    def suprimir_simbolos_y_espacios(self, texto):
+        return self.text_normalizer.suppress_symbols_and_spaces(texto)
 
     def normalizar_texto_ocr(self, texto: str) -> str:
-        texto = self.reemplazar_caracter_especial(str(texto or ""))
-        texto = texto.replace("\u3000", " ")
-        texto = re.sub(r"[|]{2,}", "I", texto)
-        texto = re.sub(r"\s+", " ", texto).strip()
-        texto = self.suprimir_caracteres_repetidos(texto, min_reps=4)
-        return self.suprimir_simbolos_y_espacios(texto)
+        return self.text_normalizer.normalize_ocr_text(texto)
 
     def _es_onomatopeya_de_texto_libre(self, indice: int, texto: str) -> bool:
         """Detecta SFX/onomatopeyas que el detector dejó como free_text.
@@ -448,17 +419,10 @@ class TranslateManga:
             if traduccion is not None:
                 textos_traducidos_brutos[idx] = traduccion
 
-        textos_traducidos_limpios = []
-        for texto_traducido, estilo in zip(textos_traducidos_brutos, self.ultimo_estilos_texto):
-            texto_traducido = self.reemplazar_caracter_especial(texto_traducido).strip()
-            texto_traducido = re.sub(r"\s+", " ", texto_traducido)
-            # En onomatopeyas conviene conservar alargamientos moderados: BOOOM, Aaaah, grrr.
-            if estilo != "onomatopeya":
-                texto_traducido = self.suprimir_caracteres_repetidos(texto_traducido)
-            else:
-                texto_traducido = self.suprimir_caracteres_repetidos(texto_traducido, min_reps=7)
-            texto_traducido = self.suprimir_simbolos_y_espacios(texto_traducido)
-            textos_traducidos_limpios.append(texto_traducido)
+        textos_traducidos_limpios = [
+            self.text_normalizer.normalize_translated_text(texto_traducido, estilo)
+            for texto_traducido, estilo in zip(textos_traducidos_brutos, self.ultimo_estilos_texto)
+        ]
 
         if self.metodo_traduccion == "LLM":
             contexto_bilingue = [

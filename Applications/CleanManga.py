@@ -15,6 +15,7 @@ from Applications.inpaint import AOTInpainter, BNInpainter, LamaInpainterMPE, La
 from Applications.OnomatopoeiaManager import OnomatopoeiaManager
 from Applications.BubbleDetector import BubbleDetector
 from Applications.CacheManager import env_flag
+from Applications.Environment import env_int
 from Applications.ProcessingModels import TextRegion
 from .LoggingConfig import get_logger
 
@@ -146,13 +147,7 @@ class CleanManga:
 
     @staticmethod
     def _env_int(name: str, default: int) -> int:
-        raw = os.getenv(name)
-        if raw is None or not raw.strip():
-            return default
-        try:
-            return int(raw)
-        except ValueError:
-            return default
+        return env_int(name, default)
 
     @staticmethod
     def _clip_rect(rect: Tuple[int, int, int, int], image_shape) -> Tuple[int, int, int, int]:

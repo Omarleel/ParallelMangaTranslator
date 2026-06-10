@@ -4,9 +4,9 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
-import yaml
+from Applications.OnomatopoeiaRepository import OnomatopoeiaYamlRepository
 
 
 class OnomatopoeiaManager:
@@ -48,61 +48,11 @@ class OnomatopoeiaManager:
 
     @classmethod
     def _load_yaml_dictionaries(cls, data_dir: Path) -> None:
-        cls.TARGET_BY_KEY = {}
-        cls.RAW_SOURCE_MAP = {}
-        cls.LANGUAGE_ALIASES = {}
-
-        if not data_dir.exists():
-            return
-
-        for yaml_path in sorted(data_dir.glob("*/onomatopoeias.yaml")):
-            with yaml_path.open("r", encoding="utf-8") as fh:
-                payload = yaml.safe_load(fh) or {}
-
-            language = str(payload.get("language") or yaml_path.parent.name).strip()
-            if not language:
-                continue
-
-            aliases = payload.get("aliases") or []
-            if isinstance(aliases, str):
-                aliases = [aliases]
-            for alias in [language, yaml_path.parent.name, *aliases]:
-                normalized_alias = cls.normalize_key(alias)
-                if normalized_alias:
-                    cls.LANGUAGE_ALIASES[normalized_alias] = language
-
-            entries = payload.get("entries") or []
-            if not isinstance(entries, list):
-                continue
-
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                key = str(entry.get("key") or "").strip()
-                if not key:
-                    continue
-
-                target = entry.get("target")
-                if target is not None and str(target).strip():
-                    cls.TARGET_BY_KEY.setdefault(key, {})[language] = str(target)
-
-                for source in cls._coerce_sources(entry):
-                    source = str(source).strip()
-                    if source:
-                        cls.RAW_SOURCE_MAP.setdefault(language, {})[source] = key
-
-    @staticmethod
-    def _coerce_sources(entry: Dict[str, Any]) -> list[str]:
-        sources: list[str] = []
-        for field in ("sources", "variants", "source"):
-            value = entry.get(field)
-            if value is None:
-                continue
-            if isinstance(value, str):
-                sources.append(value)
-            elif isinstance(value, list):
-                sources.extend(str(item) for item in value if item is not None)
-        return sources
+        repository = OnomatopoeiaYamlRepository(data_dir, normalize_alias=cls.normalize_key)
+        dictionaries = repository.load()
+        cls.TARGET_BY_KEY = dictionaries.target_by_key
+        cls.RAW_SOURCE_MAP = dictionaries.raw_source_map
+        cls.LANGUAGE_ALIASES = dictionaries.language_aliases
 
     @classmethod
     def _build_source_map(cls) -> None:

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
+from Applications.BubbleDetectorConfig import BubbleDetectorSettings
+from Applications.Environment import env_float, env_int
+from Applications.Geometry import BoxGeometry
 from Applications.OnomatopoeiaManager import OnomatopoeiaManager
 from Applications.ProcessingModels import Box, TextRegion
 from Applications.ProfessionalBubbleDetector import ProfessionalBubbleCandidate, ProfessionalBubbleDetector
-from .CacheManager import env_flag
 from .LoggingConfig import get_logger
 
 logger = get_logger(__name__)
@@ -36,59 +36,10 @@ class BubbleDetector:
     def __init__(self, idioma_entrada: str = "Japonés") -> None:
         self.idioma_entrada = idioma_entrada
         self.onomatopoeia_manager = OnomatopoeiaManager()
-        self.split_merged_bubbles = env_flag("PMT_SPLIT_MERGED_BUBBLES", True)
-        self.split_min_ocr_groups = self._int_env("PMT_BUBBLE_SPLIT_MIN_OCR_GROUPS", 2)
-        self.split_min_gap_px = self._int_env("PMT_BUBBLE_SPLIT_MIN_GAP_PX", 18)
-        self.split_gap_ratio = self._float_env("PMT_BUBBLE_SPLIT_GAP_RATIO", 0.70)
-        # Una vez que las columnas OCR ya fueron agrupadas en clusters lógicos, la
-        # separación entre clusters debe ser más sensible que la separación entre
-        # grupos OCR individuales. Si usamos el mismo ratio conservador, dos globos
-        # reales muy próximos quedan atrapados dentro de una sola caja grande.
-        self.split_cluster_min_gap_px = self._int_env("PMT_BUBBLE_SPLIT_CLUSTER_MIN_GAP_PX", 12)
-        self.split_cluster_gap_ratio = self._float_env("PMT_BUBBLE_SPLIT_CLUSTER_GAP_RATIO", 0.35)
-        self.split_group_pad_x = self._float_env("PMT_BUBBLE_SPLIT_PAD_X", 0.85)
-        self.split_group_pad_y = self._float_env("PMT_BUBBLE_SPLIT_PAD_Y", 1.05)
-        self.split_group_min_pad = self._int_env("PMT_BUBBLE_SPLIT_MIN_PAD", 18)
-        # Agrupación OCR conservadora. En manga vertical, dos columnas cercanas pueden
-        # pertenecer a textos/globos distintos; por defecto NO fusionamos columnas CJK
-        # solo por estar cerca horizontalmente. Esto evita que una detección grande
-        # termine concatenando textos independientes.
-        self.ocr_merge_x_overlap = self._float_env("PMT_OCR_GROUP_MERGE_X_OVERLAP", 0.52)
-        self.ocr_merge_y_gap_ratio = self._float_env("PMT_OCR_GROUP_MERGE_Y_GAP_RATIO", 0.55)
-        self.ocr_merge_cjk_y_overlap = self._float_env("PMT_OCR_GROUP_MERGE_CJK_Y_OVERLAP", 0.80)
-        self.ocr_merge_cjk_x_gap_ratio = self._float_env("PMT_OCR_GROUP_MERGE_CJK_X_GAP_RATIO", 0.35)
-        self.ocr_merge_cjk_columns = env_flag("PMT_OCR_GROUP_MERGE_CJK_COLUMNS", False)
-        self.ocr_merge_line_y_overlap = self._float_env("PMT_OCR_GROUP_MERGE_LINE_Y_OVERLAP", 0.72)
-        self.ocr_merge_line_x_gap_ratio = self._float_env("PMT_OCR_GROUP_MERGE_LINE_X_GAP_RATIO", 0.20)
-        self.ocr_merge_line_horizontal_only = env_flag("PMT_OCR_GROUP_MERGE_LINE_HORIZONTAL_ONLY", True)
-        # Filtros de texto libre. Antes una línea horizontal que ocupase más del 50%
-        # del ancho de la página se descartaba siempre; eso elimina páginas tipo
-        # prólogo/afterword/créditos, donde el texto real es precisamente ancho.
-        # Ahora el rechazo depende de tamaño + señal OCR + confianza, con límites
-        # duros solo para manchas enormes que casi nunca son texto.
-        self.free_text_max_area_ratio = self._float_env("PMT_FREE_TEXT_MAX_AREA_RATIO", 0.12)
-        self.free_text_hard_max_area_ratio = self._float_env("PMT_FREE_TEXT_HARD_MAX_AREA_RATIO", 0.22)
-        self.free_text_max_width_ratio = self._float_env("PMT_FREE_TEXT_MAX_WIDTH_RATIO", 0.96)
-        self.free_text_max_height_ratio = self._float_env("PMT_FREE_TEXT_MAX_HEIGHT_RATIO", 0.60)
-        self.free_text_min_confidence = self._float_env("PMT_FREE_TEXT_MIN_CONFIDENCE", 0.08)
-        self.free_text_large_min_confidence = self._float_env("PMT_FREE_TEXT_LARGE_MIN_CONFIDENCE", 0.16)
-        # Recuperación visual conservadora para texto libre que EasyOCR no detecta.
-        # Se activa solo en huecos entre textos libres/SFX ya detectados y busca una
-        # columna de tinta negra con forma de texto vertical; no inventa globos.
-        self.free_text_gap_recovery = env_flag("PMT_FREE_TEXT_GAP_RECOVERY", True)
-        self.free_text_gap_max_px = self._int_env("PMT_FREE_TEXT_GAP_MAX_PX", 220)
-        self.free_text_gap_min_y_overlap = self._float_env("PMT_FREE_TEXT_GAP_MIN_Y_OVERLAP", 0.45)
-        self.free_text_gap_min_density = self._float_env("PMT_FREE_TEXT_GAP_MIN_INK_DENSITY", 0.025)
-        self.free_text_gap_max_density = self._float_env("PMT_FREE_TEXT_GAP_MAX_INK_DENSITY", 0.90)
-        self.merge_debug = env_flag("PMT_BUBBLE_MERGE_DEBUG", False)
-        self.merge_debug_pair_limit = self._int_env("PMT_BUBBLE_MERGE_DEBUG_PAIR_LIMIT", 160)
-        default_debug_dir = str(Path(os.getenv("PMT_PROJECT_DIR", "Dataset")) / "Outputs" / "DebugGlobos")
-        debug_dir_raw = os.getenv("PMT_BUBBLE_MERGE_DEBUG_DIR", "").strip()
-        self.merge_debug_dir = Path(debug_dir_raw or default_debug_dir)
+        self._apply_settings(BubbleDetectorSettings.from_env())
         self._debug_page_index = 0
         if self.merge_debug:
             logger.info("Bubble split debug activo: %s", BUBBLE_SPLIT_DEBUG_VERSION)
-        self.enabled = env_flag("PMT_BUBBLE_DETECTION", True)
         if not self.enabled:
             raise RuntimeError(
                 "PMT_BUBBLE_DETECTION=0 no está permitido en esta versión: la detección de globos "
@@ -96,25 +47,56 @@ class BubbleDetector:
             )
         self.professional_detector = ProfessionalBubbleDetector()
 
+    def _apply_settings(self, settings: BubbleDetectorSettings) -> None:
+        """Mantiene atributos históricos, pero agrupa la lectura de configuración."""
+        self.enabled = settings.enabled
+
+        self.split_merged_bubbles = settings.split.enabled
+        self.split_min_ocr_groups = settings.split.min_ocr_groups
+        self.split_min_gap_px = settings.split.min_gap_px
+        self.split_gap_ratio = settings.split.gap_ratio
+        self.split_cluster_min_gap_px = settings.split.cluster_min_gap_px
+        self.split_cluster_gap_ratio = settings.split.cluster_gap_ratio
+        self.split_group_pad_x = settings.split.group_pad_x
+        self.split_group_pad_y = settings.split.group_pad_y
+        self.split_group_min_pad = settings.split.group_min_pad
+
+        self.ocr_merge_x_overlap = settings.ocr_merge.x_overlap
+        self.ocr_merge_y_gap_ratio = settings.ocr_merge.y_gap_ratio
+        self.ocr_merge_cjk_y_overlap = settings.ocr_merge.cjk_y_overlap
+        self.ocr_merge_cjk_x_gap_ratio = settings.ocr_merge.cjk_x_gap_ratio
+        self.ocr_merge_cjk_columns = settings.ocr_merge.cjk_columns
+        self.ocr_merge_line_y_overlap = settings.ocr_merge.line_y_overlap
+        self.ocr_merge_line_x_gap_ratio = settings.ocr_merge.line_x_gap_ratio
+        self.ocr_merge_line_horizontal_only = settings.ocr_merge.line_horizontal_only
+
+        self.free_text_max_area_ratio = settings.free_text.max_area_ratio
+        self.free_text_hard_max_area_ratio = settings.free_text.hard_max_area_ratio
+        self.free_text_max_width_ratio = settings.free_text.max_width_ratio
+        self.free_text_max_height_ratio = settings.free_text.max_height_ratio
+        self.free_text_min_confidence = settings.free_text.min_confidence
+        self.free_text_large_min_confidence = settings.free_text.large_min_confidence
+        self.free_text_gap_recovery = settings.free_text.gap_recovery
+        self.free_text_gap_max_px = settings.free_text.gap_max_px
+        self.free_text_gap_min_y_overlap = settings.free_text.gap_min_y_overlap
+        self.free_text_gap_min_density = settings.free_text.gap_min_density
+        self.free_text_gap_max_density = settings.free_text.gap_max_density
+
+        self.merge_debug = settings.merge_debug.enabled
+        self.merge_debug_pair_limit = settings.merge_debug.pair_limit
+        self.merge_debug_dir = settings.merge_debug.directory
+
     @staticmethod
     def _float_env(name: str, default: float) -> float:
-        try:
-            return float(os.getenv(name, str(default)))
-        except (TypeError, ValueError):
-            return default
+        return env_float(name, default)
 
     @staticmethod
     def _int_env(name: str, default: int) -> int:
-        try:
-            return int(float(os.getenv(name, str(default))))
-        except (TypeError, ValueError):
-            return default
+        return env_int(name, default)
 
     @staticmethod
     def _to_rect(detection) -> Box:
-        points = np.array(detection[0], dtype=np.float32)
-        x, y, w, h = cv2.boundingRect(points.astype(np.int32))
-        return int(x), int(y), int(w), int(h)
+        return BoxGeometry.from_detection(detection)
 
     @staticmethod
     def _text(detection) -> str:
@@ -132,53 +114,31 @@ class BubbleDetector:
 
     @staticmethod
     def _area(box: Box) -> int:
-        return max(0, box[2]) * max(0, box[3])
+        return BoxGeometry.area(box)
 
     @staticmethod
     def _union(a: Box, b: Box) -> Box:
-        ax, ay, aw, ah = a
-        bx, by, bw, bh = b
-        x1 = min(ax, bx)
-        y1 = min(ay, by)
-        x2 = max(ax + aw, bx + bw)
-        y2 = max(ay + ah, by + bh)
-        return x1, y1, max(1, x2 - x1), max(1, y2 - y1)
+        return BoxGeometry.union(a, b)
 
     @staticmethod
     def _intersection_area(a: Box, b: Box) -> int:
-        ax, ay, aw, ah = a
-        bx, by, bw, bh = b
-        x1 = max(ax, bx)
-        y1 = max(ay, by)
-        x2 = min(ax + aw, bx + bw)
-        y2 = min(ay + ah, by + bh)
-        return max(0, x2 - x1) * max(0, y2 - y1)
+        return BoxGeometry.intersection_area(a, b)
 
     @staticmethod
     def _overlap_ratio_1d(a1: int, a2: int, b1: int, b2: int) -> float:
-        inter = max(0, min(a2, b2) - max(a1, b1))
-        denom = max(1, min(a2 - a1, b2 - b1))
-        return inter / denom
+        return BoxGeometry.overlap_ratio_1d(a1, a2, b1, b2)
 
     @staticmethod
     def _center(box: Box) -> Tuple[float, float]:
-        x, y, w, h = box
-        return x + w / 2.0, y + h / 2.0
+        return BoxGeometry.center(box)
 
     @staticmethod
     def _point_inside_box(point: Tuple[float, float], box: Box) -> bool:
-        px, py = point
-        x, y, w, h = box
-        return x <= px <= x + w and y <= py <= y + h
+        return BoxGeometry.point_inside_box(point, box)
 
     @staticmethod
     def _point_inside_mask(point: Tuple[float, float], mask: np.ndarray) -> bool:
-        if mask is None or mask.size == 0:
-            return False
-        px, py = int(round(point[0])), int(round(point[1]))
-        if py < 0 or px < 0 or py >= mask.shape[0] or px >= mask.shape[1]:
-            return False
-        return bool(mask[py, px] > 0)
+        return BoxGeometry.point_inside_mask(point, mask)
 
     @staticmethod
     def _label_is_sfx(label: str) -> bool:
@@ -445,14 +405,7 @@ class BubbleDetector:
 
     @staticmethod
     def _expand_box(box: Box, width: int, height: int, ratio_x: float, ratio_y: float, min_pad: int = 18) -> Box:
-        x, y, w, h = box
-        pad_x = max(min_pad, int(round(w * ratio_x)))
-        pad_y = max(min_pad, int(round(h * ratio_y)))
-        x1 = max(0, x - pad_x)
-        y1 = max(0, y - pad_y)
-        x2 = min(width, x + w + pad_x)
-        y2 = min(height, y + h + pad_y)
-        return x1, y1, max(1, x2 - x1), max(1, y2 - y1)
+        return BoxGeometry.expand(box, width, height, ratio_x, ratio_y, min_pad)
 
     def _text_box_mask(self, image_shape, box: Box, kind: str = "free_text") -> Tuple[np.ndarray, Box, float, str]:
         """Máscara para texto libre/SFX; no intenta detectar globos."""

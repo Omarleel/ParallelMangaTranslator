@@ -9,6 +9,8 @@ import cv2
 import numpy as np
 
 from Applications.CacheManager import env_flag
+from Applications.Environment import env_float, env_int
+from Applications.Geometry import BoxGeometry
 from Applications.ProcessingModels import Box
 from Applications.LoggingConfig import get_logger
 
@@ -55,17 +57,11 @@ class ProfessionalBubbleDetector:
 
     @staticmethod
     def _float_env(name: str, default: float) -> float:
-        try:
-            return float(os.getenv(name, str(default)))
-        except ValueError:
-            return default
+        return env_float(name, default)
 
     @staticmethod
     def _int_env(name: str, default: int) -> int:
-        try:
-            return int(float(os.getenv(name, str(default))))
-        except ValueError:
-            return default
+        return env_int(name, default)
 
     @staticmethod
     def _safe_label(names, cls_id: int) -> str:
@@ -122,12 +118,7 @@ class ProfessionalBubbleDetector:
 
     @staticmethod
     def _clip_box(box: Box, width: int, height: int) -> Box:
-        x, y, w, h = box
-        x1 = max(0, min(width - 1, x))
-        y1 = max(0, min(height - 1, y))
-        x2 = max(x1 + 1, min(width, x + w))
-        y2 = max(y1 + 1, min(height, y + h))
-        return x1, y1, x2 - x1, y2 - y1
+        return BoxGeometry.clip(box, width, height)
 
     @staticmethod
     def _mask_from_box(box: Box, shape) -> np.ndarray:

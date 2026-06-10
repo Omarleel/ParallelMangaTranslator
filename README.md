@@ -146,3 +146,15 @@ Dataset/Outputs/Metricas/reporte.json
 ```
 
 Ahí puedes revisar duración, globos detectados, onomatopeyas, OCR vacío, traducciones vacías y páginas fallidas.
+
+## Organización interna
+
+El código mantiene las firmas públicas del pipeline, pero las responsabilidades transversales se separaron para que sea más fácil mantenerlo:
+
+- `Applications/Environment.py`: lectura segura de variables de entorno y publicación de valores por defecto.
+- `Applications/Geometry.py`: operaciones comunes sobre cajas `x, y, w, h`.
+- `Applications/BubbleDetectorConfig.py`: parámetros del detector profesional y filtros de texto libre.
+- `Applications/OnomatopoeiaRepository.py`: carga de diccionarios YAML de onomatopeyas; la detección/traducción sigue en `OnomatopoeiaManager`.
+- `Applications/TextNormalization.py`: normalización de texto OCR/traducido antes de traducir o renderizar.
+
+`config.yaml` es la fuente recomendada para la configuración no privada. `.env` debe reservarse para secretos como claves API y no debería versionarse.
