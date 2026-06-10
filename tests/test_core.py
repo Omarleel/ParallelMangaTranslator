@@ -240,6 +240,40 @@ class CoreQualityTests(unittest.TestCase):
 
         self.assertEqual(regions, [])
 
+    def test_free_text_gap_recovery_adds_missed_vertical_column(self):
+        # EasyOCR puede detectar las columnas laterales de texto libre y saltarse
+        # una columna central con outline/trama. El fallback debe crear una
+        # región extra solo para texto libre; así la limpieza y el OCR por recorte
+        # tienen una segunda oportunidad.
+        img = np.full((360, 360, 3), 255, dtype=np.uint8)
+        left = ([[35, 55], [85, 55], [85, 285], [35, 285]], "なってる", 0.92)
+        right = ([[265, 45], [315, 45], [315, 305], [265, 305]], "俺いつの間にか", 0.91)
+
+        # Columna central omitida por el OCR global: caracteres negros separados.
+        for cy in [72, 118, 164, 210, 256]:
+            cv2.rectangle(img, (160, cy), (199, cy + 31), (0, 0, 0), -1)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [], [left, right])
+        recovered = [r for r in regions if r.metadata.get("detector") == "visual_free_text_gap"]
+
+        self.assertEqual(len(recovered), 1)
+        self.assertEqual(recovered[0].kind, "free_text")
+        self.assertEqual(recovered[0].detections_count, 0)
+        self.assertEqual(recovered[0].metadata.get("free_text_filter_reason"), "visual_gap_recovery")
+        self.assertTrue(130 <= recovered[0].text_bbox[0] <= 170)
+
+    def test_free_text_gap_recovery_ignores_thin_panel_line(self):
+        img = np.full((360, 360, 3), 255, dtype=np.uint8)
+        left = ([[35, 55], [85, 55], [85, 285], [35, 285]], "なってる", 0.92)
+        right = ([[265, 45], [315, 45], [315, 305], [265, 305]], "俺いつの間にか", 0.91)
+        cv2.line(img, (178, 30), (178, 330), (0, 0, 0), 2)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [], [left, right])
+
+        self.assertFalse(any(r.metadata.get("detector") == "visual_free_text_gap" for r in regions))
+
 
     def test_renderer_uses_mask_inner_area_for_dialogue_fit(self):
         # Simula un globo ovalado: la bbox rectangular es más ancha que la zona real

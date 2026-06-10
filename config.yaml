@@ -73,6 +73,13 @@ quality:
   free_text_max_height_ratio: 0.60
   free_text_min_confidence: 0.08
   free_text_large_min_confidence: 0.16
+  # Recupera columnas de texto libre que el OCR global no detectó, solo cuando
+  # aparecen como tinta vertical en el hueco entre dos textos libres/SFX ya detectados.
+  free_text_gap_recovery: true
+  free_text_gap_max_px: 220
+  free_text_gap_min_y_overlap: 0.45
+  free_text_gap_min_ink_density: 0.025
+  free_text_gap_max_ink_density: 0.90
   # Activa archivos técnicos para tests en Dataset/Outputs/DebugGlobos.
   bubble_merge_debug: true
   bubble_merge_debug_dir: ""

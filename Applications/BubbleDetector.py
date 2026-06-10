@@ -72,6 +72,14 @@ class BubbleDetector:
         self.free_text_max_height_ratio = self._float_env("PMT_FREE_TEXT_MAX_HEIGHT_RATIO", 0.60)
         self.free_text_min_confidence = self._float_env("PMT_FREE_TEXT_MIN_CONFIDENCE", 0.08)
         self.free_text_large_min_confidence = self._float_env("PMT_FREE_TEXT_LARGE_MIN_CONFIDENCE", 0.16)
+        # Recuperación visual conservadora para texto libre que EasyOCR no detecta.
+        # Se activa solo en huecos entre textos libres/SFX ya detectados y busca una
+        # columna de tinta negra con forma de texto vertical; no inventa globos.
+        self.free_text_gap_recovery = env_flag("PMT_FREE_TEXT_GAP_RECOVERY", True)
+        self.free_text_gap_max_px = self._int_env("PMT_FREE_TEXT_GAP_MAX_PX", 220)
+        self.free_text_gap_min_y_overlap = self._float_env("PMT_FREE_TEXT_GAP_MIN_Y_OVERLAP", 0.45)
+        self.free_text_gap_min_density = self._float_env("PMT_FREE_TEXT_GAP_MIN_INK_DENSITY", 0.025)
+        self.free_text_gap_max_density = self._float_env("PMT_FREE_TEXT_GAP_MAX_INK_DENSITY", 0.90)
         self.merge_debug = env_flag("PMT_BUBBLE_MERGE_DEBUG", False)
         self.merge_debug_pair_limit = self._int_env("PMT_BUBBLE_MERGE_DEBUG_PAIR_LIMIT", 160)
         default_debug_dir = str(Path(os.getenv("PMT_PROJECT_DIR", "Dataset")) / "Outputs" / "DebugGlobos")
@@ -652,6 +660,17 @@ class BubbleDetector:
         x, y, w, h = cv2.boundingRect(pts)
         return int(x), int(y), int(w), int(h)
 
+    @staticmethod
+    def _clip_box_to_image(box: Box, width_img: int, height_img: int) -> Box:
+        x, y, w, h = box
+        if width_img <= 0 or height_img <= 0:
+            return 0, 0, 1, 1
+        x = int(max(0, min(width_img - 1, x)))
+        y = int(max(0, min(height_img - 1, y)))
+        x2 = int(max(x + 1, min(width_img, x + max(1, w))))
+        y2 = int(max(y + 1, min(height_img, y + max(1, h))))
+        return x, y, x2 - x, y2 - y
+
     def _detections_box(self, detections: Sequence) -> Box:
         boxes = [self._to_rect(det) for det in detections]
         merged = boxes[0]
@@ -1124,6 +1143,11 @@ class BubbleDetector:
                     "free_text_max_height_ratio": self.free_text_max_height_ratio,
                     "free_text_min_confidence": self.free_text_min_confidence,
                     "free_text_large_min_confidence": self.free_text_large_min_confidence,
+                    "free_text_gap_recovery": self.free_text_gap_recovery,
+                    "free_text_gap_max_px": self.free_text_gap_max_px,
+                    "free_text_gap_min_y_overlap": self.free_text_gap_min_y_overlap,
+                    "free_text_gap_min_ink_density": self.free_text_gap_min_density,
+                    "free_text_gap_max_ink_density": self.free_text_gap_max_density,
                     "bubble_merge_debug_pair_limit": self.merge_debug_pair_limit,
                 },
                 "records": list(debug_records),
@@ -1189,6 +1213,147 @@ class BubbleDetector:
                 },
             ))
         return free_regions
+
+    def _text_like_ink_bbox_in_gap(self, image: np.ndarray, gap_box: Box) -> Optional[Box]:
+        """Busca texto libre vertical que quedó sin OCR dentro de un hueco.
+
+        Este fallback no traduce por sí solo: solo crea una región para que la
+        etapa normal de OCR sobre recorte vuelva a intentarlo y para que la
+        máscara limpie el original. Se mantiene deliberadamente conservador y
+        se limita a huecos entre textos libres ya encontrados.
+        """
+        img_h, img_w = image.shape[:2]
+        x, y, w, h = self._clip_box_to_image(gap_box, img_w, img_h)
+        if w < 16 or h < 42:
+            return None
+
+        crop = image[y:y + h, x:x + w]
+        if crop.size == 0:
+            return None
+
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        # Umbral oscuro estricto: evita seleccionar tramas grises/fondos.
+        dark = np.uint8(gray <= 120) * 255
+
+        # El texto japonés vertical suele aparecer como caracteres separados;
+        # cerramos verticalmente para que una misma columna forme un componente.
+        kernel_h = max(7, min(31, int(round(h * 0.055))))
+        kernel_w = max(3, min(9, int(round(w * 0.055))))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_w, kernel_h))
+        grouped = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, kernel, iterations=1)
+        grouped = cv2.dilate(grouped, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 5)), iterations=1)
+
+        num_labels, labels, stats, _centroids = cv2.connectedComponentsWithStats(grouped, connectivity=8)
+        candidates: List[Box] = []
+        for label_idx in range(1, num_labels):
+            cx, cy, cw, ch, area = [int(v) for v in stats[label_idx]]
+            if cw < 12 or ch < max(42, int(h * 0.28)):
+                continue
+            aspect = ch / max(1, cw)
+            if aspect < 1.35:
+                continue
+            # La morfología rellena huecos para conectar caracteres; la densidad
+            # se mide sobre la tinta oscura original para no castigar letras con
+            # outline ni aceptar bloques sólidos por accidente.
+            original_ink = int(cv2.countNonZero(dark[cy:cy + ch, cx:cx + cw]))
+            density = original_ink / max(1, cw * ch)
+            if density < self.free_text_gap_min_density or density > self.free_text_gap_max_density:
+                continue
+            # Rechaza líneas de panel muy finas o masas enormes que cubren casi todo el hueco.
+            if cw <= 6 or (cw > w * 0.92 and ch > h * 0.92):
+                continue
+            candidates.append((x + cx, y + cy, cw, ch))
+
+        if not candidates:
+            return None
+
+        merged = candidates[0]
+        for box in candidates[1:]:
+            merged = self._union(merged, box)
+
+        mx, my, mw, mh = merged
+        # Validación final contra el tamaño del hueco.
+        if mw < 14 or mh < max(48, int(h * 0.30)):
+            return None
+        if mh / max(1, mw) < 1.25:
+            return None
+
+        pad_x = max(4, min(12, int(round(mw * 0.12))))
+        pad_y = max(5, min(18, int(round(mh * 0.08))))
+        return self._clip_box_to_image((mx - pad_x, my - pad_y, mw + 2 * pad_x, mh + 2 * pad_y), img_w, img_h)
+
+    def _recover_free_text_gaps(self, image: np.ndarray, regions: Sequence[TextRegion]) -> List[TextRegion]:
+        if not self.free_text_gap_recovery:
+            return []
+        text_regions = [r for r in regions if r.kind in {"free_text", "sfx"}]
+        if len(text_regions) < 2:
+            return []
+
+        recovered: List[TextRegion] = []
+        seen_boxes: List[Box] = []
+        height, width = image.shape[:2]
+
+        ordered = sorted(text_regions, key=lambda r: (r.bbox[1] // 60, r.bbox[0]))
+        for i, left in enumerate(ordered):
+            lx, ly, lw, lh = left.bbox
+            for right in ordered[i + 1:]:
+                rx, ry, rw, rh = right.bbox
+                # Solo pares izquierda-derecha; si se cruzan, no hay hueco fiable.
+                if rx <= lx + lw:
+                    continue
+                gap_x = rx - (lx + lw)
+                if gap_x < 10 or gap_x > self.free_text_gap_max_px:
+                    continue
+
+                y_overlap = self._overlap_ratio_1d(ly, ly + lh, ry, ry + rh)
+                if y_overlap < self.free_text_gap_min_y_overlap:
+                    continue
+
+                y1 = max(0, min(ly, ry) - max(8, int(round(min(lh, rh) * 0.05))))
+                y2 = min(height, max(ly + lh, ry + rh) + max(8, int(round(min(lh, rh) * 0.05))))
+                # Recorta un poco contra los textos vecinos para no absorber su borde/outline.
+                x1 = max(0, lx + lw + max(2, int(round(gap_x * 0.06))))
+                x2 = min(width, rx - max(2, int(round(gap_x * 0.06))))
+                if x2 <= x1 or y2 <= y1:
+                    continue
+
+                candidate_box = self._text_like_ink_bbox_in_gap(image, (x1, y1, x2 - x1, y2 - y1))
+                if candidate_box is None:
+                    continue
+
+                # Evita duplicar o invadir regiones ya existentes.
+                candidate_area = max(1, self._area(candidate_box))
+                duplicate = False
+                for existing in list(regions) + recovered:
+                    overlap = self._intersection_area(candidate_box, existing.bbox) / candidate_area
+                    if overlap > 0.20:
+                        duplicate = True
+                        break
+                if duplicate:
+                    continue
+                if any(self._intersection_area(candidate_box, box) / candidate_area > 0.20 for box in seen_boxes):
+                    continue
+
+                mask, bbox, score, source = self._text_box_mask(image.shape, candidate_box, kind="free_text")
+                recovered.append(TextRegion(
+                    bbox=bbox,
+                    text_bbox=candidate_box,
+                    mask=mask,
+                    kind="free_text",
+                    confidence=score,
+                    source_text_hint="",
+                    detections_count=0,
+                    metadata={
+                        "mask_source": source,
+                        "detector": "visual_free_text_gap",
+                        "region_flow": "bubble_first_pretrained_only",
+                        "ocr_scope": "free_text_visual_gap_retry",
+                        "free_text_filter_reason": "visual_gap_recovery",
+                    },
+                ))
+                seen_boxes.append(candidate_box)
+
+        return recovered
     
     def build_regions_from_bubbles_and_text(
         self,
@@ -1214,6 +1379,7 @@ class BubbleDetector:
                 continue
             remaining.append(det)
         regions.extend(self._free_text_regions_from_detections(image, remaining))
+        regions.extend(self._recover_free_text_gaps(image, regions))
         merged_regions = self._merge_region_masks(regions)
         self._save_merge_debug_artifacts(image, merged_regions, debug_records)
         return merged_regions
