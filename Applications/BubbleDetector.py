@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -60,6 +61,17 @@ class BubbleDetector:
         self.ocr_merge_line_y_overlap = self._float_env("PMT_OCR_GROUP_MERGE_LINE_Y_OVERLAP", 0.72)
         self.ocr_merge_line_x_gap_ratio = self._float_env("PMT_OCR_GROUP_MERGE_LINE_X_GAP_RATIO", 0.20)
         self.ocr_merge_line_horizontal_only = env_flag("PMT_OCR_GROUP_MERGE_LINE_HORIZONTAL_ONLY", True)
+        # Filtros de texto libre. Antes una línea horizontal que ocupase más del 50%
+        # del ancho de la página se descartaba siempre; eso elimina páginas tipo
+        # prólogo/afterword/créditos, donde el texto real es precisamente ancho.
+        # Ahora el rechazo depende de tamaño + señal OCR + confianza, con límites
+        # duros solo para manchas enormes que casi nunca son texto.
+        self.free_text_max_area_ratio = self._float_env("PMT_FREE_TEXT_MAX_AREA_RATIO", 0.12)
+        self.free_text_hard_max_area_ratio = self._float_env("PMT_FREE_TEXT_HARD_MAX_AREA_RATIO", 0.22)
+        self.free_text_max_width_ratio = self._float_env("PMT_FREE_TEXT_MAX_WIDTH_RATIO", 0.96)
+        self.free_text_max_height_ratio = self._float_env("PMT_FREE_TEXT_MAX_HEIGHT_RATIO", 0.60)
+        self.free_text_min_confidence = self._float_env("PMT_FREE_TEXT_MIN_CONFIDENCE", 0.08)
+        self.free_text_large_min_confidence = self._float_env("PMT_FREE_TEXT_LARGE_MIN_CONFIDENCE", 0.16)
         self.merge_debug = env_flag("PMT_BUBBLE_MERGE_DEBUG", False)
         self.merge_debug_pair_limit = self._int_env("PMT_BUBBLE_MERGE_DEBUG_PAIR_LIMIT", 160)
         default_debug_dir = str(Path(os.getenv("PMT_PROJECT_DIR", "Dataset")) / "Outputs" / "DebugGlobos")
@@ -189,8 +201,62 @@ class BubbleDetector:
             merged = self._union(merged, box)
         _x, _y, w, h = merged
         aspect = max(w, h) / max(1, min(w, h))
-        compact_len = len(text.replace(" ", ""))
-        return aspect >= 4.0 and compact_len <= 10
+        compact_text = re.sub(r"\s+", "", text)
+        compact_len = len(compact_text)
+        # Una línea muy horizontal y corta puede ser un SFX, pero en páginas de
+        # notas los renglones japoneses largos también son muy anchos. Si contiene
+        # hiragana/kanji suficientes para parecer frase, no lo clasifiques como SFX
+        # solo por proporción.
+        looks_sentence_like = compact_len >= 7 and bool(re.search(r"[\u3040-\u309f\u3400-\u9fff]", compact_text))
+        return aspect >= 4.0 and compact_len <= 10 and not looks_sentence_like
+
+    @staticmethod
+    def _has_meaningful_text_signal(text: str) -> bool:
+        """Devuelve True si el OCR contiene letras/números/CJK reales.
+
+        No exige que la lectura sea perfecta: solo evita que cajas enormes formadas
+        por tramas, bordes o ruido pasen como texto libre cuando EasyOCR devuelve
+        símbolos sueltos.
+        """
+        return bool(re.search(r"[A-Za-z0-9\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", str(text or "")))
+
+    def _should_keep_free_text_group(
+        self,
+        text_box: Box,
+        text_hint: str,
+        confidence: float,
+        image_shape,
+        looks_sfx: bool,
+    ) -> Tuple[bool, str]:
+        img_height, img_width = image_shape[:2]
+        img_area = max(1, img_height * img_width)
+        bx, by, bw, bh = text_box
+        box_area = max(1, bw * bh)
+        area_ratio = box_area / img_area
+        width_ratio = bw / max(1, img_width)
+        height_ratio = bh / max(1, img_height)
+        has_signal = self._has_meaningful_text_signal(text_hint)
+
+        # Nada que parezca texto y además baja confianza: probablemente ruido.
+        if not has_signal and not looks_sfx and confidence < self.free_text_min_confidence:
+            return False, "sin_senal_textual_y_baja_confianza"
+
+        # Límites duros para regiones gigantes; estas cajas suelen ser fondos, paneles
+        # o dibujos completos detectados como texto.
+        if area_ratio > self.free_text_hard_max_area_ratio:
+            return False, "area_gigante"
+
+        # Límites blandos: solo se rechazan si la caja grande no tiene señal textual
+        # suficiente. Así se conservan líneas horizontales largas de páginas de notas.
+        is_large = (
+            area_ratio > self.free_text_max_area_ratio
+            or width_ratio > self.free_text_max_width_ratio
+            or height_ratio > self.free_text_max_height_ratio
+        )
+        if is_large and (not has_signal or confidence < self.free_text_large_min_confidence):
+            return False, "region_grande_sin_senal_ocr_fiable"
+
+        return True, "aceptado"
 
     def _detection_group_merge_decision(self, a: Box, b: Box) -> Dict[str, object]:
         ax, ay, aw, ah = a
@@ -1052,6 +1118,12 @@ class BubbleDetector:
                     "ocr_group_merge_line_y_overlap": self.ocr_merge_line_y_overlap,
                     "ocr_group_merge_line_x_gap_ratio": self.ocr_merge_line_x_gap_ratio,
                     "ocr_group_merge_line_horizontal_only": self.ocr_merge_line_horizontal_only,
+                    "free_text_max_area_ratio": self.free_text_max_area_ratio,
+                    "free_text_hard_max_area_ratio": self.free_text_hard_max_area_ratio,
+                    "free_text_max_width_ratio": self.free_text_max_width_ratio,
+                    "free_text_max_height_ratio": self.free_text_max_height_ratio,
+                    "free_text_min_confidence": self.free_text_min_confidence,
+                    "free_text_large_min_confidence": self.free_text_large_min_confidence,
                     "bubble_merge_debug_pair_limit": self.merge_debug_pair_limit,
                 },
                 "records": list(debug_records),
@@ -1063,46 +1135,41 @@ class BubbleDetector:
 
     def _free_text_regions_from_detections(self, image: np.ndarray, detections: Sequence) -> List[TextRegion]:
         free_regions: List[TextRegion] = []
-        
-        # Obtener el tamaño total de la página para hacer cálculos de proporción
-        img_height, img_width = image.shape[:2]
-        img_area = img_height * img_width
 
         for i, group in enumerate(self._group_detections(detections)):
             boxes = [self._to_rect(det) for det in group]
             text_box = boxes[0]
             for box in boxes[1:]:
                 text_box = self._union(text_box, box)
-                
-            # --- NUEVO FILTRO DE SEGURIDAD PARA FALSOS POSITIVOS ---
-            bx, by, bw, bh = text_box
-            box_area = bw * bh
-            
-            # Regla 1: Si "texto" ocupa más del 4% de TODA la página, es basura.
-            # (Un texto libre real casi nunca es tan grande)
-            if box_area > img_area * 0.04:
-                continue
-                
-            # Regla 2: Si es una franja vertical absurda (más del 25% del alto de la página).
-            if bh > img_height * 0.25:
-                continue
-                
-            # Regla 3: Si es una franja horizontal (más del 50% del ancho).
-            if bw > img_width * 0.50:
-                continue
-            # -------------------------------------------------------
 
             text_hint = " ".join(self._text(det).strip() for det in group if self._text(det).strip())
             conf = float(np.mean([self._confidence(det) for det in group])) if group else 0.0
-            
+
             looks_sfx = self._looks_like_sfx(group)
+            keep, filter_reason = self._should_keep_free_text_group(
+                text_box,
+                text_hint,
+                conf,
+                image.shape,
+                looks_sfx,
+            )
+            if not keep:
+                logger.debug(
+                    "Texto libre descartado: reason=%s bbox=%s conf=%.3f text=%r",
+                    filter_reason,
+                    text_box,
+                    conf,
+                    text_hint[:40],
+                )
+                continue
+
             kind = "sfx" if looks_sfx else "free_text"
-            
+
             if looks_sfx:
                 razon = "Texto OCR fuera de globo, detectado por proporciones o diccionario como Onomatopeya (SFX)"
             else:
                 razon = "Texto OCR agrupado que quedó huérfano (no está dentro de ningún globo de la IA)"
-                
+
             mask, bbox, score, source = self._text_box_mask(image.shape, text_box, kind=kind)
             free_regions.append(TextRegion(
                 bbox=bbox,
@@ -1117,6 +1184,8 @@ class BubbleDetector:
                     "detector": "ocr_free_text",
                     "region_flow": "bubble_first_pretrained_only",
                     "ocr_scope": "free_text_or_sfx",
+                    "free_text_filter_reason": filter_reason,
+                    "free_text_confidence": round(float(conf), 4),
                 },
             ))
         return free_regions

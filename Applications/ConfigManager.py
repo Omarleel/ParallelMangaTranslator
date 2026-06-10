@@ -29,12 +29,12 @@ def _env_int(name: str, default: int) -> int:
 class ConfigManager:
     """Carga configuración desde YAML/JSON + variables de entorno.
 
-    Archivo por defecto: pmt_config.yaml. También se puede usar PMT_CONFIG=/ruta/config.yaml.
+    Archivo por defecto: config.yaml. También se puede usar PMT_CONFIG=/ruta/config.yaml.
     Las variables de entorno PMT_* tienen prioridad sobre el archivo.
     """
 
     def __init__(self, config_path: Optional[str] = None) -> None:
-        self.config_path = Path(config_path or os.getenv("PMT_CONFIG", "pmt_config.yaml"))
+        self.config_path = Path(config_path or os.getenv("PMT_CONFIG", "config.yaml"))
         self.data = self._load_file(self.config_path)
 
     @staticmethod
@@ -157,6 +157,12 @@ class ConfigManager:
             "PMT_OCR_GROUP_MERGE_LINE_Y_OVERLAP": q.get("ocr_group_merge_line_y_overlap"),
             "PMT_OCR_GROUP_MERGE_LINE_X_GAP_RATIO": q.get("ocr_group_merge_line_x_gap_ratio"),
             "PMT_OCR_GROUP_MERGE_LINE_HORIZONTAL_ONLY": q.get("ocr_group_merge_line_horizontal_only"),
+            "PMT_FREE_TEXT_MAX_AREA_RATIO": q.get("free_text_max_area_ratio"),
+            "PMT_FREE_TEXT_HARD_MAX_AREA_RATIO": q.get("free_text_hard_max_area_ratio"),
+            "PMT_FREE_TEXT_MAX_WIDTH_RATIO": q.get("free_text_max_width_ratio"),
+            "PMT_FREE_TEXT_MAX_HEIGHT_RATIO": q.get("free_text_max_height_ratio"),
+            "PMT_FREE_TEXT_MIN_CONFIDENCE": q.get("free_text_min_confidence"),
+            "PMT_FREE_TEXT_LARGE_MIN_CONFIDENCE": q.get("free_text_large_min_confidence"),
             "PMT_BUBBLE_MERGE_DEBUG": q.get("bubble_merge_debug"),
             "PMT_BUBBLE_MERGE_DEBUG_PAIR_LIMIT": q.get("bubble_merge_debug_pair_limit"),
             "PMT_BUBBLE_MERGE_DEBUG_DIR": q.get("bubble_merge_debug_dir"),

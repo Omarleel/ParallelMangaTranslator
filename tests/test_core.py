@@ -216,6 +216,30 @@ class CoreQualityTests(unittest.TestCase):
         self.assertIn("ocr_group_merge_trace", record)
 
 
+
+    def test_free_text_long_horizontal_line_is_kept(self):
+        # Páginas tipo notas/afterword suelen tener líneas largas fuera de globos.
+        # La versión anterior descartaba siempre bw > 50% del ancho de página.
+        img = np.full((1000, 1000, 3), 255, dtype=np.uint8)
+        long_line = ([[80, 120], [880, 120], [880, 170], [80, 170]], "こちらはあとがきです", 0.84)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [], [long_line])
+
+        self.assertEqual(len(regions), 1)
+        self.assertEqual(regions[0].kind, "free_text")
+        self.assertIn("あとがき", regions[0].source_text_hint)
+        self.assertEqual(regions[0].metadata.get("free_text_filter_reason"), "aceptado")
+
+    def test_huge_free_text_artifact_without_text_signal_is_rejected(self):
+        img = np.full((1000, 1000, 3), 255, dtype=np.uint8)
+        huge_artifact = ([[0, 0], [990, 0], [990, 780], [0, 780]], "---", 0.40)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [], [huge_artifact])
+
+        self.assertEqual(regions, [])
+
     def test_heuristic_bubble_detector_is_rejected(self):
         previous = os.environ.get("PMT_BUBBLE_DETECTOR")
         os.environ["PMT_BUBBLE_DETECTOR"] = "heuristic"

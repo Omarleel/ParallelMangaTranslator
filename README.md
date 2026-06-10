@@ -132,7 +132,7 @@ pip install -r requirements-paddle-optional.txt
 Puedes copiar el ejemplo:
 
 ```bash
-cp config.example.yaml pmt_config.yaml
+cp config.example.yaml config.yaml
 ```
 
 Y modificar idiomas, modo de inpainting, exportación, caché y onomatopeyas desde ese archivo. Las variables `PMT_*` tienen prioridad sobre el YAML.

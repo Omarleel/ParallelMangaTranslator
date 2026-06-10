@@ -70,6 +70,14 @@ quality:
   ocr_group_merge_line_y_overlap: 0.72
   ocr_group_merge_line_x_gap_ratio: 0.20
   ocr_group_merge_line_horizontal_only: true
+  # Filtros para texto libre fuera de globos. Permiten páginas de notas/afterword con líneas largas,
+  # pero siguen rechazando manchas enormes sin señal OCR fiable.
+  free_text_max_area_ratio: 0.12
+  free_text_hard_max_area_ratio: 0.22
+  free_text_max_width_ratio: 0.96
+  free_text_max_height_ratio: 0.60
+  free_text_min_confidence: 0.08
+  free_text_large_min_confidence: 0.16
   # Activa archivos técnicos para tests en Dataset/Outputs/DebugGlobos.
   bubble_merge_debug: false
   bubble_merge_debug_dir: ""
