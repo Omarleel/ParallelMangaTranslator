@@ -17,7 +17,7 @@ from .LoggingConfig import get_logger
 
 logger = get_logger(__name__)
 
-BUBBLE_SPLIT_DEBUG_VERSION = "v6_onomatopoeia_debug_2026_06_10"
+BUBBLE_SPLIT_DEBUG_VERSION = "v5_cluster_bbox_logic_2026_06_10"
 
 
 class BubbleDetector:
@@ -197,27 +197,8 @@ class BubbleDetector:
             return "narration"
         return "dialogue"
 
-    def _free_text_onomatopoeia_debug_info(self, text: str) -> Dict[str, object]:
-        match = self.onomatopoeia_manager.similar_semantic_key(text, self.idioma_entrada)
-        if not match:
-            return {
-                "free_text_is_onomatopoeia": False,
-                "free_text_onomatopoeia_semantic_key": "",
-                "free_text_onomatopoeia_similarity": 0.0,
-                "free_text_onomatopoeia_matched_source": "",
-            }
-        semantic_key, similarity, matched_source = match
-        return {
-            "free_text_is_onomatopoeia": True,
-            "free_text_onomatopoeia_semantic_key": semantic_key,
-            "free_text_onomatopoeia_similarity": round(float(similarity), 4),
-            "free_text_onomatopoeia_matched_source": matched_source,
-        }
-
     def _looks_like_sfx(self, detections: Sequence) -> bool:
         text = "".join(self._text(det) for det in detections).strip()
-        if self.onomatopoeia_manager.is_free_text_onomatopoeia(text, self.idioma_entrada):
-            return True
         if self.onomatopoeia_manager.is_onomatopoeia(text, self.idioma_entrada):
             return True
         boxes = [self._to_rect(det) for det in detections]
@@ -1071,26 +1052,6 @@ class BubbleDetector:
 
         return split_regions, debug_records
 
-    @staticmethod
-    def _debug_region_items(regions: Sequence[TextRegion]) -> List[Dict[str, object]]:
-        items: List[Dict[str, object]] = []
-        for idx, region in enumerate(regions or []):
-            items.append({
-                "region_index": int(idx),
-                "kind": region.kind,
-                "bbox": list(map(int, region.bbox)),
-                "text_bbox": list(map(int, region.text_bbox)),
-                "confidence": round(float(region.confidence), 4),
-                "source_text_hint": region.source_text_hint or "",
-                "detections_count": int(region.detections_count or 0),
-                "free_text_is_onomatopoeia": bool((region.metadata or {}).get("free_text_is_onomatopoeia", False)),
-                "free_text_onomatopoeia_semantic_key": str((region.metadata or {}).get("free_text_onomatopoeia_semantic_key", "")),
-                "free_text_onomatopoeia_similarity": float((region.metadata or {}).get("free_text_onomatopoeia_similarity", 0.0) or 0.0),
-                "free_text_onomatopoeia_matched_source": str((region.metadata or {}).get("free_text_onomatopoeia_matched_source", "")),
-                "metadata": dict(region.metadata or {}),
-            })
-        return items
-
     def _save_merge_debug_artifacts(
         self,
         image: np.ndarray,
@@ -1142,10 +1103,7 @@ class BubbleDetector:
                 split = bool(region.metadata.get("split_from_merged_bubble"))
                 color = (40, 180, 40) if split else (0, 165, 255)
                 cv2.rectangle(canvas, (x, y), (x + w, y + h), color, 2)
-                kind_label = region.kind
-                if bool((region.metadata or {}).get("free_text_is_onomatopoeia", False)):
-                    kind_label = f"{kind_label}:ONOMA"
-                cv2.putText(canvas, f"R{idx}:{kind_label}", (x, max(12, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+                cv2.putText(canvas, f"R{idx}:{region.kind}", (x, max(12, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
                 tx, ty, tw, th = region.text_bbox
                 cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), (255, 80, 80), 1)
                 if region.source_text_hint:
@@ -1164,9 +1122,7 @@ class BubbleDetector:
                     "yellow_box": "detección OCR cruda asignada a una región",
                     "blue_box": "grupo OCR después de aplicar reglas de fusión",
                     "magenta_box": "cluster lógico de grupos OCR que se renderizará como un solo globo",
-                    "ONOMA_suffix": "la región de texto libre/SFX coincide por similitud con el diccionario de onomatopeyas",
                 },
-                "final_regions": self._debug_region_items(regions),
                 "thresholds": {
                     "split_min_ocr_groups": self.split_min_ocr_groups,
                     "split_min_gap_px": self.split_min_gap_px,
@@ -1213,8 +1169,7 @@ class BubbleDetector:
             text_hint = " ".join(self._text(det).strip() for det in group if self._text(det).strip())
             conf = float(np.mean([self._confidence(det) for det in group])) if group else 0.0
 
-            onomatopoeia_info = self._free_text_onomatopoeia_debug_info(text_hint)
-            looks_sfx = bool(onomatopoeia_info.get("free_text_is_onomatopoeia")) or self._looks_like_sfx(group)
+            looks_sfx = self._looks_like_sfx(group)
             keep, filter_reason = self._should_keep_free_text_group(
                 text_box,
                 text_hint,
@@ -1234,15 +1189,12 @@ class BubbleDetector:
 
             kind = "sfx" if looks_sfx else "free_text"
 
-            if onomatopoeia_info.get("free_text_is_onomatopoeia"):
-                razon = "Texto OCR fuera de globo, detectado por similitud contra diccionario de onomatopeyas"
-            elif looks_sfx:
+            if looks_sfx:
                 razon = "Texto OCR fuera de globo, detectado por proporciones o diccionario como Onomatopeya (SFX)"
             else:
                 razon = "Texto OCR agrupado que quedó huérfano (no está dentro de ningún globo de la IA)"
 
             mask, bbox, score, source = self._text_box_mask(image.shape, text_box, kind=kind)
-            sfx_detection_reason = "onomatopoeia_similarity" if onomatopoeia_info.get("free_text_is_onomatopoeia") else ("shape_or_dictionary" if looks_sfx else "not_sfx")
             free_regions.append(TextRegion(
                 bbox=bbox,
                 text_bbox=text_box,
@@ -1258,8 +1210,6 @@ class BubbleDetector:
                     "ocr_scope": "free_text_or_sfx",
                     "free_text_filter_reason": filter_reason,
                     "free_text_confidence": round(float(conf), 4),
-                    "free_text_sfx_detection_reason": sfx_detection_reason,
-                    **onomatopoeia_info,
                 },
             ))
         return free_regions
@@ -1399,11 +1349,6 @@ class BubbleDetector:
                         "region_flow": "bubble_first_pretrained_only",
                         "ocr_scope": "free_text_visual_gap_retry",
                         "free_text_filter_reason": "visual_gap_recovery",
-                        "free_text_sfx_detection_reason": "not_sfx",
-                        "free_text_is_onomatopoeia": False,
-                        "free_text_onomatopoeia_semantic_key": "",
-                        "free_text_onomatopoeia_similarity": 0.0,
-                        "free_text_onomatopoeia_matched_source": "",
                     },
                 ))
                 seen_boxes.append(candidate_box)

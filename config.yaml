@@ -4,11 +4,13 @@ translation:
   method: Tradicional          # LLM | Tradicional
   inpaint_model: lama_mpe
   lore: ""
+  glossary: ""
 
 processing:
   input_dir: Dataset
-  batch_size: 1
+  batch_size: 8
   parallel: false
+  cache: true
   cache_dir: .cache
 
 ocr:
@@ -23,6 +25,18 @@ quality:
   # La detección de globos ahora SOLO usa modelo preentrenado. Sin modelo válido se lanza error.
   bubble_detection: true
   bubble_fill: true
+  # Limpieza de globo sin parches cuadrados:
+  # - false: no se rellena plano todo el globo, solo se borra tinta del texto dentro de la máscara segura.
+  # - true: comportamiento antiguo, relleno plano del interior si la máscara no parece rectangular.
+  bubble_fill_whole_interior: false
+  # Margen interno para no tocar el borde negro del globo.
+  bubble_fill_edge_margin: 6
+  # Dilatación de la máscara de tinta del texto; sube a 3 si quedan halos, baja a 1 si borra demasiado.
+  bubble_fill_text_dilate: 2
+  # Opciones de compatibilidad para módulos antiguos/experimentos de relleno.
+  bubble_fill_feather: 1.0
+  bubble_fill_flat_max_rectangularity: 0.82
+  bubble_fill_shape_aware: true
   bubble_detector: professional
   require_professional: true
   bubble_first: true
@@ -41,11 +55,6 @@ quality:
   # bubble_only: solo limpia interiores de globos, máximo rendimiento
   # legacy fue desactivado porque dependía de máscaras OCR/heurísticas.
   inpaint_mode: auto
-  # Margen interior en píxeles para no pintar encima del contorno del globo.
-  # Súbelo si el relleno aún toca bordes; bájalo si deja restos de texto muy cerca del borde.
-  bubble_fill_edge_margin: 6
-  # Suavizado del borde del área limpiada dentro del margen seguro.
-  bubble_fill_feather: 1.0
 
   # Control técnico para evitar que globos cercanos terminen como una sola región.
   # En flujo normal esto no muestra nada al usuario; solo afecta la lógica interna.
@@ -92,8 +101,10 @@ quality:
 
 onomatopoeia:
   # translate | keep | subtitle | auto
-  mode: keep
+  mode: translate
+  translate: true
 
 export:
   pdf: true
   cbz: false
+  skip_pdf: false

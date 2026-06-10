@@ -121,14 +121,24 @@ class ConfigManager:
 
         # Publica rutas/opciones para módulos que mantienen firmas antiguas.
         os.environ.setdefault("PMT_PROJECT_DIR", processing.ruta_carpeta_entrada)
+        if "cache" in p and not os.getenv("PMT_CACHE"):
+            os.environ["PMT_CACHE"] = str(p["cache"])
         if "cache_dir" in p and not os.getenv("PMT_CACHE_DIR"):
             os.environ["PMT_CACHE_DIR"] = str(p["cache_dir"])
+        if "glossary" in t and not os.getenv("PMT_GLOSSARY"):
+            os.environ["PMT_GLOSSARY"] = str(t["glossary"])
         env_defaults = {
             "PMT_OCR_ENGINE": ocr.get("engine"),
             "PMT_OCR_GPU": ocr.get("gpu"),
             "PMT_PADDLE_SUBPROCESS": ocr.get("paddle_subprocess"),
             "PMT_BUBBLE_DETECTION": q.get("bubble_detection"),
             "PMT_BUBBLE_FILL": q.get("bubble_fill"),
+            "PMT_BUBBLE_FILL_WHOLE_INTERIOR": q.get("bubble_fill_whole_interior"),
+            "PMT_BUBBLE_FILL_EDGE_MARGIN": q.get("bubble_fill_edge_margin"),
+            "PMT_BUBBLE_FILL_TEXT_DILATE": q.get("bubble_fill_text_dilate"),
+            "PMT_BUBBLE_FILL_FEATHER": q.get("bubble_fill_feather"),
+            "PMT_BUBBLE_FILL_FLAT_MAX_RECTANGULARITY": q.get("bubble_fill_flat_max_rectangularity"),
+            "PMT_BUBBLE_FILL_SHAPE_AWARE": q.get("bubble_fill_shape_aware"),
             "PMT_BUBBLE_DETECTOR": q.get("bubble_detector"),
             "PMT_BUBBLE_FIRST": q.get("bubble_first"),
             "PMT_OCR_REGION_MODE": q.get("ocr_region_mode"),
@@ -140,8 +150,6 @@ class ConfigManager:
             "PMT_BUBBLE_CONF": q.get("bubble_confidence"),
             "PMT_BUBBLE_IMGSZ": q.get("bubble_img_size"),
             "PMT_INPAINT_MODE": q.get("inpaint_mode"),
-            "PMT_BUBBLE_FILL_EDGE_MARGIN": q.get("bubble_fill_edge_margin"),
-            "PMT_BUBBLE_FILL_FEATHER": q.get("bubble_fill_feather"),
             "PMT_SPLIT_MERGED_BUBBLES": q.get("split_merged_bubbles"),
             "PMT_BUBBLE_SPLIT_MIN_OCR_GROUPS": q.get("bubble_split_min_ocr_groups"),
             "PMT_BUBBLE_SPLIT_MIN_GAP_PX": q.get("bubble_split_min_gap_px"),
@@ -174,8 +182,10 @@ class ConfigManager:
             "PMT_BUBBLE_MERGE_DEBUG_PAIR_LIMIT": q.get("bubble_merge_debug_pair_limit"),
             "PMT_BUBBLE_MERGE_DEBUG_DIR": q.get("bubble_merge_debug_dir"),
             "PMT_ONOMATOPOEIA_MODE": o.get("mode"),
+            "PMT_TRANSLATE_ONOMATOPOEIA": o.get("translate"),
             "PMT_EXPORT_PDF": e.get("pdf"),
             "PMT_EXPORT_CBZ": e.get("cbz"),
+            "PMT_SKIP_PDF": e.get("skip_pdf"),
         }
         for key, value in env_defaults.items():
             if value is not None and os.getenv(key) is None:

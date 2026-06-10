@@ -5,10 +5,7 @@ import os
 from typing import Iterable, List, Sequence, Tuple
 
 import cv2
-try:
-    import easyocr
-except ModuleNotFoundError:  # EasyOCR es opcional si se usa MangaOCR/Paddle o en tests de limpieza.
-    easyocr = None  # type: ignore[assignment]
+import easyocr
 import nest_asyncio
 import numpy as np
 import torch
@@ -52,8 +49,14 @@ class CleanManga:
         self.fast_mode = env_flag("PMT_FAST_MODE", False)
         self.inpaint_mode = os.getenv("PMT_INPAINT_MODE", "auto").strip().lower()
         self.bubble_fill = env_flag("PMT_BUBBLE_FILL", True)
-        self.bubble_fill_edge_margin = self._int_env("PMT_BUBBLE_FILL_EDGE_MARGIN", 6)
-        self.bubble_fill_feather = self._float_env("PMT_BUBBLE_FILL_FEATHER", 1.0)
+        # Por defecto NO rellenamos plano todo el interior del globo: en páginas reales
+        # algunas máscaras YOLO vienen casi rectangulares y eso genera parches cuadrados
+        # que cruzan bordes. PMT_BUBBLE_FILL ahora significa "limpiar el texto dentro
+        # del globo" usando tinta + recorte por máscara del globo. Si se quiere el
+        # comportamiento antiguo se puede activar explícitamente.
+        self.bubble_fill_whole_interior = env_flag("PMT_BUBBLE_FILL_WHOLE_INTERIOR", False)
+        self.bubble_fill_edge_margin = self._env_int("PMT_BUBBLE_FILL_EDGE_MARGIN", 5)
+        self.bubble_fill_text_dilate = self._env_int("PMT_BUBBLE_FILL_TEXT_DILATE", 2)
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.bubble_detector = BubbleDetector(idioma_entrada=idioma_entrada)
         self.inpainter = self._build_inpainter(modelo_inpaint)
@@ -65,61 +68,11 @@ class CleanManga:
             raise ValueError(f"Modelo de inpainting no soportado: {model_name}")
         return self.INPAINTER_FACTORIES[model_name]()
 
-    def _get_reader(self):
-        if easyocr is None:
-            raise RuntimeError("EasyOCR no está instalado. Instala easyocr o usa PMT_OCR_ENGINE=mangaocr/paddle.")
+    def _get_reader(self) -> easyocr.Reader:
         if self._ocr_reader is None:
             langs = self.EASY_OCR_LANGS.get(self.idioma_entrada, ["ja", "en"])
             self._ocr_reader = easyocr.Reader(langs, gpu=self.device == "cuda")
         return self._ocr_reader
-
-    @staticmethod
-    def _int_env(name: str, default: int) -> int:
-        raw = os.getenv(name)
-        if raw is None or not raw.strip():
-            return default
-        try:
-            return max(0, int(raw))
-        except ValueError:
-            return default
-
-    @staticmethod
-    def _float_env(name: str, default: float) -> float:
-        raw = os.getenv(name)
-        if raw is None or not raw.strip():
-            return default
-        try:
-            return max(0.0, float(raw))
-        except ValueError:
-            return default
-
-    @staticmethod
-    def _safe_bubble_fill_mask(local_mask: np.ndarray, edge_margin_px: int) -> np.ndarray:
-        """Devuelve una máscara interior que no toca el borde del globo.
-
-        Las máscaras de segmentación suelen incluir parte del contorno negro del globo o
-        quedar demasiado pegadas a él. Para limpiar diálogos por relleno plano no debemos
-        pintar sobre ese borde, así que erosionamos la máscara hacia adentro antes de
-        mezclar el color de limpieza. Si el globo es muy pequeño, reducimos el margen
-        automáticamente para no dejar la máscara vacía.
-        """
-        if local_mask.size == 0:
-            return local_mask
-
-        binary = (local_mask > 0).astype(np.uint8) * 255
-        if edge_margin_px <= 0 or cv2.countNonZero(binary) == 0:
-            return binary
-
-        max_margin = max(0, (min(binary.shape[:2]) - 3) // 2)
-        margin = min(int(edge_margin_px), max_margin)
-        while margin > 0:
-            kernel_size = margin * 2 + 1
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
-            safe = cv2.erode(binary, kernel, iterations=1)
-            if cv2.countNonZero(safe) > 0:
-                return safe
-            margin -= 1
-        return binary
 
     def limpiar_manga(self, imagen: np.ndarray):
         # Flujo profesional: primero detectar todos los globos con el segmentador entrenado.
@@ -191,38 +144,170 @@ class CleanManga:
         # Globos oscuros/narración: usa mediana del área detectada.
         return tuple(int(min(255, max(0, c))) for c in median.tolist())
 
+    @staticmethod
+    def _env_int(name: str, default: int) -> int:
+        raw = os.getenv(name)
+        if raw is None or not raw.strip():
+            return default
+        try:
+            return int(raw)
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _clip_rect(rect: Tuple[int, int, int, int], image_shape) -> Tuple[int, int, int, int]:
+        x, y, w, h = (int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3]))
+        height, width = image_shape[:2]
+        x = max(0, min(width, x))
+        y = max(0, min(height, y))
+        x2 = max(x, min(width, x + max(0, w)))
+        y2 = max(y, min(height, y + max(0, h)))
+        return x, y, x2 - x, y2 - y
+
+    @staticmethod
+    def _expand_rect(rect: Tuple[int, int, int, int], px: int, py: int, image_shape) -> Tuple[int, int, int, int]:
+        x, y, w, h = rect
+        return CleanManga._clip_rect((x - px, y - py, w + 2 * px, h + 2 * py), image_shape)
+
+    @staticmethod
+    def _rect_mask(rect: Tuple[int, int, int, int], image_shape) -> np.ndarray:
+        mask = np.zeros(image_shape[:2], dtype=np.uint8)
+        x, y, w, h = CleanManga._clip_rect(rect, image_shape)
+        if w > 0 and h > 0:
+            mask[y:y + h, x:x + w] = 255
+        return mask
+
+    @staticmethod
+    def _binary_mask(mask: np.ndarray, image_shape) -> np.ndarray:
+        if mask is None or mask.size == 0:
+            return np.zeros(image_shape[:2], dtype=np.uint8)
+        out = np.zeros(image_shape[:2], dtype=np.uint8)
+        h = min(out.shape[0], mask.shape[0])
+        w = min(out.shape[1], mask.shape[1])
+        if h <= 0 or w <= 0:
+            return out
+        out[:h, :w] = (mask[:h, :w] > 0).astype(np.uint8) * 255
+        return out
+
+    @staticmethod
+    def _safe_bubble_mask(mask: np.ndarray, image_shape, margin: int) -> np.ndarray:
+        bubble = CleanManga._binary_mask(mask, image_shape)
+        if cv2.countNonZero(bubble) == 0:
+            return bubble
+        margin = max(0, int(margin))
+        if margin > 0:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * margin + 1, 2 * margin + 1))
+            eroded = cv2.erode(bubble, kernel, iterations=1)
+            # Si el globo es muy estrecho y la erosión lo destruye, usa una erosión menor.
+            if cv2.countNonZero(eroded) < max(8, int(cv2.countNonZero(bubble) * 0.18)):
+                small = max(1, margin // 2)
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * small + 1, 2 * small + 1))
+                eroded = cv2.erode(bubble, kernel, iterations=1)
+            bubble = eroded if cv2.countNonZero(eroded) > 0 else bubble
+        return bubble
+
+    @staticmethod
+    def _mask_rectangularity(mask: np.ndarray) -> float:
+        if mask is None or cv2.countNonZero(mask) == 0:
+            return 1.0
+        points = cv2.findNonZero((mask > 0).astype(np.uint8))
+        if points is None:
+            return 1.0
+        x, y, w, h = cv2.boundingRect(points)
+        if w <= 0 or h <= 0:
+            return 1.0
+        return float(cv2.countNonZero(mask)) / float(w * h)
+
+    @staticmethod
+    def _apply_solid_fill(imagen: np.ndarray, mask: np.ndarray, fill_color, sigma: float = 0.9) -> np.ndarray:
+        if cv2.countNonZero(mask) == 0:
+            return imagen
+        salida = imagen.copy()
+        blur = cv2.GaussianBlur((mask > 0).astype(np.uint8) * 255, (0, 0), sigmaX=sigma, sigmaY=sigma)
+        alpha = (blur.astype(np.float32) / 255.0)[..., None]
+        color = np.array(fill_color, dtype=np.float32)
+        patch = salida.astype(np.float32)
+        salida = patch * (1.0 - alpha) + color * alpha
+        return np.clip(salida, 0, 255).astype(np.uint8)
+
+    @staticmethod
+    def _text_ink_mask(imagen: np.ndarray, text_zone: np.ndarray, safe_mask: np.ndarray, dilate_px: int = 2) -> np.ndarray:
+        if cv2.countNonZero(text_zone) == 0 or cv2.countNonZero(safe_mask) == 0:
+            return np.zeros(imagen.shape[:2], dtype=np.uint8)
+
+        zone = cv2.bitwise_and((text_zone > 0).astype(np.uint8) * 255, (safe_mask > 0).astype(np.uint8) * 255)
+        if cv2.countNonZero(zone) == 0:
+            return np.zeros(imagen.shape[:2], dtype=np.uint8)
+
+        gray = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
+        vals = gray[zone > 0]
+        if vals.size == 0:
+            return np.zeros(imagen.shape[:2], dtype=np.uint8)
+
+        # Umbral pensado para letras negras/antialias dentro de globos claros.
+        # Usa una mezcla fija + percentil para no capturar todo el fondo del globo.
+        percentile_cut = int(np.percentile(vals, 38))
+        threshold = min(210, max(115, percentile_cut + 28))
+        ink = ((gray <= threshold) & (zone > 0)).astype(np.uint8) * 255
+
+        # Evita borrar tramas muy finas sueltas: conserva componentes que parecen trazos de letra.
+        num, labels, stats, _ = cv2.connectedComponentsWithStats(ink, 8)
+        filtered = np.zeros_like(ink)
+        for idx in range(1, num):
+            x, y, w, h, area = stats[idx]
+            if area < 3:
+                continue
+            # Letras japonesas verticales pueden ser altas; puntos de screentone suelen ser minúsculos.
+            if area >= 8 or max(w, h) >= 5:
+                filtered[labels == idx] = 255
+
+        if cv2.countNonZero(filtered) == 0:
+            filtered = ink
+
+        dilate_px = max(0, int(dilate_px))
+        if dilate_px > 0:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1))
+            filtered = cv2.dilate(filtered, kernel, iterations=1)
+            filtered = cv2.morphologyEx(filtered, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+        return cv2.bitwise_and(filtered, safe_mask)
+
+    def _bubble_text_zone(self, region: TextRegion, image_shape) -> np.ndarray:
+        # Usa el bbox OCR/text_bbox como guía, pero nunca como máscara de pintado directa.
+        # Se expande para cubrir antialias y detecciones parciales de OCR vertical japonés.
+        x, y, w, h = self._clip_rect(region.text_bbox, image_shape)
+        bx, by, bw, bh = self._clip_rect(region.bbox, image_shape)
+        if w <= 0 or h <= 0:
+            return np.zeros(image_shape[:2], dtype=np.uint8)
+
+        # Si no hubo OCR y text_bbox == bbox, no inventamos limpieza de todo el globo.
+        if int(getattr(region, "detections_count", 0) or 0) <= 0 and (x, y, w, h) == (bx, by, bw, bh):
+            return np.zeros(image_shape[:2], dtype=np.uint8)
+
+        pad_x = max(3, min(14, int(round(max(w, h) * 0.08))))
+        pad_y = max(4, min(18, int(round(max(w, h) * 0.10))))
+        expanded = self._expand_rect((x, y, w, h), pad_x, pad_y, image_shape)
+        return self._rect_mask(expanded, image_shape)
+
     def _fill_bubble_interiors(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> np.ndarray:
         salida = imagen.copy()
         for region in regiones:
-            x, y, w, h = region.bbox
-            x = max(0, int(x)); y = max(0, int(y))
-            w = min(int(w), salida.shape[1] - x); h = min(int(h), salida.shape[0] - y)
-            if w <= 1 or h <= 1:
-                continue
-            local_mask = region.mask[y:y + h, x:x + w]
-            if local_mask.size == 0 or cv2.countNonZero(local_mask) == 0:
-                continue
-
-            # No pintamos el borde real del globo: la segmentación puede incluirlo o
-            # quedar demasiado pegada a él. Primero hacemos una máscara interior segura
-            # y recién sobre esa zona aplicamos un feather suave.
-            edge_margin = getattr(self, "bubble_fill_edge_margin", 6)
-            safe_mask = self._safe_bubble_fill_mask(local_mask, edge_margin)
+            safe_mask = self._safe_bubble_mask(region.mask, salida.shape, self.bubble_fill_edge_margin)
             if cv2.countNonZero(safe_mask) == 0:
                 continue
 
-            feather = getattr(self, "bubble_fill_feather", 1.0)
-            if feather > 0:
-                blur = cv2.GaussianBlur(safe_mask, (0, 0), sigmaX=feather, sigmaY=feather)
-                # El blur no puede reactivar píxeles fuera de la máscara original.
-                blur = cv2.bitwise_and(blur, (local_mask > 0).astype(np.uint8) * 255)
-            else:
-                blur = safe_mask
-            alpha = (blur.astype(np.float32) / 255.0)[..., None]
-            fill_color = np.array(self._dominant_fill_color(salida[y:y + h, x:x + w], safe_mask), dtype=np.float32)
-            patch = salida[y:y + h, x:x + w].astype(np.float32)
-            cleaned = patch * (1.0 - alpha) + fill_color * alpha
-            salida[y:y + h, x:x + w] = np.clip(cleaned, 0, 255).astype(np.uint8)
+            fill_color = self._dominant_fill_color(salida, safe_mask)
+
+            # Comportamiento antiguo, solo opt-in y solo si la máscara no parece una caja.
+            # Esto evita que una segmentación rectangular pinte parches cuadrados sobre bordes.
+            if self.bubble_fill_whole_interior and self._mask_rectangularity(safe_mask) < 0.82:
+                salida = self._apply_solid_fill(salida, safe_mask, fill_color, sigma=1.0)
+
+            text_zone = self._bubble_text_zone(region, salida.shape)
+            ink_mask = self._text_ink_mask(salida, text_zone, safe_mask, self.bubble_fill_text_dilate)
+            if cv2.countNonZero(ink_mask) == 0:
+                continue
+            salida = self._apply_solid_fill(salida, ink_mask, fill_color, sigma=0.65)
         return salida
 
     def _ejecutar_inpainting(self, imagen: np.ndarray, mascara_capa: np.ndarray, resultados):
