@@ -109,6 +109,22 @@ onomatopoeia:
   mode: translate
   translate: true
 
+llm:
+  # true intenta response_format json_schema estricto y cae a json_object si el proveedor no lo soporta.
+  strict_json_schema: true
+
+character_memory:
+  # Construye automáticamente memoria de personajes/hablantes usando IA en modo LLM.
+  enabled: true
+  # Vacío = Dataset/character_memory.json. Usa una ruta explícita si quieres compartir memoria entre tomos.
+  path: ""
+  max_context_pages: 8
+
+evaluation:
+  # Carpeta sugerida para anotaciones manuales de precisión.
+  ground_truth_dir: DatasetEval/ground_truth
+  iou_threshold: 0.50
+
 export:
   pdf: true
   cbz: false

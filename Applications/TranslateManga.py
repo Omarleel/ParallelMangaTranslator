@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections import deque
-from typing import List, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -48,6 +48,7 @@ class TranslateManga:
         self.ultimas_regiones: List[TextRegion] = []
         self.ultimos_textos_originales: List[str] = []
         self.ultimos_textos_traducidos: List[str] = []
+        self.ultimas_asignaciones_hablante: List[Dict[str, Any]] = []
         self.onomatopoeia_mode = os.getenv("PMT_ONOMATOPOEIA_MODE", "translate").strip().lower()
         if os.getenv("PMT_TRANSLATE_ONOMATOPOEIA", "1").strip().lower() in {"0", "false", "no", "off"}:
             self.onomatopoeia_mode = "keep"
@@ -410,9 +411,66 @@ class TranslateManga:
             parciales.append(traduccion)
         return parciales
 
+    def _region_metadata_for_translation(self, textos: Sequence[str]) -> List[Dict[str, Any]]:
+        metadata: List[Dict[str, Any]] = []
+        for idx, texto in enumerate(textos):
+            region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
+            row: Dict[str, Any] = {"source_index": idx, "max_chars": max(16, min(120, int(len(str(texto or "")) * 1.8 + 18)))}
+            if region is not None:
+                x, y, w, h = region.bbox
+                row.update({
+                    "kind": region.kind,
+                    "bbox": [int(x), int(y), int(w), int(h)],
+                    "confidence": round(float(region.confidence), 4),
+                    "reading_order_index": region.metadata.get("reading_order_index"),
+                })
+            else:
+                row.update({"kind": "dialogue", "bbox": None, "confidence": 0.0})
+            metadata.append(row)
+        return metadata
+
+    def _metadata_with_speaker_assignments(
+        self,
+        base_metadata: Sequence[Mapping[str, Any]],
+        assignments: Sequence[Mapping[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        by_id = {int(row.get("text_id")): row for row in assignments if isinstance(row, Mapping) and str(row.get("text_id", "")).lstrip("-").isdigit()}
+        memory_chars = self.translator_manager.character_memory_snapshot().get("characters", []) if self.metodo_traduccion == "LLM" else []
+        styles_by_speaker = {
+            str(char.get("id")): str(char.get("speech_style") or "")
+            for char in memory_chars
+            if isinstance(char, Mapping)
+        }
+        enriched: List[Dict[str, Any]] = []
+        for idx, row in enumerate(base_metadata):
+            merged = dict(row)
+            assignment = by_id.get(idx)
+            if assignment:
+                speaker_id = str(assignment.get("speaker_id") or "unknown")
+                merged.update({
+                    "speaker_id": speaker_id,
+                    "speaker_confidence": round(float(assignment.get("confidence") or 0.0), 4),
+                    "is_narration": bool(assignment.get("is_narration")),
+                    "speech_style": styles_by_speaker.get(speaker_id, ""),
+                })
+            enriched.append(merged)
+        return enriched
+
     def traducir_textos(self, textos: Sequence[str]):
         textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
         self.ultimo_estilos_texto = self._clasificar_estilos_texto(textos_limpios)
+        base_metadata = self._region_metadata_for_translation(textos_limpios)
+
+        self.ultimas_asignaciones_hablante = []
+        metadata_con_hablantes = list(base_metadata)
+        if self.metodo_traduccion == "LLM":
+            self.ultimas_asignaciones_hablante = self.translator_manager.analyze_character_memory(
+                textos_limpios,
+                page_index=self.indice_imagen,
+                region_metadata=base_metadata,
+                contexto_previo=list(self.historial_contexto),
+            )
+            metadata_con_hablantes = self._metadata_with_speaker_assignments(base_metadata, self.ultimas_asignaciones_hablante)
 
         traducciones_onomatopeyas = self._traducir_onomatopeyas_con_diccionario(textos_limpios)
         indices_por_traducir = [
@@ -425,7 +483,13 @@ class TranslateManga:
         if indices_por_traducir:
             payload = [textos_limpios[i] for i in indices_por_traducir]
             if self.metodo_traduccion == "LLM":
-                traducidos_payload = self.translator_manager.traducir_textos_llm(payload, list(self.historial_contexto))
+                payload_metadata = [dict(metadata_con_hablantes[i], source_index=i) for i in indices_por_traducir]
+                traducidos_payload = self.translator_manager.traducir_textos_llm(
+                    payload,
+                    contexto_previo=list(self.historial_contexto),
+                    items_metadata=payload_metadata,
+                    character_memory=self.translator_manager.character_memory_snapshot(),
+                )
             else:
                 traducidos_payload = self.translator_manager.traducir_textos_tradicional(payload)
 
@@ -469,6 +533,13 @@ class TranslateManga:
                     "Coordenadas texto original": [[region.text_bbox[0], region.text_bbox[1]], [region.text_bbox[0] + region.text_bbox[2], region.text_bbox[1] + region.text_bbox[3]]],
                     "Fuente máscara": region.metadata.get("mask_source", ""),
                 })
+            if idx < len(self.ultimas_asignaciones_hablante):
+                speaker = self.ultimas_asignaciones_hablante[idx]
+                elemento.update({
+                    "Hablante": speaker.get("speaker_id", "unknown"),
+                    "Confianza hablante": round(float(speaker.get("confidence") or 0.0), 4),
+                    "Evidencia hablante": speaker.get("evidence", ""),
+                })
             self.transcripcion_queue.put({
                 "agregar_a_sublista": {
                     "clave_lista": "Transcripción",
@@ -495,6 +566,12 @@ class TranslateManga:
                     "Confianza": round(float(region.confidence), 4),
                     "Fuente máscara": region.metadata.get("mask_source", ""),
                 })
+            if idx < len(self.ultimas_asignaciones_hablante):
+                speaker = self.ultimas_asignaciones_hablante[idx]
+                elemento.update({
+                    "Hablante": speaker.get("speaker_id", "unknown"),
+                    "Confianza hablante": round(float(speaker.get("confidence") or 0.0), 4),
+                })
             self.traduccion_queue.put({
                 "agregar_a_sublista": {
                     "clave_lista": "Traducción",
@@ -507,9 +584,9 @@ class TranslateManga:
     def incrustar_textos(self, imagen_limpia, cuadros_delimitadores, textos):
         textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
         self.ultimos_textos_originales = textos_limpios
-        self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
         textos_traducidos = self.traducir_textos(textos_limpios)
         self.ultimos_textos_traducidos = textos_traducidos
+        self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
         self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos)
         clip_masks = [region.local_mask() for region in self.ultimas_regiones] if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores) else None
         return self.text_renderer.render(

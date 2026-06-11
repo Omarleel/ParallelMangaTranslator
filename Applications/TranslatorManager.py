@@ -3,29 +3,114 @@ import logging
 import os
 import re
 import time
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
-from groq import Groq
+try:
+    from groq import Groq
+except ImportError:  # pragma: no cover - entorno de tests sin proveedor LLM
+    Groq = None  # type: ignore
 
-from deep_translator import DeeplTranslator, GoogleTranslator
+try:
+    from deep_translator import DeeplTranslator, GoogleTranslator
+    from deep_translator.exceptions import (
+        AuthorizationException,
+        InvalidSourceOrTargetLanguage,
+        LanguageNotSupportedException,
+        NotValidLength,
+        NotValidPayload,
+        RequestError,
+        ServerException,
+        TooManyRequests,
+        TranslationNotFound,
+    )
+except ImportError:  # pragma: no cover - permite importar utilidades en entornos mínimos de test
+    DeeplTranslator = None  # type: ignore
+    GoogleTranslator = None  # type: ignore
+
+    class TranslationNotFound(Exception): pass
+    class TooManyRequests(Exception): pass
+    class RequestError(Exception): pass
+    class ServerException(Exception): pass
+    class NotValidPayload(Exception): pass
+    class NotValidLength(Exception): pass
+    class InvalidSourceOrTargetLanguage(Exception): pass
+    class LanguageNotSupportedException(Exception): pass
+    class AuthorizationException(Exception): pass
 
 from Applications.CacheManager import PersistentJsonCache
 from Applications.GlossaryManager import GlossaryManager
-from deep_translator.exceptions import (
-    AuthorizationException,
-    InvalidSourceOrTargetLanguage,
-    LanguageNotSupportedException,
-    NotValidLength,
-    NotValidPayload,
-    RequestError,
-    ServerException,
-    TooManyRequests,
-    TranslationNotFound,
-)
+from Applications.CharacterMemoryManager import CharacterMemoryManager
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+
+LLM_TRANSLATION_RESPONSE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "traducciones": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "id": {"type": "integer"},
+                    "traduccion": {"type": "string"},
+                },
+                "required": ["id", "traduccion"],
+            },
+        }
+    },
+    "required": ["traducciones"],
+}
+
+
+def validate_translation_response(data: Mapping[str, Any], expected_ids: Sequence[int]) -> List[Dict[str, Any]]:
+    """Valida la salida del LLM de forma estricta sin dependencia externa.
+
+    El proveedor puede garantizar JSON, pero esta validación evita respuestas con ids
+    duplicados, campos extra, listas incompletas o tipos incorrectos antes de renderizar.
+    """
+    if not isinstance(data, Mapping):
+        raise TypeError("La respuesta de traducción debe ser un objeto JSON.")
+    allowed_root = {"traducciones"}
+    extra_root = set(data.keys()) - allowed_root
+    if extra_root:
+        raise ValueError(f"Campos raíz no permitidos: {sorted(extra_root)}")
+    traducciones = data.get("traducciones")
+    if not isinstance(traducciones, list):
+        raise TypeError("'traducciones' debe ser una lista.")
+
+    expected = set(int(x) for x in expected_ids)
+    seen = set()
+    validated: List[Dict[str, Any]] = []
+    for row in traducciones:
+        if not isinstance(row, Mapping):
+            raise TypeError("Cada traducción debe ser un objeto.")
+        allowed_row = {"id", "traduccion"}
+        extra_row = set(row.keys()) - allowed_row
+        if extra_row:
+            raise ValueError(f"Campos no permitidos en traducción: {sorted(extra_row)}")
+        if "id" not in row or "traduccion" not in row:
+            raise ValueError("Cada traducción requiere 'id' y 'traduccion'.")
+        idx = row["id"]
+        if not isinstance(idx, int):
+            raise TypeError(f"id inválido: {idx!r}")
+        if idx not in expected:
+            raise ValueError(f"id fuera de rango o inesperado: {idx}")
+        if idx in seen:
+            raise ValueError(f"id duplicado: {idx}")
+        traducido = row["traduccion"]
+        if not isinstance(traducido, str):
+            raise TypeError(f"traduccion inválida para id={idx}")
+        validated.append({"id": idx, "traduccion": traducido})
+        seen.add(idx)
+
+    if seen != expected:
+        raise ValueError(f"Faltan traducciones para ids: {sorted(expected - seen)}")
+    return validated
 
 
 class TranslatorManager:
@@ -86,13 +171,18 @@ class TranslatorManager:
         self._translation_cache: Dict[Tuple[str, str, str, str], str] = {}
         self.cache = PersistentJsonCache("translations")
         self.glossary = GlossaryManager(project_dir=os.getenv("PMT_PROJECT_DIR"))
+        self.character_memory = CharacterMemoryManager(project_dir=os.getenv("PMT_PROJECT_DIR"))
+        self.llm_strict_json_schema = os.getenv("PMT_LLM_STRICT_JSON_SCHEMA", "1").strip().lower() not in {"0", "false", "no", "off"}
 
         self.provider = None
         self.translator = self._build_traditional_translator()
 
         self.client = None
         if self.metodo == "LLM" and self.groq_api_key:
-            self.client = Groq(api_key=self.groq_api_key)
+            if Groq is None:
+                logger.warning("El paquete groq no está instalado; se usará fallback tradicional si se solicita LLM.")
+            else:
+                self.client = Groq(api_key=self.groq_api_key)
 
     def _provider_lang_code(self, ui_lang: str, provider: str) -> str:
         code = self.UI_LANGS[ui_lang]
@@ -114,6 +204,10 @@ class TranslatorManager:
         raise ValueError(f"Proveedor no soportado: {provider}")
 
     def _build_traditional_translator(self):
+        if DeeplTranslator is None or GoogleTranslator is None:
+            self.provider = "unavailable"
+            return None
+
         preferred_order = ["deepl", "google"] if self.deepl_api_key else ["google"]
 
         last_error = None
@@ -147,7 +241,7 @@ class TranslatorManager:
 
     def _same_language(self) -> bool:
         """Evita traducir cuando origen y destino son efectivamente iguales."""
-        if self.provider is None:
+        if self.provider not in {"google", "deepl"}:
             return False
 
         src = self._provider_lang_code(self.idioma_entrada, self.provider)
@@ -211,6 +305,8 @@ class TranslatorManager:
 
         for attempt in range(1, self.max_retries + 1):
             try:
+                if self.translator is None:
+                    raise RuntimeError("deep_translator no está instalado; instala requirements.txt o usa LLM con proveedor configurado.")
                 traducido = self.translator.translate(texto)
                 salida = self._normalize_translation(traducido) if isinstance(traducido, str) and traducido else texto
                 salida = self.glossary.apply_to_translation(texto, salida)
@@ -259,6 +355,8 @@ class TranslatorManager:
         indices_unicos = list(range(len(textos_unicos)))
         for chunk_indices, payload in self._chunk_payload(indices_unicos, textos_unicos):
             try:
+                if self.translator is None:
+                    raise RuntimeError("deep_translator no está instalado; instala requirements.txt o usa LLM con proveedor configurado.")
                 traducidos = self.translator.translate_batch(payload)
                 if not isinstance(traducidos, list) or len(traducidos) != len(payload):
                     raise ValueError("translate_batch devolvió un tamaño inesperado.")
@@ -289,24 +387,66 @@ class TranslatorManager:
 
         return salida
 
-    def _build_llm_system_prompt(self) -> str:
+    def _build_llm_system_prompt(self, character_memory_text: str = "") -> str:
         lore_str = f"Contexto general de la obra: {self.lore_manga}\n" if self.lore_manga else ""
         glossary_text = self.glossary.as_prompt_text()
         glossary_str = f"Glosario obligatorio:\n{glossary_text}\n" if glossary_text else ""
+        memory_str = f"{character_memory_text.strip()}\n" if character_memory_text and character_memory_text.strip() else ""
         return (
             f"Eres un traductor profesional de manga del {self.idioma_entrada} al {self.idioma_salida}.\n"
             f"{lore_str}"
             f"{glossary_str}"
+            f"{memory_str}"
             "Objetivo: entregar diálogos naturales, breves y fáciles de insertar en globos de texto.\n"
             "Reglas estrictas:\n"
             "1. Corrige errores evidentes de OCR solo cuando el contexto lo permita; no inventes contenido que no esté sugerido por el texto.\n"
-            "2. Mantén nombres propios, tratamientos, apodos y consistencia de una página a otra usando contexto_previo.\n"
-            "3. Adapta modismos, partículas, interjecciones y onomatopeyas de forma natural en el idioma destino.\n"
-            "4. Si un elemento parece efecto de sonido u onomatopeya, devuelve un equivalente breve de cómic, no una explicación. Ejemplo: 'ドン' -> '¡BUM!'.\n"
-            "5. Si el OCR trae basura visual incomprensible, devuelve '...'. Si el diálogo está entrecortado, conserva esa sensación con puntos suspensivos.\n"
-            "6. Evita traducciones innecesariamente largas: prioriza frases compactas que quepan en un globo sin perder sentido.\n"
-            "7. Responde única y exclusivamente con JSON válido usando esta estructura exacta: "
+            "2. Mantén nombres propios, tratamientos, apodos y consistencia de una página a otra usando contexto_previo y memoria_personajes.\n"
+            "3. Respeta speaker_id, estilo de habla y tono cuando estén disponibles; si el hablante es desconocido, no inventes identidad.\n"
+            "4. Adapta modismos, partículas, interjecciones y onomatopeyas de forma natural en el idioma destino.\n"
+            "5. Si un elemento parece efecto de sonido u onomatopeya, devuelve un equivalente breve de cómic, no una explicación. Ejemplo: 'ドン' -> '¡BUM!'.\n"
+            "6. Si el OCR trae basura visual incomprensible, devuelve '...'. Si el diálogo está entrecortado, conserva esa sensación con puntos suspensivos.\n"
+            "7. Evita traducciones innecesariamente largas: prioriza frases compactas que quepan en un globo sin perder sentido.\n"
+            "8. Responde única y exclusivamente con JSON válido usando esta estructura exacta y sin campos extra: "
             '{"traducciones": [{"id": 0, "traduccion": "texto traducido"}]}'
+        )
+
+    @staticmethod
+    def _schema_response_format() -> Dict[str, Any]:
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "manga_translation_batch",
+                "schema": LLM_TRANSLATION_RESPONSE_SCHEMA,
+                "strict": True,
+            },
+        }
+
+    def _response_formats_for_llm(self) -> List[Dict[str, Any]]:
+        if self.llm_strict_json_schema:
+            return [self._schema_response_format(), {"type": "json_object"}]
+        return [{"type": "json_object"}]
+
+    def character_memory_snapshot(self) -> Dict[str, Any]:
+        return self.character_memory.snapshot()
+
+    def analyze_character_memory(
+        self,
+        textos: Sequence[str],
+        page_index: Optional[int] = None,
+        region_metadata: Optional[Sequence[Mapping[str, Any]]] = None,
+        contexto_previo: Optional[Sequence[Sequence[str]]] = None,
+    ) -> List[Dict[str, Any]]:
+        return self.character_memory.analyze_page(
+            client=self.client,
+            model=self.modelo,
+            texts=textos,
+            page_index=page_index,
+            region_metadata=region_metadata,
+            contexto_previo=contexto_previo,
+            source_language=self.idioma_entrada,
+            target_language=self.idioma_salida,
+            seed=self.seed,
+            max_retries=min(2, self.max_retries),
         )
 
     @staticmethod
@@ -322,10 +462,32 @@ class TranslatorManager:
                 raise
             return json.loads(content[start:end + 1])
 
+    def _enrich_item_for_llm(self, item_id: int, texto: str, metadata: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+        item = {"id": item_id, "texto": texto}
+        if not metadata:
+            return item
+        allowed_fields = {
+            "source_index",
+            "kind",
+            "bbox",
+            "confidence",
+            "speaker_id",
+            "speaker_confidence",
+            "speech_style",
+            "is_narration",
+            "max_chars",
+        }
+        for key in allowed_fields:
+            if key in metadata and metadata[key] is not None:
+                item[key] = metadata[key]
+        return item
+
     def traducir_textos_llm(
         self,
         textos_actuales: Sequence[str],
         contexto_previo: Optional[Sequence[Sequence[str]]] = None,
+        items_metadata: Optional[Sequence[Mapping[str, Any]]] = None,
+        character_memory: Optional[Mapping[str, Any]] = None,
     ) -> List[str]:
         textos_actuales = list(textos_actuales)
 
@@ -348,7 +510,8 @@ class TranslatorManager:
             if persistent is not None:
                 salida[i] = self._normalize_translation(persistent)
             else:
-                items.append({"id": i, "texto": t})
+                metadata = items_metadata[i] if items_metadata and i < len(items_metadata) and isinstance(items_metadata[i], Mapping) else None
+                items.append(self._enrich_item_for_llm(i, t, metadata))
 
         if not items:
             return salida
@@ -357,76 +520,69 @@ class TranslatorManager:
         for page in list(contexto_previo or [])[-3:]:
             contexto.append([str(x) for x in page if str(x).strip()])
 
-        system_prompt = self._build_llm_system_prompt()
+        memory_payload = dict(character_memory or self.character_memory_snapshot())
+        system_prompt = self._build_llm_system_prompt(self.character_memory.as_prompt_text())
         user_payload = {
             "contexto_previo": contexto,
+            "memoria_personajes": memory_payload,
             "textos_a_traducir": items,
             "idioma_destino": self.idioma_salida,
+            "schema_esperado": {"traducciones": [{"id": "int", "traduccion": "str"}]},
         }
 
         last_error = None
 
         for attempt in range(1, self.max_retries + 1):
-            try:
-                resp = self.client.chat.completions.create(
-                    model=self.modelo,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.25,
-                    seed=self.seed,
-                    max_completion_tokens=max(384, len(items) * 140),
-                )
+            for response_format in self._response_formats_for_llm():
+                try:
+                    resp = self.client.chat.completions.create(
+                        model=self.modelo,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+                        ],
+                        response_format=response_format,
+                        temperature=0.25,
+                        seed=self.seed,
+                        max_completion_tokens=max(384, len(items) * 150),
+                    )
 
-                content = resp.choices[0].message.content
-                if not content:
-                    raise ValueError("Respuesta vacía del LLM.")
+                    content = resp.choices[0].message.content
+                    if not content:
+                        raise ValueError("Respuesta vacía del LLM.")
 
-                data = self._parse_llm_json(content)
-                traducciones = data["traducciones"]
+                    data = self._parse_llm_json(content)
+                    expected_ids = [item["id"] for item in items]
+                    traducciones = validate_translation_response(data, expected_ids)
 
-                esperados = {item["id"] for item in items}
-                vistos = set()
+                    for row in traducciones:
+                        idx = row["id"]
+                        traducido = row["traduccion"]
+                        normalized = self._normalize_translation(traducido)
+                        normalized = self.glossary.apply_to_translation(textos_actuales[idx], normalized)
+                        salida[idx] = normalized
+                        self.cache.set(self._persistent_key(textos_actuales[idx], "llm"), normalized)
 
-                for row in traducciones:
-                    idx = row["id"]
-                    traducido = row["traduccion"]
+                    return salida
 
-                    if not isinstance(idx, int):
-                        raise TypeError(f"id inválido: {idx!r}")
-                    if idx not in esperados:
-                        raise ValueError(f"id fuera de rango o inesperado: {idx}")
-                    if idx in vistos:
-                        raise ValueError(f"id duplicado: {idx}")
-                    if not isinstance(traducido, str):
-                        raise TypeError(f"traduccion inválida para id={idx}")
+                except Exception as exc:
+                    last_error = exc
+                    err_str = str(exc).lower()
 
-                    normalized = self._normalize_translation(traducido)
-                    normalized = self.glossary.apply_to_translation(textos_actuales[idx], normalized)
-                    salida[idx] = normalized
-                    self.cache.set(self._persistent_key(textos_actuales[idx], "llm"), normalized)
-                    vistos.add(idx)
+                    if "429" in err_str and "rate_limit_exceeded" in err_str and "tokens" in err_str:
+                        logger.error("Límite de tokens de Groq agotado. Cambiando a traductor tradicional de forma definitiva.")
+                        self.metodo = "Tradicional"
+                        return self.traducir_textos_tradicional(textos_actuales)
 
-                if vistos != esperados:
-                    faltantes = sorted(esperados - vistos)
-                    raise ValueError(f"Faltan traducciones para ids: {faltantes}")
+                    if response_format.get("type") == "json_schema":
+                        logger.debug("json_schema no disponible o falló en traducción LLM; probando json_object: %s", exc)
+                        continue
 
-                return salida
+                    logger.warning("Fallo LLM intento %s/%s: %s", attempt, self.max_retries, exc)
+                    break
 
-            except Exception as exc:
-                last_error = exc
-                err_str = str(exc).lower()
-
-                if "429" in err_str and "rate_limit_exceeded" in err_str and "tokens" in err_str:
-                    logger.error("Límite de tokens de Groq agotado. Cambiando a traductor tradicional de forma definitiva.")
-                    self.metodo = "Tradicional"
-                    return self.traducir_textos_tradicional(textos_actuales)
-
-                logger.warning("Fallo LLM intento %s/%s: %s", attempt, self.max_retries, exc)
-                if attempt < self.max_retries:
-                    time.sleep(2 ** (attempt - 1))
+            if attempt < self.max_retries:
+                time.sleep(2 ** (attempt - 1))
 
         logger.error("LLM agotó reintentos. Último error: %s", last_error)
         return self.traducir_textos_tradicional(textos_actuales)
@@ -435,7 +591,14 @@ class TranslatorManager:
         self,
         textos_actuales: Sequence[str],
         contexto_previo: Optional[Sequence[Sequence[str]]] = None,
+        items_metadata: Optional[Sequence[Mapping[str, Any]]] = None,
+        character_memory: Optional[Mapping[str, Any]] = None,
     ) -> List[str]:
         if self.metodo == "LLM":
-            return self.traducir_textos_llm(textos_actuales, contexto_previo)
+            return self.traducir_textos_llm(
+                textos_actuales,
+                contexto_previo=contexto_previo,
+                items_metadata=items_metadata,
+                character_memory=character_memory,
+            )
         return self.traducir_textos_tradicional(textos_actuales)

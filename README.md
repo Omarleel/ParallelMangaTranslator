@@ -158,3 +158,85 @@ El código mantiene las firmas públicas del pipeline, pero las responsabilidade
 - `Applications/TextNormalization.py`: normalización de texto OCR/traducido antes de traducir o renderizar.
 
 `config.yaml` es la fuente recomendada para la configuración no privada. `.env` debe reservarse para secretos como claves API y no debería versionarse.
+
+### Evaluación real de precisión
+
+Se añadió un evaluador para comparar el pipeline contra anotaciones manuales. Esto permite medir detección de regiones, OCR y traducción en vez de depender solo de métricas internas.
+
+Estructura recomendada:
+
+```text
+DatasetEval/ground_truth/
+  0001.json
+  0002.json
+```
+
+Formato mínimo de cada página:
+
+```json
+{
+  "page": "0001.png",
+  "regions": [
+    {
+      "bbox": [10, 20, 180, 90],
+      "type": "dialogue",
+      "text_ja": "行くぞ",
+      "translation_es": "¡Vamos!"
+    }
+  ]
+}
+```
+
+Ejecuta la evaluación después de procesar el manga:
+
+```bash
+python evaluate_manga.py \
+  --ground-truth DatasetEval/ground_truth \
+  --transcription-json Dataset/Outputs/Limpieza/Transcripción.json \
+  --translation-json Dataset/Outputs/Traduccion/Traducción.json \
+  --output Dataset/Outputs/Metricas/reporte_precision.json
+```
+
+El reporte incluye `detection_precision`, `detection_recall`, `detection_f1`, `mean_iou`, `mean_ocr_cer` y `mean_translation_cer`.
+
+### JSON estricto para traducción LLM
+
+La traducción LLM ahora valida localmente la respuesta antes de usarla. Cuando el proveedor lo permite, intenta `json_schema` estricto; si el proveedor no lo soporta, cae a `json_object` y mantiene validación local estricta.
+
+Salida aceptada:
+
+```json
+{
+  "traducciones": [
+    {"id": 0, "traduccion": "texto traducido"}
+  ]
+}
+```
+
+No se aceptan campos extra, ids duplicados, ids faltantes ni tipos incorrectos. Puedes controlar el intento de schema estricto con:
+
+```yaml
+llm:
+  strict_json_schema: true
+```
+
+### Memoria automática de personajes y hablantes
+
+En modo `LLM`, el sistema construye automáticamente una memoria persistente con IA antes de traducir cada página. Usa el OCR, tipo de región, orden de lectura, contexto previo y memoria acumulada para inferir hablantes, estilos de habla y posibles aliases sin pedirlo manualmente.
+
+Por defecto se guarda en:
+
+```text
+Dataset/character_memory.json
+```
+
+Configuración:
+
+```yaml
+character_memory:
+  enabled: true
+  path: ""
+  max_context_pages: 8
+```
+
+La memoria se añade al prompt de traducción y también se exportan campos como `Hablante` y `Confianza hablante` en los JSON de transcripción/traducción cuando están disponibles. Si no hay cliente LLM configurado, el sistema no inventa personajes: usa asignaciones conservadoras como `unknown`, `narrator` o `sfx`.
