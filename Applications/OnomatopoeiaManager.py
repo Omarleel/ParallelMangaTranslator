@@ -206,11 +206,13 @@ class OnomatopoeiaManager:
             return best_key, best_score, best_source
         return None
 
-    def is_free_text_onomatopoeia(self, text: str, idioma: Optional[str] = None) -> bool:
-        return self.similar_semantic_key(text, idioma) is not None
+    def dictionary_semantic_key(self, text: str, idioma: Optional[str] = None) -> Optional[str]:
+        """Clasificación segura: sólo diccionario exacto/normalizado.
 
-    def semantic_key(self, text: str, idioma: Optional[str] = None) -> Optional[str]:
-        idioma = self._canonical_language(idioma)
+        Este método es el único que debe usarse para decidir el estilo final de
+        un diálogo normal. No aplica similitud ni heurísticas de forma.
+        """
+        self._canonical_language(idioma)  # Carga alias/diccionarios; el mapa global es multilingüe.
         normalized = self.normalize_key(text)
         if not normalized:
             return None
@@ -222,35 +224,98 @@ class OnomatopoeiaManager:
         if compact in self.SOURCE_TO_KEY:
             return self.SOURCE_TO_KEY[compact]
 
-        # Permite detectar variantes alargadas: ドーーン, boooom, grrrrr.
+        # Variante todavía segura: coincide con una entrada del diccionario tras
+        # eliminar alargamientos/espacios. No introduce palabras nuevas por regex.
         compact_soft = re.sub(r"[-~]+", "", compact)
         compact_soft = re.sub(r"([a-z])\1{2,}", r"\1\1", compact_soft)
         if compact_soft in self.SOURCE_TO_KEY:
             return self.SOURCE_TO_KEY[compact_soft]
 
-        if idioma == "Japonés" and self._mostly_short(text) and self._JAPANESE_KANA_RE.match(str(text).strip()):
-            if re.search(r"[ドバガゴズザギキシチュヒフハパピプポンッー〜~]", str(text)):
-                return "impact" if re.search(r"[ドゴズガ]", str(text)) else "whoosh"
+        return None
 
-        if idioma == "Coreano" and self._mostly_short(text) and self._HANGUL_RE.match(str(text).strip()):
-            if self._looks_like_repeated_sfx(text) or re.search(r"[쾅쿵퍽짝휙헉꺄]", str(text)):
+    def heuristic_semantic_key(self, text: str, idioma: Optional[str] = None) -> Optional[str]:
+        """Pista débil para candidatos SFX, nunca para diálogo final.
+
+        Se usa sólo antes de tener una región final, por ejemplo para decidir si
+        un texto libre o una región SFX candidata debe tratarse como posible
+        onomatopeya.
+        """
+        idioma = self._canonical_language(idioma)
+        raw_text = str(text or "").strip()
+        if not raw_text or self._MOSTLY_PUNCT_RE.match(raw_text):
+            return None
+
+        if idioma == "Japonés" and self._mostly_short(raw_text) and self._JAPANESE_KANA_RE.match(raw_text):
+            # No basta con ー/〜/~: son comunes en diálogo. Requiere sílabas
+            # típicas de SFX o una repetición clara.
+            if re.search(r"[ドバガゴズザギキシチュヒフハパピプポ]", raw_text):
+                return "impact" if re.search(r"[ドゴズガ]", raw_text) else "whoosh"
+            if re.search(r"[ンッ]", raw_text) and self._looks_like_repeated_sfx(raw_text):
+                return "whoosh"
+
+        if idioma == "Coreano" and self._mostly_short(raw_text) and self._HANGUL_RE.match(raw_text):
+            if self._looks_like_repeated_sfx(raw_text) or re.search(r"[쾅쿵퍽짝휙헉꺄]", raw_text):
                 return "impact"
 
-        if idioma == "Chino" and self._mostly_short(text) and self._CJK_RE.match(str(text).strip()):
-            if self._looks_like_repeated_sfx(text) or re.search(r"[砰轰啪唰呼嗒怦啊哈呜叮铃哗]", str(text)):
+        if idioma == "Chino" and self._mostly_short(raw_text) and self._CJK_RE.match(raw_text):
+            if self._looks_like_repeated_sfx(raw_text) or re.search(r"[砰轰啪唰呼嗒怦啊哈呜叮铃哗]", raw_text):
                 return "impact"
 
-        if idioma in {"Inglés", "Español", "Portugués", "Francés", "Italiano"} and self._mostly_short(text):
-            if self._looks_like_repeated_sfx(text):
+        if idioma in {"Inglés", "Español", "Portugués", "Francés", "Italiano"} and self._mostly_short(raw_text):
+            if self._looks_like_repeated_sfx(raw_text):
                 return "impact"
 
         return None
+
+    def candidate_semantic_key(
+        self,
+        text: str,
+        idioma: Optional[str] = None,
+        *,
+        allow_similarity: bool = True,
+        allow_heuristic: bool = True,
+    ) -> Optional[Tuple[str, float, str, str]]:
+        """Devuelve una clave para candidatos no-dialogue.
+
+        Orden del flujo:
+        1) diccionario exacto/normalizado,
+        2) similitud contra diccionario,
+        3) heurística débil de forma/caracteres.
+        """
+        key = self.dictionary_semantic_key(text, idioma)
+        if key is not None:
+            return key, 1.0, str(text or ""), "dictionary"
+
+        if allow_similarity:
+            match = self.similar_semantic_key(text, idioma)
+            if match is not None:
+                key, score, source = match
+                return key, float(score), source, "similarity"
+
+        if allow_heuristic:
+            key = self.heuristic_semantic_key(text, idioma)
+            if key is not None:
+                return key, 0.50, str(text or ""), "heuristic"
+
+        return None
+
+    def is_free_text_onomatopoeia(self, text: str, idioma: Optional[str] = None) -> bool:
+        return self.candidate_semantic_key(text, idioma, allow_similarity=True, allow_heuristic=False) is not None
+
+    def is_onomatopoeia_candidate(self, text: str, idioma: Optional[str] = None) -> bool:
+        text = str(text or "").strip()
+        if not text or self._MOSTLY_PUNCT_RE.match(text):
+            return False
+        return self.candidate_semantic_key(text, idioma) is not None
+
+    def semantic_key(self, text: str, idioma: Optional[str] = None) -> Optional[str]:
+        return self.dictionary_semantic_key(text, idioma)
 
     def is_onomatopoeia(self, text: str, idioma: Optional[str] = None) -> bool:
         text = str(text or "").strip()
         if not text or self._MOSTLY_PUNCT_RE.match(text):
             return False
-        return self.semantic_key(text, idioma) is not None
+        return self.dictionary_semantic_key(text, idioma) is not None
 
     @staticmethod
     def _copy_intensity(original: str, translated: str) -> str:

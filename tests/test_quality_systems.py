@@ -199,6 +199,17 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
         self.assertTrue(metadata["onomatopoeia"])
         self.assertIn("onomatopoeia_key", metadata)
 
+    def test_translator_never_marks_dialogue_as_onomatopoeia_by_heuristic(self):
+        translator = object.__new__(TranslateManga)
+        translator.onomatopoeia_mode = "translate"
+        translator.ultimas_regiones = [self._region("dialogue"), self._region("sfx")]
+        translator.idioma_entrada = "Japonés"
+        translator.onomatopoeia_manager = OnomatopoeiaManager()
+
+        estilos = translator._clasificar_estilos_texto(["ドバ", "ドバ"])
+
+        self.assertEqual(estilos, ["dialogo", "onomatopeya"])
+
 
 if __name__ == "__main__":
     unittest.main()

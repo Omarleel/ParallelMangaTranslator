@@ -161,7 +161,7 @@ class BubbleDetector:
 
     def _looks_like_sfx(self, detections: Sequence) -> bool:
         text = "".join(self._text(det) for det in detections).strip()
-        if self.onomatopoeia_manager.is_onomatopoeia(text, self.idioma_entrada):
+        if self.onomatopoeia_manager.is_onomatopoeia_candidate(text, self.idioma_entrada):
             return True
         boxes = [self._to_rect(det) for det in detections]
         if not boxes:
@@ -185,23 +185,32 @@ class BubbleDetector:
         return aspect >= 4.0 and compact_len <= 10 and not looks_sentence_like
 
     def _free_text_onomatopoeia_metadata(self, text: str) -> Dict[str, object]:
-        """Devuelve metadata estable para textos libres que parecen SFX/onomatopeya."""
+        """Devuelve metadata estable para textos libres que parecen SFX/onomatopeya.
+
+        Flujo deliberado:
+        1) diccionario exacto/normalizado,
+        2) similitud contra el diccionario,
+        3) heurística débil sólo para candidatos free_text/SFX.
+        """
         text = str(text or "").strip()
         if not text:
             return {}
-        match = self.onomatopoeia_manager.similar_semantic_key(text, self.idioma_entrada)
-        if not match and self.onomatopoeia_manager.is_onomatopoeia(text, self.idioma_entrada):
-            key = self.onomatopoeia_manager.semantic_key(text, self.idioma_entrada) or "unknown"
-            match = (key, 1.0, text)
+        match = self.onomatopoeia_manager.candidate_semantic_key(
+            text,
+            self.idioma_entrada,
+            allow_similarity=True,
+            allow_heuristic=True,
+        )
         if not match:
             return {}
-        key, score, source = match
+        key, score, source, method = match
         return {
             "free_text_onomatopoeia": True,
             "onomatopoeia": True,
             "onomatopoeia_key": key,
             "free_text_onomatopoeia_similarity": round(float(score), 4),
             "free_text_onomatopoeia_source": source,
+            "free_text_onomatopoeia_method": method,
         }
 
     def _region_onomatopoeia_debug_metadata(self, region: TextRegion) -> Dict[str, object]:
@@ -1292,7 +1301,7 @@ class BubbleDetector:
                 "free_text_filter_reason": filter_reason,
                 "free_text_confidence": round(float(conf), 4),
                 "free_text_original_kind": "free_text",
-                "free_text_sfx_reason": "dictionary_or_similarity" if free_text_onomatopoeia_metadata else ("shape_or_exact_dictionary" if looks_sfx else ""),
+                "free_text_sfx_reason": free_text_onomatopoeia_metadata.get("free_text_onomatopoeia_method", "") if free_text_onomatopoeia_metadata else ("shape_candidate" if looks_sfx else ""),
             }
             metadata.update(free_text_onomatopoeia_metadata)
             free_regions.append(TextRegion(

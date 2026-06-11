@@ -397,8 +397,12 @@ class TranslateManga:
         return self.onomatopoeia_manager.is_onomatopoeia(texto, self.idioma_entrada)
 
     def _clasificar_estilos_texto(self, textos: Sequence[str]) -> List[str]:
+        # Clasificación final conservadora:
+        # - diálogo normal: sólo diccionario exacto/normalizado,
+        # - free_text/SFX: puede usar similitud o heurística previa de candidato,
+        # - la heurística nunca convierte un diálogo normal en onomatopeya.
         estilos = [
-            self.onomatopoeia_manager.render_style(texto, self.idioma_entrada)
+            "onomatopeya" if self.onomatopoeia_manager.is_onomatopoeia(texto, self.idioma_entrada) else "dialogo"
             for texto in textos
         ]
         if self.ultimas_regiones and len(self.ultimas_regiones) == len(estilos):
@@ -409,6 +413,9 @@ class TranslateManga:
                     estilos[i] = "onomatopeya"
                 elif region.kind == "narration":
                     estilos[i] = "narracion"
+                elif region.kind == "dialogue":
+                    # Diálogo queda como diálogo salvo coincidencia exacta de diccionario.
+                    estilos[i] = "onomatopeya" if self.onomatopoeia_manager.is_onomatopoeia(textos[i], self.idioma_entrada) else "dialogo"
         if self.onomatopoeia_mode == "subtitle":
             estilos = ["onomatopeya_subtitle" if e == "onomatopeya" else e for e in estilos]
         return estilos

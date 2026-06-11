@@ -421,7 +421,7 @@ class CleanManga:
 
     def _is_sound_effect_detection(self, detection) -> bool:
         texto = self._text_from_detection(detection)
-        if self.onomatopoeia_manager.is_onomatopoeia(texto, self.idioma_entrada):
+        if self.onomatopoeia_manager.is_onomatopoeia_candidate(texto, self.idioma_entrada):
             return True
         try:
             x, y, w, h = self._to_rect(detection)

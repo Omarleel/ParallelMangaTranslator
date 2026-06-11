@@ -445,6 +445,24 @@ class CoreQualityTests(unittest.TestCase):
         self.assertTrue(manager.is_onomatopoeia("ドン", "Japonés"))
         self.assertEqual(manager.translate("ドン", "Japonés", "Español"), "¡BUM!")
 
+    def test_japanese_dialogue_with_wave_dash_is_not_sfx(self):
+        manager = OnomatopoeiaManager()
+        self.assertFalse(manager.is_onomatopoeia("...そうですね〜〜", "Japonés"))
+        self.assertEqual(manager.render_style("...そうですね〜〜", "Japonés"), "dialogo")
+        self.assertFalse(manager.is_onomatopoeia("えー", "Japonés"))
+
+    def test_onomatopoeia_flow_separates_dictionary_similarity_and_heuristic(self):
+        manager = OnomatopoeiaManager()
+        self.assertTrue(manager.is_onomatopoeia("ドン", "Japonés"))
+        self.assertEqual(manager.semantic_key("ドン", "Japonés"), "impact")
+
+        # ドバ no está en el diccionario; sólo debe ser una pista débil de candidato.
+        self.assertFalse(manager.is_onomatopoeia("ドバ", "Japonés"))
+        self.assertIsNone(manager.semantic_key("ドバ", "Japonés"))
+        self.assertFalse(manager.is_free_text_onomatopoeia("ドバ", "Japonés"))
+        self.assertEqual(manager.heuristic_semantic_key("ドバ", "Japonés"), "impact")
+        self.assertTrue(manager.is_onomatopoeia_candidate("ドバ", "Japonés"))
+
     def test_renderer_accepts_clip_masks(self):
         img = np.full((120, 200, 3), 255, dtype=np.uint8)
         mask = np.zeros((80, 160), dtype=np.uint8)
