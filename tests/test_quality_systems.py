@@ -1,11 +1,22 @@
 import json
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+
+import numpy as np
+
+sys.modules.setdefault("easyocr", types.SimpleNamespace(Reader=object))
 
 from Applications.CharacterMemoryManager import CharacterMemoryManager, validate_character_memory_response
 from Applications.EvaluationManager import EvaluationManager, EvaluationConfig, box_iou, char_error_rate
 from Applications.TranslatorManager import validate_translation_response
+from Applications.BubbleDetector import BubbleDetector
+from Applications.CleanManga import CleanManga
+from Applications.OnomatopoeiaManager import OnomatopoeiaManager
+from Applications.ProcessingModels import TextRegion
+from Applications.TranslateManga import TranslateManga
 
 
 class StrictLLMJsonTests(unittest.TestCase):
@@ -123,6 +134,70 @@ class CharacterMemoryManagerTests(unittest.TestCase):
         self.assertEqual(assignments[0]["speaker_id"], "char_001")
         self.assertIn("char_001", saved["characters"])
         self.assertEqual(saved["characters"]["char_001"]["utterance_count"], 1)
+
+
+class OnomatopoeiaKeepModeTests(unittest.TestCase):
+    @staticmethod
+    def _region(kind: str) -> TextRegion:
+        mask = np.zeros((80, 80), dtype=np.uint8)
+        mask[10:40, 10:40] = 255
+        return TextRegion(bbox=(10, 10, 30, 30), text_bbox=(10, 10, 30, 30), mask=mask, kind=kind, confidence=0.9)
+
+    def test_cleaner_does_not_clean_sfx_when_keep_mode_is_requested(self):
+        cleaner = object.__new__(CleanManga)
+        cleaner.onomatopoeia_mode = "keep"
+        cleaner.translate_onomatopoeia = False
+        cleaner.clean_onomatopoeia = False
+        cleaner.idioma_entrada = "Japonés"
+        cleaner.onomatopoeia_manager = OnomatopoeiaManager()
+
+        self.assertFalse(cleaner._should_clean_non_bubble_region(self._region("sfx")))
+        self.assertFalse(cleaner._should_clean_non_bubble_region(self._region("onomatopoeia")))
+
+    def test_translator_keeps_any_sfx_region_out_of_llm_payload(self):
+        translator = object.__new__(TranslateManga)
+        translator.onomatopoeia_mode = "keep"
+        translator.ultimas_regiones = [self._region("sfx")]
+        translator.idioma_entrada = "Japonés"
+        translator.idioma_salida = "Español"
+        translator.onomatopoeia_manager = OnomatopoeiaManager()
+
+        self.assertEqual(translator._traducir_onomatopeyas_con_diccionario(["texto raro"]), ["texto raro"])
+
+    def test_cleaner_uses_free_text_onomatopoeia_metadata(self):
+        cleaner = object.__new__(CleanManga)
+        cleaner.onomatopoeia_mode = "translate"
+        cleaner.translate_onomatopoeia = True
+        cleaner.clean_onomatopoeia = False
+        cleaner.idioma_entrada = "Japonés"
+        cleaner.onomatopoeia_manager = OnomatopoeiaManager()
+        region = self._region("free_text")
+        region.metadata["free_text_onomatopoeia"] = True
+
+        self.assertFalse(cleaner._should_clean_non_bubble_region(region))
+
+    def test_translator_respects_translate_false_for_free_text_onomatopoeia_metadata(self):
+        translator = object.__new__(TranslateManga)
+        translator.onomatopoeia_mode = "translate"
+        translator.translate_onomatopoeia = False
+        translator.ultimas_regiones = [self._region("free_text")]
+        translator.ultimas_regiones[0].metadata["free_text_onomatopoeia"] = True
+        translator.idioma_entrada = "Japonés"
+        translator.idioma_salida = "Español"
+        translator.onomatopoeia_manager = OnomatopoeiaManager()
+
+        self.assertEqual(translator._traducir_onomatopeyas_con_diccionario(["ドン"]), ["ドン"])
+
+    def test_bubble_detector_marks_free_text_onomatopoeia_metadata(self):
+        detector = object.__new__(BubbleDetector)
+        detector.idioma_entrada = "Japonés"
+        detector.onomatopoeia_manager = OnomatopoeiaManager()
+
+        metadata = detector._free_text_onomatopoeia_metadata("ドン")
+
+        self.assertTrue(metadata["free_text_onomatopoeia"])
+        self.assertTrue(metadata["onomatopoeia"])
+        self.assertIn("onomatopoeia_key", metadata)
 
 
 if __name__ == "__main__":

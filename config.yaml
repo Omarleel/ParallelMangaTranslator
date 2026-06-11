@@ -103,6 +103,9 @@ onomatopoeia:
   # translate | keep | subtitle | auto
   mode: keep
   translate: false
+  # false conserva el arte SFX/onomatopeyas: no limpia ni borra esas zonas.
+  # Si se omite, keep/translate:false lo desactiva automáticamente.
+  clean: false
 
 llm:
   # true intenta response_format json_schema estricto y cae a json_object si el proveedor no lo soporta.

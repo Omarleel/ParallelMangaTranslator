@@ -59,6 +59,10 @@ class CleanManga:
         self.bubble_fill_edge_margin = self._env_int("PMT_BUBBLE_FILL_EDGE_MARGIN", 5)
         self.bubble_fill_text_dilate = self._env_int("PMT_BUBBLE_FILL_TEXT_DILATE", 2)
         self.onomatopoeia_manager = OnomatopoeiaManager()
+        self.onomatopoeia_mode = os.getenv("PMT_ONOMATOPOEIA_MODE", "translate").strip().lower()
+        self.translate_onomatopoeia = os.getenv("PMT_TRANSLATE_ONOMATOPOEIA", "1").strip().lower() not in {"0", "false", "no", "off"}
+        default_clean_onomatopoeia = self.translate_onomatopoeia and self.onomatopoeia_mode not in {"keep", "original", "none", "off"}
+        self.clean_onomatopoeia = env_flag("PMT_CLEAN_ONOMATOPOEIA", default_clean_onomatopoeia)
         self.bubble_detector = BubbleDetector(idioma_entrada=idioma_entrada)
         self.inpainter = self._build_inpainter(modelo_inpaint)
         self._ocr_reader = None
@@ -101,7 +105,12 @@ class CleanManga:
         imagen_base = imagen.copy()
         bubble_regions = [r for r in regiones if r.kind in {"dialogue", "narration", "unknown"}]
         # Texto libre y onomatopeyas se limpian con inpainting, no con relleno plano de globo.
-        sfx_regions = [r for r in regiones if r.kind not in {"dialogue", "narration", "unknown"}]
+        # Si el usuario eligió conservar onomatopeyas, las regiones SFX se dejan intactas
+        # para no borrar arte original ni reinsertarlo como fuente plana.
+        sfx_regions = [
+            r for r in regiones
+            if r.kind not in {"dialogue", "narration", "unknown"} and self._should_clean_non_bubble_region(r)
+        ]
 
         if self.bubble_fill and self.inpaint_mode in {"auto", "fast", "bubble_only", "quality", "sfx"}:
             imagen_base = self._fill_bubble_interiors(imagen_base, bubble_regions)
@@ -144,6 +153,39 @@ class CleanManga:
             return tuple(int(min(255, max(0, c))) for c in median.tolist())
         # Globos oscuros/narración: usa mediana del área detectada.
         return tuple(int(min(255, max(0, c))) for c in median.tolist())
+
+    def _onomatopoeia_keep_requested(self) -> bool:
+        return (
+            self.onomatopoeia_mode in {"keep", "original", "none", "off"}
+            or not self.translate_onomatopoeia
+            or not self.clean_onomatopoeia
+        )
+
+    def _region_text_hints(self, region: TextRegion) -> List[str]:
+        hints = [getattr(region, "source_text_hint", "")]
+        metadata = getattr(region, "metadata", {}) or {}
+        for key in ("text", "ocr_text", "source_text", "source_text_hint"):
+            value = metadata.get(key)
+            if value is not None:
+                hints.append(str(value))
+        return [str(x or "").strip() for x in hints if str(x or "").strip()]
+
+    def _is_kept_onomatopoeia_region(self, region: TextRegion) -> bool:
+        if not self._onomatopoeia_keep_requested():
+            return False
+        metadata = getattr(region, "metadata", {}) or {}
+        if metadata.get("free_text_onomatopoeia") or metadata.get("onomatopoeia"):
+            return True
+        if region.kind in {"sfx", "onomatopoeia"}:
+            return True
+        if region.kind == "free_text":
+            for text in self._region_text_hints(region):
+                if self.onomatopoeia_manager.is_free_text_onomatopoeia(text, self.idioma_entrada):
+                    return True
+        return False
+
+    def _should_clean_non_bubble_region(self, region: TextRegion) -> bool:
+        return not self._is_kept_onomatopoeia_region(region)
 
     @staticmethod
     def _env_int(name: str, default: int) -> int:

@@ -79,6 +79,7 @@ ENV_BINDINGS: tuple[EnvBinding, ...] = (
     EnvBinding("PMT_BUBBLE_MERGE_DEBUG_DIR", "quality", "bubble_merge_debug_dir"),
     EnvBinding("PMT_ONOMATOPOEIA_MODE", "onomatopoeia", "mode"),
     EnvBinding("PMT_TRANSLATE_ONOMATOPOEIA", "onomatopoeia", "translate"),
+    EnvBinding("PMT_CLEAN_ONOMATOPOEIA", "onomatopoeia", "clean"),
     EnvBinding("PMT_LLM_STRICT_JSON_SCHEMA", "llm", "strict_json_schema"),
     EnvBinding("PMT_CHARACTER_MEMORY", "character_memory", "enabled"),
     EnvBinding("PMT_CHARACTER_MEMORY_PATH", "character_memory", "path"),

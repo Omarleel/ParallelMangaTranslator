@@ -50,7 +50,8 @@ class TranslateManga:
         self.ultimos_textos_traducidos: List[str] = []
         self.ultimas_asignaciones_hablante: List[Dict[str, Any]] = []
         self.onomatopoeia_mode = os.getenv("PMT_ONOMATOPOEIA_MODE", "translate").strip().lower()
-        if os.getenv("PMT_TRANSLATE_ONOMATOPOEIA", "1").strip().lower() in {"0", "false", "no", "off"}:
+        self.translate_onomatopoeia = os.getenv("PMT_TRANSLATE_ONOMATOPOEIA", "1").strip().lower() not in {"0", "false", "no", "off"}
+        if not self.translate_onomatopoeia:
             self.onomatopoeia_mode = "keep"
         # bubble: OCR sobre el globo completo segmentado; text_hint: recorte más ajustado si hubo OCR global.
         self.ocr_region_mode = os.getenv("PMT_OCR_REGION_MODE", "bubble").strip().lower()
@@ -358,18 +359,42 @@ class TranslateManga:
         if region.kind != "free_text":
             return False
 
+        metadata = getattr(region, "metadata", {}) or {}
+        if metadata.get("free_text_onomatopoeia") or metadata.get("onomatopoeia"):
+            metadata["free_text_onomatopoeia_keep"] = True
+            return True
+
         candidatos = [texto, getattr(region, "source_text_hint", "")]
         for candidato in candidatos:
             if self.onomatopoeia_manager.is_free_text_onomatopoeia(candidato, self.idioma_entrada):
                 if hasattr(region, "metadata"):
                     match = self.onomatopoeia_manager.similar_semantic_key(candidato, self.idioma_entrada)
                     if match:
-                        _key, score, source = match
+                        key, score, source = match
                         region.metadata["free_text_onomatopoeia_keep"] = True
+                        region.metadata["free_text_onomatopoeia"] = True
+                        region.metadata["onomatopoeia"] = True
+                        region.metadata["onomatopoeia_key"] = key
                         region.metadata["free_text_onomatopoeia_similarity"] = round(float(score), 4)
                         region.metadata["free_text_onomatopoeia_source"] = source
                 return True
         return False
+
+    def _onomatopoeia_keep_requested(self) -> bool:
+        return (
+            self.onomatopoeia_mode in {"keep", "original", "none", "off"}
+            or not getattr(self, "translate_onomatopoeia", True)
+        )
+
+    def _should_keep_original_onomatopoeia(self, indice: int, texto: str) -> bool:
+        if not self._onomatopoeia_keep_requested():
+            return False
+        region = self.ultimas_regiones[indice] if self.ultimas_regiones and indice < len(self.ultimas_regiones) else None
+        if region is not None and region.kind in {"sfx", "onomatopoeia"}:
+            return True
+        if region is not None and region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(indice, texto):
+            return True
+        return self.onomatopoeia_manager.is_onomatopoeia(texto, self.idioma_entrada)
 
     def _clasificar_estilos_texto(self, textos: Sequence[str]) -> List[str]:
         estilos = [
@@ -395,11 +420,14 @@ class TranslateManga:
         """
         parciales = []
         for indice, texto in enumerate(textos):
-            if self._es_onomatopeya_de_texto_libre(indice, texto):
+            if self._should_keep_original_onomatopoeia(indice, texto):
                 parciales.append(texto)
                 continue
             if self.onomatopoeia_mode in {"keep", "original", "none", "off"}:
-                parciales.append(texto if self.onomatopoeia_manager.is_onomatopoeia(texto, self.idioma_entrada) else None)
+                parciales.append(None)
+                continue
+            if self._es_onomatopeya_de_texto_libre(indice, texto):
+                parciales.append(texto)
                 continue
             traduccion = self.onomatopoeia_manager.translate(
                 texto,
@@ -461,15 +489,32 @@ class TranslateManga:
         self.ultimo_estilos_texto = self._clasificar_estilos_texto(textos_limpios)
         base_metadata = self._region_metadata_for_translation(textos_limpios)
 
+        keep_onomatopoeia_flags = [self._should_keep_original_onomatopoeia(i, texto) for i, texto in enumerate(textos_limpios)]
+
         self.ultimas_asignaciones_hablante = []
         metadata_con_hablantes = list(base_metadata)
         if self.metodo_traduccion == "LLM":
+            # No gastamos tokens de memoria de personajes en onomatopeyas que se conservarán intactas.
+            memory_texts = ["" if keep else texto for keep, texto in zip(keep_onomatopoeia_flags, textos_limpios)]
             self.ultimas_asignaciones_hablante = self.translator_manager.analyze_character_memory(
-                textos_limpios,
+                memory_texts,
                 page_index=self.indice_imagen,
                 region_metadata=base_metadata,
                 contexto_previo=list(self.historial_contexto),
             )
+            for idx, keep in enumerate(keep_onomatopoeia_flags):
+                if keep:
+                    assignment = {
+                        "text_id": idx,
+                        "speaker_id": "sfx",
+                        "confidence": 0.95,
+                        "is_narration": False,
+                        "evidence": "onomatopeya_conservada_sin_llm",
+                    }
+                    if idx < len(self.ultimas_asignaciones_hablante):
+                        self.ultimas_asignaciones_hablante[idx] = assignment
+                    else:
+                        self.ultimas_asignaciones_hablante.append(assignment)
             metadata_con_hablantes = self._metadata_with_speaker_assignments(base_metadata, self.ultimas_asignaciones_hablante)
 
         traducciones_onomatopeyas = self._traducir_onomatopeyas_con_diccionario(textos_limpios)
@@ -588,11 +633,15 @@ class TranslateManga:
         self.ultimos_textos_traducidos = textos_traducidos
         self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
         self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos)
+        textos_para_render = [
+            "" if self._should_keep_original_onomatopoeia(idx, original) else traducido
+            for idx, (original, traducido) in enumerate(zip(textos_limpios, textos_traducidos))
+        ]
         clip_masks = [region.local_mask() for region in self.ultimas_regiones] if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores) else None
         return self.text_renderer.render(
             imagen_limpia,
             cuadros_delimitadores,
-            textos_traducidos,
+            textos_para_render,
             text_styles=self.ultimo_estilos_texto,
             clip_masks=clip_masks,
         )
