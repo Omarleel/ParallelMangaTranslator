@@ -17,6 +17,7 @@ from Applications.BubbleDetector import BubbleDetector
 from Applications.CacheManager import env_flag
 from Applications.Environment import env_int
 from Applications.ProcessingModels import TextRegion
+from Applications.SourceLanguageFilter import SourceLanguageFilter
 from .LoggingConfig import get_logger
 
 nest_asyncio.apply()
@@ -64,9 +65,42 @@ class CleanManga:
         default_clean_onomatopoeia = self.translate_onomatopoeia and self.onomatopoeia_mode not in {"keep", "original", "none", "off"}
         self.clean_onomatopoeia = env_flag("PMT_CLEAN_ONOMATOPOEIA", default_clean_onomatopoeia)
         self.bubble_detector = BubbleDetector(idioma_entrada=idioma_entrada)
+        self.source_language_filter = SourceLanguageFilter(idioma_entrada)
         self.inpainter = self._build_inpainter(modelo_inpaint)
         self._ocr_reader = None
         self.last_regions: List[TextRegion] = []
+
+
+    def _source_filter(self) -> SourceLanguageFilter:
+        filtro = getattr(self, "source_language_filter", None)
+        if filtro is None:
+            filtro = SourceLanguageFilter(getattr(self, "idioma_entrada", ""))
+            self.source_language_filter = filtro
+        return filtro
+
+    def _region_matches_source_language(self, region: TextRegion) -> bool:
+        filtro = self._source_filter()
+        allowed = filtro.should_process_region(region, allow_unknown=True)
+        metadata = getattr(region, "metadata", None)
+        if isinstance(metadata, dict):
+            metadata["source_language_filter"] = filtro.explain_region(region)
+            metadata["source_language_allowed"] = bool(allowed)
+            metadata["source_language"] = getattr(self, "idioma_entrada", "")
+        return bool(allowed)
+
+    def _filter_regions_by_source_language(self, regiones: Sequence[TextRegion]) -> List[TextRegion]:
+        filtradas: List[TextRegion] = []
+        for region in regiones or []:
+            if self._region_matches_source_language(region):
+                filtradas.append(region)
+            else:
+                logger.debug(
+                    "Región omitida por idioma de origen: idioma=%s bbox=%s hint=%r",
+                    getattr(self, "idioma_entrada", ""),
+                    getattr(region, "bbox", None),
+                    getattr(region, "source_text_hint", ""),
+                )
+        return filtradas
 
     def _build_inpainter(self, model_name: str):
         if model_name not in self.INPAINTER_FACTORIES:
@@ -85,6 +119,7 @@ class CleanManga:
         regiones_primarias = self.bubble_detector.detect_primary_bubble_regions(imagen)
         resultados = self.obtener_cuadros_delimitadores(imagen)
         regiones = self.bubble_detector.build_regions_from_bubbles_and_text(imagen, regiones_primarias, resultados)
+        regiones = self._filter_regions_by_source_language(regiones)
         self.last_regions = regiones
 
         # Sin globos/modelo no inventamos regiones heurísticas. Si la página no tiene
@@ -103,13 +138,13 @@ class CleanManga:
         # El modo profesional por defecto limpia el interior completo de globos detectados.
         # Para SFX sobre dibujo conserva inpainting, porque rellenar con blanco destruiría arte.
         imagen_base = imagen.copy()
-        bubble_regions = [r for r in regiones if r.kind in {"dialogue", "narration", "unknown"}]
+        bubble_regions = [r for r in regiones if r.kind in {"dialogue", "narration", "unknown"} and self._region_matches_source_language(r)]
         # Texto libre y onomatopeyas se limpian con inpainting, no con relleno plano de globo.
         # Si el usuario eligió conservar onomatopeyas, las regiones SFX se dejan intactas
         # para no borrar arte original ni reinsertarlo como fuente plana.
         sfx_regions = [
             r for r in regiones
-            if r.kind not in {"dialogue", "narration", "unknown"} and self._should_clean_non_bubble_region(r, imagen)
+            if r.kind not in {"dialogue", "narration", "unknown"} and self._region_matches_source_language(r) and self._should_clean_non_bubble_region(r, imagen)
         ]
 
         if self.bubble_fill and self.inpaint_mode in {"auto", "fast", "bubble_only", "quality", "sfx"}:
@@ -295,6 +330,8 @@ class CleanManga:
         return False
 
     def _should_clean_non_bubble_region(self, region: TextRegion, imagen: Optional[np.ndarray] = None) -> bool:
+        if not self._region_matches_source_language(region):
+            return False
         return not self._is_kept_onomatopoeia_region(region, imagen)
 
     @staticmethod

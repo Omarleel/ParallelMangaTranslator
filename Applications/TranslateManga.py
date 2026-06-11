@@ -11,6 +11,7 @@ import torch
 from Applications.OcrManager import OcrManager
 from Applications.OnomatopoeiaManager import OnomatopoeiaManager
 from Applications.TextNormalization import OcrTextNormalizer
+from Applications.SourceLanguageFilter import SourceLanguageFilter
 from Applications.TextRendering import TextRenderer
 from Applications.TranslatorManager import TranslatorManager
 from Applications.ProcessingModels import TextRegion
@@ -42,12 +43,14 @@ class TranslateManga:
         self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
         self.text_renderer = TextRenderer(font_path=RUTA_FUENTE, min_font_size=TAMANIO_MINIMO_FUENTE)
         self.text_normalizer = OcrTextNormalizer()
+        self.source_language_filter = SourceLanguageFilter(idioma_entrada)
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.historial_contexto = deque(maxlen=3)
         self.ultimo_estilos_texto = []
         self.ultimas_regiones: List[TextRegion] = []
         self.ultimos_textos_originales: List[str] = []
         self.ultimos_textos_traducidos: List[str] = []
+        self.ultimos_source_language_flags: List[bool] = []
         self.ultimas_asignaciones_hablante: List[Dict[str, Any]] = []
         self.onomatopoeia_mode = os.getenv("PMT_ONOMATOPOEIA_MODE", "translate").strip().lower()
         self.translate_onomatopoeia = os.getenv("PMT_TRANSLATE_ONOMATOPOEIA", "1").strip().lower() not in {"0", "false", "no", "off"}
@@ -58,6 +61,47 @@ class TranslateManga:
         self.indice_imagen = 0
         self.transcripcion_queue = None
         self.traduccion_queue = None
+
+
+    def _source_filter(self) -> SourceLanguageFilter:
+        filtro = getattr(self, "source_language_filter", None)
+        if filtro is None:
+            filtro = SourceLanguageFilter(getattr(self, "idioma_entrada", ""))
+            self.source_language_filter = filtro
+        return filtro
+
+    def _mark_region_source_language(self, region: Optional[TextRegion], allowed: bool, reason: str) -> None:
+        if region is None:
+            return
+        metadata = getattr(region, "metadata", None)
+        if isinstance(metadata, dict):
+            metadata["source_language_allowed"] = bool(allowed)
+            metadata["source_language_filter"] = reason
+            metadata["source_language"] = getattr(self, "idioma_entrada", "")
+
+    def _region_allows_source_language(self, region: Optional[TextRegion]) -> bool:
+        if region is None:
+            return True
+        filtro = self._source_filter()
+        allowed = filtro.should_process_region(region, allow_unknown=True)
+        self._mark_region_source_language(region, allowed, filtro.explain_region(region))
+        return bool(allowed)
+
+    def _text_is_source_language(self, texto: str, region: Optional[TextRegion] = None) -> bool:
+        filtro = self._source_filter()
+        if not self._region_allows_source_language(region):
+            return False
+        allowed = filtro.should_process_text(texto, allow_empty=False)
+        if region is not None:
+            self._mark_region_source_language(region, allowed, filtro.explain_text(texto))
+        return bool(allowed)
+
+    def _source_language_flags_for_texts(self, textos: Sequence[str]) -> List[bool]:
+        flags: List[bool] = []
+        for idx, texto in enumerate(textos):
+            region = self.ultimas_regiones[idx] if self.ultimas_regiones and idx < len(self.ultimas_regiones) else None
+            flags.append(self._text_is_source_language(str(texto or ""), region))
+        return flags
 
     def insertar_json_queue(self, indice_imagen, transcripcion_queue, traduccion_queue):
         self.indice_imagen = indice_imagen
@@ -353,9 +397,14 @@ class TranslateManga:
             indices_pendientes: List[int] = []
 
             for indice, (imagen_interes, region) in enumerate(zip(imagenes_interes, self.ultimas_regiones)):
+                if not self._region_allows_source_language(region):
+                    textos[indice] = ""
+                    continue
                 cached_text = self._cached_clean_guard_ocr_text(region)
-                if cached_text:
+                if cached_text and self._text_is_source_language(cached_text, region):
                     textos[indice] = self.normalizar_texto_ocr(cached_text)
+                elif cached_text:
+                    textos[indice] = ""
                 else:
                     indices_pendientes.append(indice)
                     pendientes.append(imagen_interes)
@@ -363,11 +412,14 @@ class TranslateManga:
             if pendientes:
                 textos_ocr = self.ocr_manager.extract_texts(pendientes)
                 for indice, texto in zip(indices_pendientes, textos_ocr):
-                    textos[indice] = self.normalizar_texto_ocr(texto)
+                    texto_normalizado = self.normalizar_texto_ocr(texto)
+                    region = self.ultimas_regiones[indice] if indice < len(self.ultimas_regiones) else None
+                    textos[indice] = texto_normalizado if self._text_is_source_language(texto_normalizado, region) else ""
             return textos
 
         textos = self.ocr_manager.extract_texts(imagenes_interes)
-        return [self.normalizar_texto_ocr(texto) for texto in textos]
+        textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
+        return [texto if self._text_is_source_language(texto) else "" for texto in textos_limpios]
 
     def reemplazar_caracter_especial(self, texto):
         return self.text_normalizer.replace_special_characters(texto)
@@ -527,16 +579,25 @@ class TranslateManga:
 
     def traducir_textos(self, textos: Sequence[str]):
         textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
+        source_language_flags = self._source_language_flags_for_texts(textos_limpios)
+        self.ultimos_source_language_flags = source_language_flags
         self.ultimo_estilos_texto = self._clasificar_estilos_texto(textos_limpios)
+        self.ultimo_estilos_texto = [
+            estilo if source_language_flags[idx] else "omitido_idioma_origen"
+            for idx, estilo in enumerate(self.ultimo_estilos_texto)
+        ]
         base_metadata = self._region_metadata_for_translation(textos_limpios)
 
-        keep_onomatopoeia_flags = [self._should_keep_original_onomatopoeia(i, texto) for i, texto in enumerate(textos_limpios)]
+        keep_onomatopoeia_flags = [
+            self._should_keep_original_onomatopoeia(i, texto) if source_language_flags[i] else False
+            for i, texto in enumerate(textos_limpios)
+        ]
 
         self.ultimas_asignaciones_hablante = []
         metadata_con_hablantes = list(base_metadata)
         if self.metodo_traduccion == "LLM":
-            # No gastamos tokens de memoria de personajes en onomatopeyas que se conservarán intactas.
-            memory_texts = ["" if keep else texto for keep, texto in zip(keep_onomatopoeia_flags, textos_limpios)]
+            # No gastamos tokens de memoria de personajes en onomatopeyas conservadas ni en textos ajenos al idioma de origen.
+            memory_texts = ["" if (keep or not source_ok) else texto for keep, source_ok, texto in zip(keep_onomatopoeia_flags, source_language_flags, textos_limpios)]
             self.ultimas_asignaciones_hablante = self.translator_manager.analyze_character_memory(
                 memory_texts,
                 page_index=self.indice_imagen,
@@ -561,10 +622,10 @@ class TranslateManga:
         traducciones_onomatopeyas = self._traducir_onomatopeyas_con_diccionario(textos_limpios)
         indices_por_traducir = [
             i for i, traduccion in enumerate(traducciones_onomatopeyas)
-            if traduccion is None
+            if source_language_flags[i] and traduccion is None
         ]
 
-        textos_traducidos_brutos = list(textos_limpios)
+        textos_traducidos_brutos = [texto if source_language_flags[i] else "" for i, texto in enumerate(textos_limpios)]
 
         if indices_por_traducir:
             payload = [textos_limpios[i] for i in indices_por_traducir]
@@ -583,7 +644,7 @@ class TranslateManga:
                 textos_traducidos_brutos[idx] = texto_traducido
 
         for idx, traduccion in enumerate(traducciones_onomatopeyas):
-            if traduccion is not None:
+            if source_language_flags[idx] and traduccion is not None:
                 textos_traducidos_brutos[idx] = traduccion
 
         textos_traducidos_limpios = [
@@ -600,7 +661,7 @@ class TranslateManga:
             if contexto_bilingue:
                 self.historial_contexto.append(contexto_bilingue)
 
-        return textos_traducidos_limpios
+        return [texto if source_language_flags[idx] else "" for idx, texto in enumerate(textos_traducidos_limpios)]
 
     @staticmethod
     def _es_estilo_onomatopeya(estilo: str) -> bool:
@@ -610,6 +671,8 @@ class TranslateManga:
         if self.transcripcion_queue is None:
             return
         for idx, ((x, y, w, h), texto) in enumerate(zip(cuadros_delimitadores, textos)):
+            if idx < len(getattr(self, "ultimos_source_language_flags", [])) and not self.ultimos_source_language_flags[idx]:
+                continue
             region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
             estilo = self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo"
             elemento = {
@@ -645,6 +708,8 @@ class TranslateManga:
         if self.traduccion_queue is None:
             return
         for idx, ((x, y, w, h), texto_traducido) in enumerate(zip(cuadros_delimitadores, textos_traducidos)):
+            if idx < len(getattr(self, "ultimos_source_language_flags", [])) and not self.ultimos_source_language_flags[idx]:
+                continue
             region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
             estilo = self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo"
             elemento = {
@@ -682,7 +747,8 @@ class TranslateManga:
         self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
         self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos)
         textos_para_render = [
-            "" if self._should_keep_original_onomatopoeia(idx, original) else traducido
+            "" if (idx < len(self.ultimos_source_language_flags) and not self.ultimos_source_language_flags[idx])
+            else ("" if self._should_keep_original_onomatopoeia(idx, original) else traducido)
             for idx, (original, traducido) in enumerate(zip(textos_limpios, textos_traducidos))
         ]
         clip_masks = [region.local_mask() for region in self.ultimas_regiones] if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores) else None

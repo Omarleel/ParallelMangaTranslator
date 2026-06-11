@@ -16,6 +16,7 @@ from Applications.BubbleDetector import BubbleDetector
 from Applications.CleanManga import CleanManga
 from Applications.OnomatopoeiaManager import OnomatopoeiaManager
 from Applications.ProcessingModels import TextRegion
+from Applications.SourceLanguageFilter import SourceLanguageFilter
 from Applications.TranslateManga import TranslateManga
 
 
@@ -134,6 +135,46 @@ class CharacterMemoryManagerTests(unittest.TestCase):
         self.assertEqual(assignments[0]["speaker_id"], "char_001")
         self.assertIn("char_001", saved["characters"])
         self.assertEqual(saved["characters"]["char_001"]["utterance_count"], 1)
+
+
+class SourceLanguageFilterTests(unittest.TestCase):
+    def test_japanese_filter_accepts_japanese_and_rejects_latin_even_fullwidth(self):
+        filtro = SourceLanguageFilter("Japonés")
+
+        self.assertTrue(filtro.should_process_text("おわり"))
+        self.assertTrue(filtro.should_process_text("終"))
+        self.assertFalse(filtro.should_process_text("Word"))
+        self.assertFalse(filtro.should_process_text("Ｗｏｒｄ"))
+
+    def test_translator_skips_ocr_when_region_hint_is_not_source_language(self):
+        translator = object.__new__(TranslateManga)
+        translator.idioma_entrada = "Japonés"
+        translator.source_language_filter = SourceLanguageFilter("Japonés")
+        translator.normalizar_texto_ocr = lambda texto: texto
+        translator.ocr_manager = types.SimpleNamespace(
+            extract_texts=lambda _imagenes: (_ for _ in ()).throw(AssertionError("no debe llamar MangaOCR/EasyOCR"))
+        )
+        region = OnomatopoeiaKeepModeTests._region("free_text")
+        region.source_text_hint = "EAST"
+        translator.ultimas_regiones = [region]
+
+        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+
+        self.assertEqual(textos, [""])
+        self.assertFalse(region.metadata["source_language_allowed"])
+        self.assertEqual(region.metadata["source_language_filter"], "pista_global_en_idioma_distinto")
+
+    def test_cleaner_filters_non_source_text_region_before_cleaning(self):
+        cleaner = object.__new__(CleanManga)
+        cleaner.idioma_entrada = "Japonés"
+        cleaner.source_language_filter = SourceLanguageFilter("Japonés")
+        region = OnomatopoeiaKeepModeTests._region("free_text")
+        region.source_text_hint = "EAST"
+
+        filtradas = cleaner._filter_regions_by_source_language([region])
+
+        self.assertEqual(filtradas, [])
+        self.assertFalse(region.metadata["source_language_allowed"])
 
 
 class OnomatopoeiaKeepModeTests(unittest.TestCase):

@@ -324,7 +324,14 @@ class BubbleDetector:
             if symbol_ratio > 0.50 and meaningful_without_digits < 3 and confidence < 0.45:
                 return False, "ocr_ruidoso_con_demasiados_simbolos"
             if area_ratio > 0.08 and meaningful_without_digits < 8:
-                return False, "free_text_grande_con_demasiado_poco_texto"
+                cjk_vertical_text = (
+                    self.idioma_entrada in {"Japonés", "Chino", "Coreano"}
+                    and (stats["kana"] + stats["cjk"] + stats["hangul"]) >= 4
+                    and confidence >= 0.70
+                    and bh / max(1, bw) >= 3.0
+                )
+                if not cjk_vertical_text:
+                    return False, "free_text_grande_con_demasiado_poco_texto"
 
         # Límites duros para regiones gigantes; estas cajas suelen ser fondos, paneles
         # o dibujos completos detectados como texto.

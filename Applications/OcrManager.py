@@ -13,6 +13,7 @@ from PIL import Image
 from Applications.CacheManager import PersistentJsonCache
 from Applications.PaddleOcrSubprocess import PaddleOcrSubprocess
 from Applications.ReadingOrderResolver import ReadingOrderResolver
+from Applications.SourceLanguageFilter import SourceLanguageFilter
 from .LoggingConfig import get_logger
 
 logger = get_logger(__name__)
@@ -53,6 +54,7 @@ class OcrManager:
         self._paddle_worker = None
         self.cache = PersistentJsonCache("ocr")
         self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
+        self.source_language_filter = SourceLanguageFilter(idioma_entrada)
 
     def _engine_for_cache(self) -> str:
         engine = self.ocr_engine
@@ -136,6 +138,13 @@ class OcrManager:
                 resultados.append(str(cached))
                 continue
             texto = self._extract_with_selected_engine(imagen)
+            if texto and not self.source_language_filter.should_process_text(texto, allow_empty=False):
+                logger.debug(
+                    "OCR descartado por idioma de origen: idioma=%s texto=%r",
+                    self.idioma_entrada,
+                    texto[:40],
+                )
+                texto = ""
             self.cache.set(key, texto)
             resultados.append(texto)
         return resultados
