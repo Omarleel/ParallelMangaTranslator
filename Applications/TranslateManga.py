@@ -331,7 +331,41 @@ class TranslateManga:
 
         return cuadros_delimitadores, imagenes_interes
 
+    def _cached_clean_guard_ocr_text(self, region: TextRegion) -> str:
+        """Reutiliza OCR hecho en limpieza sólo cuando es seguro conservarlo.
+
+        El OCR preventivo de CleanManga se hace antes de borrar una región free_text
+        para confirmar si es una onomatopeya que debe quedarse intacta. Si ya se
+        marcó como onomatopeya conservada, no tiene sentido volver a pasar OCR
+        sobre el mismo recorte durante la transcripción/traducción.
+        """
+        if region.kind != "free_text":
+            return ""
+        metadata = getattr(region, "metadata", {}) or {}
+        if not (metadata.get("free_text_onomatopoeia_keep") or metadata.get("free_text_onomatopoeia") or metadata.get("onomatopoeia")):
+            return ""
+        return str(metadata.get("clean_guard_ocr_text") or "").strip()
+
     def obtener_textos(self, imagenes_interes):
+        if self.ultimas_regiones and len(self.ultimas_regiones) == len(imagenes_interes):
+            textos: List[str] = [""] * len(imagenes_interes)
+            pendientes = []
+            indices_pendientes: List[int] = []
+
+            for indice, (imagen_interes, region) in enumerate(zip(imagenes_interes, self.ultimas_regiones)):
+                cached_text = self._cached_clean_guard_ocr_text(region)
+                if cached_text:
+                    textos[indice] = self.normalizar_texto_ocr(cached_text)
+                else:
+                    indices_pendientes.append(indice)
+                    pendientes.append(imagen_interes)
+
+            if pendientes:
+                textos_ocr = self.ocr_manager.extract_texts(pendientes)
+                for indice, texto in zip(indices_pendientes, textos_ocr):
+                    textos[indice] = self.normalizar_texto_ocr(texto)
+            return textos
+
         textos = self.ocr_manager.extract_texts(imagenes_interes)
         return [self.normalizar_texto_ocr(texto) for texto in textos]
 

@@ -176,6 +176,24 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
 
         self.assertFalse(cleaner._should_clean_non_bubble_region(region))
 
+
+    def test_cleaner_rechecks_free_text_with_region_ocr_before_erasing(self):
+        cleaner = object.__new__(CleanManga)
+        cleaner.onomatopoeia_mode = "keep"
+        cleaner.translate_onomatopoeia = False
+        cleaner.clean_onomatopoeia = False
+        cleaner.idioma_entrada = "Japonés"
+        cleaner.onomatopoeia_manager = OnomatopoeiaManager()
+        region = self._region("free_text")
+        region.source_text_hint = "A 、 附A"
+        cleaner._ocr_text_for_clean_guard = lambda _imagen, _region: "ハッハッ"
+
+        imagen = np.full((80, 80, 3), 255, dtype=np.uint8)
+
+        self.assertFalse(cleaner._should_clean_non_bubble_region(region, imagen))
+        self.assertTrue(region.metadata["free_text_onomatopoeia"])
+        self.assertEqual(region.metadata["clean_guard_source"], "pre_clean_region_ocr")
+
     def test_translator_respects_translate_false_for_free_text_onomatopoeia_metadata(self):
         translator = object.__new__(TranslateManga)
         translator.onomatopoeia_mode = "translate"
@@ -187,6 +205,22 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
         translator.onomatopoeia_manager = OnomatopoeiaManager()
 
         self.assertEqual(translator._traducir_onomatopeyas_con_diccionario(["ドン"]), ["ドン"])
+
+    def test_translator_reuses_clean_guard_ocr_for_kept_free_text_onomatopoeia(self):
+        translator = object.__new__(TranslateManga)
+        region = self._region("free_text")
+        region.metadata["free_text_onomatopoeia_keep"] = True
+        region.metadata["free_text_onomatopoeia"] = True
+        region.metadata["clean_guard_ocr_text"] = "ハッハッ"
+        translator.ultimas_regiones = [region]
+        translator.normalizar_texto_ocr = lambda texto: texto
+        translator.ocr_manager = types.SimpleNamespace(
+            extract_texts=lambda _imagenes: (_ for _ in ()).throw(AssertionError("no debe repetir OCR"))
+        )
+
+        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+
+        self.assertEqual(textos, ["ハッハッ"])
 
     def test_bubble_detector_marks_free_text_onomatopoeia_metadata(self):
         detector = object.__new__(BubbleDetector)
