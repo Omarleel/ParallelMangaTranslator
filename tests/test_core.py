@@ -334,6 +334,26 @@ class CoreQualityTests(unittest.TestCase):
 
         self.assertEqual(regions, [])
 
+    def test_single_digit_free_text_artifact_is_rejected(self):
+        img = np.full((1000, 1000, 3), 255, dtype=np.uint8)
+        button_or_eye = ([[250, 250], [310, 250], [310, 325], [250, 325]], "7", 0.92)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [], [button_or_eye])
+
+        self.assertEqual(regions, [])
+
+    def test_large_noisy_free_text_artifact_with_weak_ocr_signal_is_rejected(self):
+        # Simula falsos positivos como una trama de ropa: la caja es grande, el OCR
+        # devuelve mezcla de símbolos/dígitos y solo uno o dos caracteres CJK.
+        img = np.full((1000, 1000, 3), 255, dtype=np.uint8)
+        noisy_clothes = ([[250, 280], [480, 280], [480, 720], [250, 720]], "( { 忍 ・》 ・ 4 さ", 0.22)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [], [noisy_clothes])
+
+        self.assertEqual(regions, [])
+
     def test_free_text_gap_recovery_adds_missed_vertical_column(self):
         # EasyOCR puede detectar las columnas laterales de texto libre y saltarse
         # una columna central con outline/trama. El fallback debe crear una

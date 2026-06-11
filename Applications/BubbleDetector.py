@@ -173,6 +173,10 @@ class BubbleDetector:
         aspect = max(w, h) / max(1, min(w, h))
         compact_text = re.sub(r"\s+", "", text)
         compact_len = len(compact_text)
+        # Dígitos/puntuación sueltos sobre ojos, botones o tramas no son SFX.
+        # Las onomatopeyas reales ya se aceptaron arriba por diccionario.
+        if not re.search(r"[A-Za-z\u3041-\u3096\u309d-\u309f\u30a1-\u30fa\u30fc-\u30ff\u3400-\u9fff\uac00-\ud7af]", compact_text):
+            return False
         # Una línea muy horizontal y corta puede ser un SFX, pero en páginas de
         # notas los renglones japoneses largos también son muy anchos. Si contiene
         # hiragana/kanji suficientes para parecer frase, no lo clasifiques como SFX
@@ -224,14 +228,49 @@ class BubbleDetector:
         return {}
 
     @staticmethod
-    def _has_meaningful_text_signal(text: str) -> bool:
-        """Devuelve True si el OCR contiene letras/números/CJK reales.
+    def _free_text_signal_stats(text: str) -> Dict[str, int]:
+        """Cuenta señales OCR útiles sin tratar números sueltos como texto real.
 
-        No exige que la lectura sea perfecta: solo evita que cajas enormes formadas
-        por tramas, bordes o ruido pasen como texto libre cuando EasyOCR devuelve
-        símbolos sueltos.
+        EasyOCR/Paddle pueden devolver dígitos o símbolos sobre ojos, botones y
+        tramas de ropa.  Para texto libre fuera de globos somos más estrictos que
+        para los globos detectados por IA: un número aislado no debe generar una
+        región que luego se limpie/traduzca.
         """
-        return bool(re.search(r"[A-Za-z0-9\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", str(text or "")))
+        text = str(text or "")
+        kana = len(re.findall(r"[\u3041-\u3096\u309d-\u309f\u30a1-\u30fa\u30fc-\u30ff]", text))
+        cjk = len(re.findall(r"[\u3400-\u9fff]", text))
+        hangul = len(re.findall(r"[\uac00-\ud7af]", text))
+        latin = len(re.findall(r"[A-Za-z]", text))
+        digits = len(re.findall(r"[0-9]", text))
+        meaningful_without_digits = kana + cjk + hangul + latin
+        meaningful = meaningful_without_digits + digits
+        visible = len(re.sub(r"\s+", "", text))
+        symbols = max(0, visible - meaningful)
+        return {
+            "kana": kana,
+            "cjk": cjk,
+            "hangul": hangul,
+            "latin": latin,
+            "digits": digits,
+            "meaningful_without_digits": meaningful_without_digits,
+            "meaningful": meaningful,
+            "visible": visible,
+            "symbols": symbols,
+        }
+
+    @classmethod
+    def _has_meaningful_text_signal(cls, text: str) -> bool:
+        """Devuelve True si el OCR contiene letras/CJK reales.
+
+        Los dígitos aislados ya no cuentan como señal textual suficiente.  En las
+        páginas de manga suelen ser falsos positivos sobre botones, ojos, fondos o
+        tramas; conservarlos terminaba creando regiones de texto libre donde no
+        había nada que traducir.
+        """
+        stats = cls._free_text_signal_stats(text)
+        if stats["meaningful_without_digits"] > 0:
+            return True
+        return stats["digits"] >= 2 and stats["visible"] == stats["digits"]
 
     def _should_keep_free_text_group(
         self,
@@ -248,11 +287,33 @@ class BubbleDetector:
         area_ratio = box_area / img_area
         width_ratio = bw / max(1, img_width)
         height_ratio = bh / max(1, img_height)
+        stats = self._free_text_signal_stats(text_hint)
         has_signal = self._has_meaningful_text_signal(text_hint)
+        symbols = stats["symbols"]
+        visible = max(1, stats["visible"])
+        symbol_ratio = symbols / visible
+        meaningful_without_digits = stats["meaningful_without_digits"]
+        only_digits_or_symbols = meaningful_without_digits == 0
+        weak_short_signal = meaningful_without_digits <= 1 and stats["meaningful"] <= 2
 
         # Nada que parezca texto y además baja confianza: probablemente ruido.
         if not has_signal and not looks_sfx and confidence < self.free_text_min_confidence:
             return False, "sin_senal_textual_y_baja_confianza"
+
+        # Filtro específico para texto libre: no conviertas números/símbolos
+        # solitarios en regiones a limpiar. Los globos reales ya están cubiertos por
+        # el detector profesional; aquí solo queremos texto huérfano confiable.
+        if not looks_sfx:
+            if only_digits_or_symbols:
+                return False, "solo_numeros_o_simbolos_ocr_ruido"
+            if weak_short_signal and confidence < max(0.35, self.free_text_min_confidence):
+                return False, "senal_textual_demasiado_debil"
+            if area_ratio > 0.018 and meaningful_without_digits < 3 and symbol_ratio > 0.40:
+                return False, "region_grande_con_ocr_ruidoso"
+            if area_ratio > 0.018 and meaningful_without_digits < 3 and confidence < 0.45:
+                return False, "region_grande_con_senal_textual_debil"
+            if symbol_ratio > 0.50 and meaningful_without_digits < 3 and confidence < 0.45:
+                return False, "ocr_ruidoso_con_demasiados_simbolos"
 
         # Límites duros para regiones gigantes; estas cajas suelen ser fondos, paneles
         # o dibujos completos detectados como texto.
