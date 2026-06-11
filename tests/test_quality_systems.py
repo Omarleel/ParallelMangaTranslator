@@ -146,6 +146,15 @@ class SourceLanguageFilterTests(unittest.TestCase):
         self.assertFalse(filtro.should_process_text("Word"))
         self.assertFalse(filtro.should_process_text("Ｗｏｒｄ"))
 
+
+    def test_dialogue_region_with_weak_latin_noise_hint_is_not_blocked(self):
+        filtro = SourceLanguageFilter("Japonés")
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        region.source_text_hint = "a ;"
+
+        self.assertTrue(filtro.should_process_region(region, allow_unknown=True))
+        self.assertEqual(filtro.explain_region(region), "pista_global_debil_ignorada")
+
     def test_translator_skips_ocr_when_region_hint_is_not_source_language(self):
         translator = object.__new__(TranslateManga)
         translator.idioma_entrada = "Japonés"

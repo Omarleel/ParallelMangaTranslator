@@ -110,8 +110,67 @@ class SourceLanguageFilter:
                 unique.append(hint)
         return unique
 
+    @staticmethod
+    def _region_kind(region: Any) -> str:
+        return str(getattr(region, "kind", "") or "").strip().lower()
+
+    @classmethod
+    def _longest_latin_word_len(cls, text: Any) -> int:
+        normalized = cls.normalize(text)
+        words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]+", normalized)
+        return max((len(word) for word in words), default=0)
+
+    def _is_reliable_region_hint(self, text: Any, region: Any = None) -> bool:
+        """Devuelve True solo cuando la pista OCR global es lo bastante fiable.
+
+        EasyOCR a veces devuelve ruido muy corto sobre texto japonés vertical, por
+        ejemplo ``"a ;"``. Ese tipo de pista no debe bloquear un globo completo:
+        se trata como desconocida y se deja que MangaOCR lea la región. En cambio,
+        un texto latino claro como ``"EAST"`` sí es una pista fiable para preservar
+        carteles/texto extranjero cuando el origen seleccionado es japonés/chino.
+        """
+        counts = self.signal_counts(text)
+        if not self.has_meaningful_text(text):
+            return False
+
+        language = self.idioma_entrada
+        region_kind = self._region_kind(region)
+
+        if language == "Japonés":
+            if counts["kana"] + counts["cjk"] > 0:
+                return True
+            # En texto libre/carteles, cualquier pista textual ajena se respeta
+            # para no borrar arte original. En globos de diálogo somos menos
+            # agresivos porque el OCR global falla mucho con texto vertical.
+            if region_kind == "free_text":
+                return True
+            return self._longest_latin_word_len(text) >= 3 or counts["latin"] >= 4 or counts["hangul"] >= 2
+
+        if language == "Chino":
+            if counts["cjk"] > 0:
+                return True
+            if region_kind == "free_text":
+                return True
+            return self._longest_latin_word_len(text) >= 3 or counts["latin"] >= 4 or counts["hangul"] >= 2
+
+        if language == "Coreano":
+            if counts["hangul"] > 0:
+                return True
+            if region_kind == "free_text":
+                return True
+            return self._longest_latin_word_len(text) >= 3 or counts["latin"] >= 4 or counts["kana"] + counts["cjk"] >= 2
+
+        return True
+
+    def _reliable_region_hints(self, region: Any) -> list[str]:
+        return [
+            hint
+            for hint in self.region_text_hints(region)
+            if self._is_reliable_region_hint(hint, region)
+        ]
+
     def should_process_region(self, region: Any, *, allow_unknown: bool = True) -> bool:
-        hints = [hint for hint in self.region_text_hints(region) if self.has_meaningful_text(hint)]
+        hints = self._reliable_region_hints(region)
         if not hints:
             return bool(allow_unknown)
         combined = " ".join(hints)
@@ -127,9 +186,10 @@ class SourceLanguageFilter:
         return "idioma_distinto_al_origen"
 
     def explain_region(self, region: Any) -> str:
-        hints = [hint for hint in self.region_text_hints(region) if self.has_meaningful_text(hint)]
+        raw_hints = [hint for hint in self.region_text_hints(region) if self.has_meaningful_text(hint)]
+        hints = self._reliable_region_hints(region)
         if not hints:
-            return "sin_pista_textual_global"
+            return "pista_global_debil_ignorada" if raw_hints else "sin_pista_textual_global"
         if self.has_source_language_signal(" ".join(hints)):
             return "pista_global_en_idioma_origen"
         return "pista_global_en_idioma_distinto"
