@@ -551,4 +551,4 @@ if __name__ == "__main__":
 
 class TestBubbleSplitDebugVersion(unittest.TestCase):
     def test_debug_version_marker_exists(self):
-        self.assertEqual(BUBBLE_SPLIT_DEBUG_VERSION, "v5_cluster_bbox_logic_2026_06_10")
+        self.assertEqual(BUBBLE_SPLIT_DEBUG_VERSION, "v7_bubble_onomatopoeia_translation_2026_06_11")

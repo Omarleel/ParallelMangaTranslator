@@ -80,8 +80,19 @@ class CleanManga:
 
     def _region_matches_source_language(self, region: TextRegion) -> bool:
         filtro = self._source_filter()
-        allowed = filtro.should_process_region(region, allow_unknown=True)
         metadata = getattr(region, "metadata", None)
+
+        if filtro.should_preserve_region_without_processing(region):
+            reason = filtro.explain_preserved_region(region)
+            if isinstance(metadata, dict):
+                metadata["processing_skipped"] = True
+                metadata["processing_skip_reason"] = reason
+                metadata["source_language_filter"] = reason
+                metadata["source_language_allowed"] = False
+                metadata["source_language"] = getattr(self, "idioma_entrada", "")
+            return False
+
+        allowed = filtro.should_process_region(region, allow_unknown=True)
         if isinstance(metadata, dict):
             metadata["source_language_filter"] = filtro.explain_region(region)
             metadata["source_language_allowed"] = bool(allowed)

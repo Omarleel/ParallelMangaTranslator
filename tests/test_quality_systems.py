@@ -185,6 +185,85 @@ class SourceLanguageFilterTests(unittest.TestCase):
         self.assertEqual(filtradas, [])
         self.assertFalse(region.metadata["source_language_allowed"])
 
+    def test_dialogue_onomatopoeia_inside_bubble_is_translatable(self):
+        filtro = SourceLanguageFilter("Japonés")
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        region.source_text_hint = "は"
+        region.metadata.update({
+            "free_text_onomatopoeia": True,
+            "onomatopoeia": True,
+            "onomatopoeia_key": "surprise",
+            # Metadata que podía quedar de v6: ya no debe bloquear globos.
+            "free_text_onomatopoeia_keep": True,
+            "visual_expression": True,
+            "skip_cleanup_translation": True,
+            "visual_expression_source": "short_bubble_ocr_hint",
+        })
+
+        self.assertFalse(filtro.should_preserve_region_without_processing(region))
+        self.assertTrue(filtro.should_process_region(region, allow_unknown=True))
+
+    def test_cleaner_keeps_dialogue_onomatopoeia_in_processing_pipeline(self):
+        cleaner = object.__new__(CleanManga)
+        cleaner.idioma_entrada = "Japonés"
+        cleaner.source_language_filter = SourceLanguageFilter("Japonés")
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        region.source_text_hint = "は"
+        region.metadata.update({"free_text_onomatopoeia": True, "onomatopoeia": True})
+
+        filtradas = cleaner._filter_regions_by_source_language([region])
+
+        self.assertEqual(filtradas, [region])
+        self.assertTrue(region.metadata["source_language_allowed"])
+        self.assertNotIn("processing_skipped", region.metadata)
+
+    def test_detector_materializes_bubble_onomatopoeia_as_translatable(self):
+        detector = object.__new__(BubbleDetector)
+        detector.idioma_entrada = "Japonés"
+        detector.onomatopoeia_manager = OnomatopoeiaManager()
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        region.source_text_hint = "は"
+
+        detector._annotate_bubble_visual_expressions([region])
+
+        self.assertTrue(region.metadata["free_text_onomatopoeia"])
+        self.assertTrue(region.metadata["bubble_onomatopoeia"])
+        self.assertTrue(region.metadata["translate_inside_bubble"])
+        self.assertNotIn("free_text_onomatopoeia_keep", region.metadata)
+        self.assertNotIn("skip_cleanup_translation", region.metadata)
+        self.assertEqual(region.metadata["visual_expression_source"], "short_bubble_ocr_hint")
+        self.assertFalse(SourceLanguageFilter("Japonés").should_preserve_region_without_processing(region))
+
+    def test_detector_does_not_materialize_long_dialogue_hint_as_visual_expression(self):
+        detector = object.__new__(BubbleDetector)
+        detector.idioma_entrada = "Japonés"
+        detector.onomatopoeia_manager = OnomatopoeiaManager()
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        region.source_text_hint = "パーティーに行く"
+
+        detector._annotate_bubble_visual_expressions([region])
+
+        self.assertFalse(region.metadata.get("skip_cleanup_translation", False))
+        self.assertFalse(region.metadata.get("bubble_onomatopoeia", False))
+        self.assertFalse(SourceLanguageFilter("Japonés").should_preserve_region_without_processing(region))
+
+    def test_translator_runs_ocr_for_dialogue_onomatopoeia_inside_bubble(self):
+        translator = object.__new__(TranslateManga)
+        translator.idioma_entrada = "Japonés"
+        translator.source_language_filter = SourceLanguageFilter("Japonés")
+        translator.normalizar_texto_ocr = lambda texto: texto
+        translator.ocr_manager = types.SimpleNamespace(extract_texts=lambda _imagenes: ["ハッ"])
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        region.source_text_hint = "は"
+        region.metadata.update({"free_text_onomatopoeia": True, "onomatopoeia": True})
+        translator.ultimas_regiones = [region]
+
+        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+
+        self.assertEqual(textos, ["ハッ"])
+        self.assertTrue(region.metadata["source_language_allowed"])
+        self.assertNotIn("processing_skipped", region.metadata)
+
 
 class OnomatopoeiaKeepModeTests(unittest.TestCase):
     @staticmethod

@@ -18,7 +18,7 @@ from .LoggingConfig import get_logger
 
 logger = get_logger(__name__)
 
-BUBBLE_SPLIT_DEBUG_VERSION = "v5_cluster_bbox_logic_2026_06_10"
+BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 
 class BubbleDetector:
@@ -213,6 +213,66 @@ class BubbleDetector:
             "free_text_onomatopoeia_method": method,
         }
 
+    @staticmethod
+    def _compact_visible_text(text: str) -> str:
+        return re.sub(r"\s+", "", str(text or ""))
+
+    def _bubble_visual_expression_metadata(self, region: TextRegion) -> Dict[str, object]:
+        """Materializa onomatopeyas cortas detectadas dentro de globos.
+
+        Las onomatopeyas dentro de globos de diálogo deben seguir el flujo normal
+        de limpieza, OCR especializado, traducción y render. Por eso esta
+        inferencia sólo etiqueta la región para estilo/debug; no activa
+        ``skip_cleanup_translation`` ni ``free_text_onomatopoeia_keep``.
+        """
+        if region.kind not in {"dialogue", "narration", "unknown"}:
+            return {}
+
+        metadata = getattr(region, "metadata", {}) or {}
+        if metadata.get("free_text_onomatopoeia") or metadata.get("onomatopoeia"):
+            return {}
+
+        candidates = [getattr(region, "source_text_hint", "")]
+        for key in ("text", "ocr_text", "source_text", "source_text_hint", "ocr_group_text"):
+            value = metadata.get(key)
+            if value is not None:
+                candidates.append(str(value))
+
+        for candidate in candidates:
+            compact = self._compact_visible_text(candidate)
+            # Sólo usamos pistas muy cortas. Una frase normal que EasyOCR leyó a
+            # medias no debe saltarse por contener una sílaba tipo パ.
+            if not compact or len(compact) > 4:
+                continue
+            result = self._free_text_onomatopoeia_metadata(compact)
+            if not result:
+                continue
+            if result.get("free_text_onomatopoeia_method") == "heuristic":
+                continue
+            try:
+                score = float(result.get("free_text_onomatopoeia_similarity", 0.0))
+            except Exception:
+                score = 0.0
+            if score < 0.88:
+                continue
+            result.update({
+                "bubble_onomatopoeia": True,
+                "translate_inside_bubble": True,
+                "visual_expression_source": "short_bubble_ocr_hint",
+                "visual_expression_hint": compact,
+            })
+            return result
+        return {}
+
+    def _annotate_bubble_visual_expressions(self, regions: Sequence[TextRegion]) -> None:
+        for region in regions or []:
+            metadata = getattr(region, "metadata", None)
+            if not isinstance(metadata, dict):
+                continue
+            inferred = self._bubble_visual_expression_metadata(region)
+            if inferred:
+                metadata.update(inferred)
+
     def _region_onomatopoeia_debug_metadata(self, region: TextRegion) -> Dict[str, object]:
         metadata = getattr(region, "metadata", {}) or {}
         if metadata.get("free_text_onomatopoeia") or metadata.get("onomatopoeia") or region.kind in {"sfx", "onomatopoeia"}:
@@ -220,20 +280,14 @@ class BubbleDetector:
                 "free_text_onomatopoeia": bool(metadata.get("free_text_onomatopoeia") or region.kind in {"sfx", "onomatopoeia"}),
                 "onomatopoeia": True,
             }
-            for key in ("onomatopoeia_key", "free_text_onomatopoeia_similarity", "free_text_onomatopoeia_source"):
+            for key in ("onomatopoeia_key", "free_text_onomatopoeia_similarity", "free_text_onomatopoeia_source", "free_text_onomatopoeia_keep", "bubble_onomatopoeia", "translate_inside_bubble", "visual_expression", "skip_cleanup_translation", "visual_expression_source", "visual_expression_hint"):
                 if key in metadata:
                     result[key] = metadata[key]
             return result
 
-        candidates = [getattr(region, "source_text_hint", "")]
-        for key in ("text", "ocr_text", "source_text", "source_text_hint"):
-            value = metadata.get(key)
-            if value is not None:
-                candidates.append(str(value))
-        for candidate in candidates:
-            result = self._free_text_onomatopoeia_metadata(candidate)
-            if result:
-                return result
+        result = self._bubble_visual_expression_metadata(region)
+        if result:
+            return result
         return {}
 
     @staticmethod
@@ -1503,6 +1557,7 @@ class BubbleDetector:
         regions.extend(self._recover_free_text_gaps(image, regions))
         merged_regions = self._merge_region_masks(regions)
         ordered_regions = self._order_regions_for_reading(merged_regions)
+        self._annotate_bubble_visual_expressions(ordered_regions)
         self._save_merge_debug_artifacts(image, ordered_regions, debug_records)
         return ordered_regions
 

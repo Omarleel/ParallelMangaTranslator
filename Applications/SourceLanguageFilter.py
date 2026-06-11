@@ -114,6 +114,63 @@ class SourceLanguageFilter:
     def _region_kind(region: Any) -> str:
         return str(getattr(region, "kind", "") or "").strip().lower()
 
+    @staticmethod
+    def _metadata_bool(metadata: Mapping[str, Any], *keys: str) -> bool:
+        return any(bool(metadata.get(key)) for key in keys)
+
+    def should_preserve_region_without_processing(self, region: Any) -> bool:
+        """True para regiones visuales que deben quedarse intactas.
+
+        Regla importante: si la onomatopeya está dentro de un globo de diálogo,
+        debe procesarse y traducirse como texto del globo. Sólo se preservan
+        regiones externas/SFX o marcas explícitas de no traducible. La excepción
+        también corrige metadata vieja generada por la versión v6, donde un globo
+        corto podía quedar con ``skip_cleanup_translation`` sólo por una pista
+        OCR tipo ``は``/``パ``.
+        """
+        metadata = self._metadata(region)
+        region_kind = self._region_kind(region)
+        bubble_kind = region_kind in {"dialogue", "narration", "unknown"}
+        bubble_onomatopoeia = bubble_kind and self._metadata_bool(
+            metadata,
+            "bubble_onomatopoeia",
+            "translate_inside_bubble",
+            "free_text_onomatopoeia",
+            "onomatopoeia",
+        )
+
+        if bubble_onomatopoeia:
+            # Marcas explícitas de preservación manual siguen ganando, pero las
+            # marcas automáticas de v6 (visual_expression/skip por short hint) ya
+            # no bloquean onomatopeyas dentro de globos.
+            if metadata.get("preserve_original") or metadata.get("non_translatable_expression"):
+                return True
+            return False
+
+        if self._metadata_bool(
+            metadata,
+            "skip_cleanup_translation",
+            "preserve_original",
+            "visual_expression",
+            "non_translatable_expression",
+        ):
+            return True
+        return False
+
+    def explain_preserved_region(self, region: Any) -> str:
+        metadata = self._metadata(region)
+        region_kind = self._region_kind(region)
+        if region_kind in {"dialogue", "narration", "unknown"} and self._metadata_bool(
+            metadata, "bubble_onomatopoeia", "translate_inside_bubble", "free_text_onomatopoeia", "onomatopoeia"
+        ) and not (metadata.get("preserve_original") or metadata.get("non_translatable_expression")):
+            return "onomatopeya_en_globo_se_traduce"
+        for key in ("skip_cleanup_translation", "preserve_original", "visual_expression", "non_translatable_expression"):
+            if metadata.get(key):
+                return str(key)
+        if self._metadata_bool(metadata, "free_text_onomatopoeia_keep", "free_text_onomatopoeia", "onomatopoeia"):
+            return "expresion_visual_u_onomatopeya_preservada"
+        return "region_preservada"
+
     @classmethod
     def _longest_latin_word_len(cls, text: Any) -> int:
         normalized = cls.normalize(text)

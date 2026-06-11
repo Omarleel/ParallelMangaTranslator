@@ -83,6 +83,14 @@ class TranslateManga:
         if region is None:
             return True
         filtro = self._source_filter()
+        if filtro.should_preserve_region_without_processing(region):
+            reason = filtro.explain_preserved_region(region)
+            self._mark_region_source_language(region, False, reason)
+            metadata = getattr(region, "metadata", None)
+            if isinstance(metadata, dict):
+                metadata["processing_skipped"] = True
+                metadata["processing_skip_reason"] = reason
+            return False
         allowed = filtro.should_process_region(region, allow_unknown=True)
         self._mark_region_source_language(region, allowed, filtro.explain_region(region))
         return bool(allowed)
@@ -473,9 +481,14 @@ class TranslateManga:
         )
 
     def _should_keep_original_onomatopoeia(self, indice: int, texto: str) -> bool:
+        region = self.ultimas_regiones[indice] if self.ultimas_regiones and indice < len(self.ultimas_regiones) else None
+        # Una onomatopeya dentro de un globo es contenido de diálogo/reacción:
+        # se limpia, se transcribe y se traduce incluso si el modo global conserva
+        # SFX externos.
+        if region is not None and region.kind in {"dialogue", "narration", "unknown"}:
+            return False
         if not self._onomatopoeia_keep_requested():
             return False
-        region = self.ultimas_regiones[indice] if self.ultimas_regiones and indice < len(self.ultimas_regiones) else None
         if region is not None and region.kind in {"sfx", "onomatopoeia"}:
             return True
         if region is not None and region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(indice, texto):
