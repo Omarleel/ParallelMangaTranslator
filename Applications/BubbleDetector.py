@@ -314,6 +314,8 @@ class BubbleDetector:
                 return False, "region_grande_con_senal_textual_debil"
             if symbol_ratio > 0.50 and meaningful_without_digits < 3 and confidence < 0.45:
                 return False, "ocr_ruidoso_con_demasiados_simbolos"
+            if area_ratio > 0.08 and meaningful_without_digits < 8:
+                return False, "free_text_grande_con_demasiado_poco_texto"
 
         # Límites duros para regiones gigantes; estas cajas suelen ser fondos, paneles
         # o dibujos completos detectados como texto.
