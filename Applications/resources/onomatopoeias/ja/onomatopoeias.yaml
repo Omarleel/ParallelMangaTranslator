@@ -222,3 +222,5225 @@ entries:
   - ヒュー
   - サッ
   - ササッ
+- key: bear_roar
+  target: がおー
+  sources:
+  - がおー
+- key: bee_buzz
+  target: ぶーん
+  sources:
+  - ぶーん
+- key: bird_tweet
+  target: ちゅんちゅん
+  sources:
+  - ちゅんちゅん
+- key: cat_meow
+  target: にゃん
+  sources:
+  - にゃん
+- key: chicken_cluck
+  target: こけこっこ
+  sources:
+  - こけこっこ
+- key: cow_moo
+  target: もーもー
+  sources:
+  - もーもー
+- key: crow_caw
+  target: かーかー
+  sources:
+  - かーかー
+- key: dog_woof
+  target: わんわん
+  sources:
+  - わんわん
+- key: duck_quack
+  target: がーがー
+  sources:
+  - がーがー
+- key: fox_sound
+  target: こんこん
+  sources:
+  - こんこん
+- key: frog_croak_ribbit
+  target: げろげろ
+  sources:
+  - げろげろ
+- key: godzilla_roar
+  target: がおー
+  sources:
+  - がおー
+- key: horse_neigh
+  target: ひひいん
+  sources:
+  - ひひいん
+- key: monkey_oo_oo_aa_aa
+  target: うきうき
+  sources:
+  - うきうき
+- key: mouse_squeak
+  target: ちゅーちゅー
+  sources:
+  - ちゅーちゅー
+- key: owl_hoo
+  target: ほーほー
+  sources:
+  - ほーほー
+- key: pig_oink
+  target: ぶーぶー
+  sources:
+  - ぶーぶー
+- key: sheep_baa
+  target: めーめー
+  sources:
+  - めーめー
+- key: lectured_or_nagged_by_someone_above_you
+  target: がみがみ
+  sources:
+  - がみがみ
+- key: cheerful_loud_laugh
+  target: あはは
+  sources:
+  - あはは
+- key: child_crying_loudly
+  target: うわーん
+  sources:
+  - うわーん
+- key: surprised_scream_or_shriek
+  target: うぎゃー
+  sources:
+  - うぎゃー
+- key: chuckling_like_you_have_a_secret
+  target: うふふ
+  sources:
+  - うふふ
+- key: chatting_about_frivolous_things
+  target: ぺちゃくちゃ
+  sources:
+  - ぺちゃくちゃ
+- key: muttering_so_other_people_cant_hear_you
+  target: ごにょごにょ
+  sources:
+  - ごにょごにょ
+- key: speak_a_foreign_language_fluently
+  target: ぺらぺら
+  sources:
+  - ぺらぺら
+- key: clearing_your_throat_for_attention
+  target: おほん
+  sources:
+  - おほん
+- key: laughing_quietly_unable_to_hold_it_in
+  target: くすくす
+  sources:
+  - くすくす
+- key: thunder_rumbling
+  target: ごろごろ
+  sources:
+  - ごろごろ
+- key: lots_of_heavy_rain_pouring_down
+  target: ざーざー
+  sources:
+  - ざーざー
+- key: cloth_lightly_flapping_in_the_wind
+  target: ぱたぱた
+  sources:
+  - ぱたぱた
+- key: strong_continuous_and_cold_wintry_winds
+  target: ぴゅーぴゅー
+  sources:
+  - ぴゅーぴゅー
+- key: water_scattering_splashing_forcefully
+  target: ばしゃっ
+  sources:
+  - ばしゃっ
+- key: water_bubbling_gently
+  target: こぽこぽ
+  sources:
+  - こぽこぽ
+- key: suddenly_bursting_into_flames
+  target: めらめら
+  sources:
+  - めらめら
+- key: stepping_on_soft_dirt_or_sand
+  target: さくさく
+  sources:
+  - さくさく
+- key: boulder_or_rocks_tumbling_down_a_hill
+  target: ごろごろ
+  sources:
+  - ごろごろ
+- key: running_at_full_speed
+  target: たたたた
+  sources:
+  - たたたた
+- key: glint_in_your_eyes
+  target: ぎらぎら
+  sources:
+  - ぎらぎら
+- key: warm_body_or_food
+  target: ほかほか
+  sources:
+  - ほかほか
+- key: too_much_warmth_unpleasantly_hot
+  target: むしむし
+  sources:
+  - むしむし
+- key: sticky_with_sweat_or_blood
+  target: べとべと
+  sources:
+  - べとべと
+- key: horribly_soaked_by_a_large_amount_of_water
+  target: びしょびしょ
+  sources:
+  - びしょびしょ
+- key: road_that_isnt_paved
+  target: がたがた
+  sources:
+  - がたがた
+- key: uneven_ground
+  target: でこぼこ
+  sources:
+  - でこぼこ
+- key: lots_of_shining_sunlight
+  target: さんさん
+  sources:
+  - さんさん
+- key: feeling_cool
+  target: ひんやり
+  sources:
+  - ひんやり
+- key: soaking_slowly_with_sweat_or_tears
+  target: じんわり
+  sources:
+  - じんわり
+- key: wandering_aimlessly
+  target: うろうろ
+  sources:
+  - うろうろ
+- key: fast_paced_eager_walking
+  target: すたこら
+  sources:
+  - すたこら
+- key: proceeding_at_a_snail_s_pace_slow_and_sluggish
+  target: のろのろ
+  sources:
+  - のろのろ
+- key: half_asleep_nodding_off
+  target: うとうと
+  sources:
+  - うとうと
+- key: completely_and_totally_asleep
+  target: ぐっすり
+  sources:
+  - ぐっすり
+- key: not_having_the_willpower_to_do_anything
+  target: ぐーたら
+  sources:
+  - ぐーたら
+- key: joints_like_knees_shaking
+  target: がくがく
+  sources:
+  - がくがく
+- key: trembling_from_cold_fear_or_anger
+  target: ぶるぶる
+  sources:
+  - ぶるぶる
+- key: turning_around_looking_around_restlessly
+  target: きょろきょろ
+  sources:
+  - きょろきょろ
+- key: clamorously
+  target: わいわい
+  sources:
+  - わいわい
+- key: worrying_about_the_past_or_trivial_things
+  target: くよくよ
+  sources:
+  - くよくよ
+- key: lonely_and_quiet_solemn
+  target: しんみり
+  sources:
+  - しんみり
+- key: happy_cheerfully_lighthearted_and_full_of_hope
+  target: うきうき
+  sources:
+  - うきうき
+- key: excited_from_anticipation_pleasure_or_happiness
+  target: わくわく
+  sources:
+  - わくわく
+- key: running_around_in_a_hurry
+  target: あたふた
+  sources:
+  - あたふた
+- key: losing_time_or_a_grasp_on_your_senses
+  target: あわあわ
+  sources:
+  - あわあわ
+- key: unable_to_make_decisions_because_of_embarrassment_or_shyness
+  target: もじもじ
+  sources:
+  - もじもじ
+- key: fascinated_by_something_beautiful_spellbound
+  target: うっとり
+  sources:
+  - うっとり
+- key: throbbing_grinding_pain
+  target: ずきずき
+  sources:
+  - ずきずき
+- key: worrying_or_wondering_what_to_do
+  target: もやもや
+  sources:
+  - もやもや
+- key: brilliant_shining_sunlight
+  target: 燦燦
+  sources:
+  - 燦燦
+- key: long_deep_sleep
+  target: 昏昏
+  sources:
+  - 昏昏
+- key: anxious_feeling_like_you_dont_have_enough_time
+  target: 齷齪
+  sources:
+  - 齷齪
+- key: clear_shallow_mountain_stream
+  target: 潺潺
+  sources:
+  - 潺潺
+- key: bright_and_shining
+  target: 煌煌
+  sources:
+  - 煌煌
+- key: knocking
+  target: こんこん
+  sources:
+  - こんこん
+- key: banging
+  target: ごんごん
+  sources:
+  - ごんごん
+- key: silky
+  target: さらさら
+  sources:
+  - さらさら
+- key: rough
+  target: ざらざら
+  sources:
+  - ざらざら
+- key: tapping
+  target: とんとん
+  sources:
+  - とんとん
+- key: drumming
+  target: どんどん
+  sources:
+  - どんどん
+- key: fluttering
+  target: はらはら
+  sources:
+  - はらはら
+- key: rustling
+  target: ばらばら
+  sources:
+  - ばらばら
+- key: clattering
+  target: ぱらぱら
+  sources:
+  - ぱらぱら
+- key: clear_clanging
+  target: かんかん
+  sources:
+  - かんかん
+- key: high_pitched_clanging
+  target: きんきん
+  sources:
+  - きんきん
+- key: low_pitched_clanging
+  target: こんこん
+  sources:
+  - こんこん
+- key: heavy_rain_drops_or_hail_coming_down
+  target: ばらばら
+  sources:
+  - ばらばら
+- key: grass_and_leaves_rustling_in_the_wind
+  target: わさわさ
+  sources:
+  - わさわさ
+- key: gushing_water
+  target: ごぼごぼ
+  sources:
+  - ごぼごぼ
+- key: something_running_at_full_speed
+  target: だだだだ
+  sources:
+  - だだだだ
+- key: something_rolling_loudly_or_heavily
+  target: ごろごろ
+  sources:
+  - ごろごろ
+- key: gulp
+  target: ごくっ
+  sources:
+  - ごくっ
+- key: vomiting_or_gagging
+  target: げっ
+  sources:
+  - げっ
+- key: coughing_up_something
+  target: かっ
+  sources:
+  - かっ
+- key: flame_flaring_up_suddenly
+  target: ぼーっ
+  sources:
+  - ぼーっ
+- key: suddenly_waking_up
+  target: がばっ
+  sources:
+  - がばっ
+- key: chubby
+  target: ぽっちゃり
+  sources:
+  - ぽっちゃり
+- key: wander_around_aimlessly
+  target: のらりのらり
+  sources:
+  - のらりのらり
+- key: scooping_something_like_sand
+  target: じゃくり
+  sources:
+  - じゃくり
+- key: warm_breath_or_steam
+  target: ほっかり
+  sources:
+  - ほっかり
+- key: moving_slowly_and_sluggishly
+  target: のそり
+  sources:
+  - のそり
+- key: strong_cough
+  target: ごほん
+  sources:
+  - ごほん
+- key: something_hitting_something_else_over_and_over
+  target: こんこん
+  sources:
+  - こんこん
+- key: cold_deeply_penetrating_your_body
+  target: しん
+  sources:
+  - しん
+- key: strong_bubbling
+  target: じゃぶん
+  sources:
+  - じゃぶん
+- key: explosive_fire_bursting_into_flames
+  target: ぼーん
+  sources:
+  - ぼーん
+- key: long_yawn
+  target: ふわ～
+  sources:
+  - ふわ～
+- key: loud_snoring
+  target: ぐーぐー
+  sources:
+  - ぐーぐー
+- key: heavy_continuous_pouring_rain
+  target: ざーざー
+  sources:
+  - ざーざー
+- key: drinking_something_down_little_by_little
+  target: ちゅーちゅー
+  sources:
+  - ちゅーちゅー
+- key: enjoying_yourself_without_caring_about_what_s_around_you
+  target: のーのー
+  sources:
+  - のーのー
+- key: roll_out_of_bed
+  target: むくむくと起きる
+  sources:
+  - むくむくと起きる
+- key: jump_out_of_bed_suddenly
+  target: むっくり起きる
+  sources:
+  - むっくり起きる
+- key: slowly_wake_up
+  target: のっそり起きる
+  sources:
+  - のっそり起きる
+- key: snore_fast_asleep
+  target: ぐうぐう寝る
+  sources:
+  - ぐうぐう寝る
+- key: sleep_soundly_and_peacefully
+  target: すやすや寝る
+  sources:
+  - すやすや寝る
+- key: nod_off_to_start_to_fall_asleep
+  target: うとうと寝る
+  sources:
+  - うとうと寝る
+- key: sleep_with_normal_even_breathing
+  target: すうすう寝る
+  sources:
+  - すうすう寝る
+- key: eat_greedily_or_with_burning_desire
+  target: がつがつ食べる
+  sources:
+  - がつがつ食べる
+- key: eat_with_your_mouth_flapping_open_and_shut
+  target: ぱくぱく食べる
+  sources:
+  - ぱくぱく食べる
+- key: munch_and_crunch_on_something
+  target: むしゃむしゃ食べる
+  sources:
+  - むしゃむしゃ食べる
+- key: lick_ice_cream
+  target: ぺろぺろ食べる
+  sources:
+  - ぺろぺろ食べる
+- key: guzzle_something_down_quickly
+  target: がぶがぶ飲む
+  sources:
+  - がぶがぶ飲む
+- key: take_a_small_sips_trying_to_make_it_last
+  target: ちびちび飲む
+  sources:
+  - ちびちび飲む
+- key: repetitive_gulping_of_alcohol
+  target: ぐびぐび飲む
+  sources:
+  - ぐびぐび飲む
+- key: gulp_something_down
+  target: ごくごく飲む
+  sources:
+  - ごくごく飲む
+- key: trudge
+  target: とぼとぼ歩く
+  sources:
+  - とぼとぼ歩く
+- key: inch_along
+  target: のろのろ歩く
+  sources:
+  - のろのろ歩く
+- key: hurry_about
+  target: すたこら歩く
+  sources:
+  - すたこら歩く
+- key: scurry_along_with_small_steps
+  target: ちょこちょこ歩く
+  sources:
+  - ちょこちょこ歩く
+- key: rudely_stare
+  target: じろじろ見る
+  sources:
+  - じろじろ見る
+- key: stare_directly_into_someone_s_face
+  target: まじまじ見る
+  sources:
+  - まじまじ見る
+- key: blink_repeatedly
+  target: しばしば見る
+  sources:
+  - しばしば見る
+- key: glance_out_of_the_corner_of_your_eye_repeatedly
+  target: ちらちら見る
+  sources:
+  - ちらちら見る
+- key: cry_uncontrollably
+  target: めそめそ泣く
+  sources:
+  - めそめそ泣く
+- key: cry_gently_weeping_secretly
+  target: しくしく泣く
+  sources:
+  - しくしく泣く
+- key: cry_loudly_an_adult_crying
+  target: おいおい泣く
+  sources:
+  - おいおい泣く
+- key: cry_and_sniffle
+  target: ぐすぐす泣く
+  sources:
+  - ぐすぐす泣く
+- key: smile
+  target: にこにこ笑う
+  sources:
+  - にこにこ笑う
+- key: laugh_out_loud_gaffaw
+  target: げらげら笑う
+  sources:
+  - げらげら笑う
+- key: smile_with_satisfaction
+  target: にんまり笑う
+  sources:
+  - にんまり笑う
+- key: giggle_chuckle_quietly
+  target: くすくす笑う
+  sources:
+  - くすくす笑う
+- key: quiet_sunlight
+  target: おっとり
+  sources:
+  - おっとり
+- key: hot_sunlight_blazing_down
+  target: かっ
+  sources:
+  - かっ
+  - かっか
+- key: low_and_clear_comfortable_temperatures
+  target: からっ
+  sources:
+  - からっ
+  - からり
+- key: strong_summer_sunlight_blazing_down
+  target: かんかん
+  sources:
+  - かんかん
+- key: strong_midsummer_sun_blazing_down
+  target: ぎらぎら
+  sources:
+  - ぎらぎら
+- key: cloudy_sky_becoming_bright_and_clear
+  target: けろり
+  sources:
+  - けろり
+- key: lots_of_shining_sunlight
+  target: 燦燦
+  sources:
+  - 燦燦
+  - さんさん
+- key: sun_burning_brightly
+  target: じりじり
+  sources:
+  - じりじり
+- key: clear_without_a_single_cloud
+  target: すかっ
+  sources:
+  - すかっ
+- key: completely_dark
+  target: とっぷり
+  sources:
+  - とっぷり
+- key: thunder_rumbling_and_reverberating
+  target: ごろごろ
+  sources:
+  - ごろごろ
+- key: snow_and_hail_coming_down_one_by_one
+  target: こんこん
+  sources:
+  - こんこん
+- key: large_amounts_of_continuous_rain_falling
+  target: ざーざー
+  sources:
+  - ざーざー
+- key: light_shower_coming_down_for_a_short_time
+  target: ざーっ
+  sources:
+  - ざーっ
+  - ざっ
+- key: short_violent_evening_shower
+  target: ざーっ
+  sources:
+  - ざーっ
+  - ざっ
+- key: rain_or_waves_violently_pounding
+  target: ざざっ
+  sources:
+  - ざざっ
+- key: rain_gently_falling
+  target: しとしと
+  sources:
+  - しとしと
+- key: rain_continuously_falling_and_soaking_things
+  target: じとじと
+  sources:
+  - じとじと
+  - じめじめ
+- key: walking_through_snow_or_sand
+  target: しゃりしゃり
+  sources:
+  - しゃりしゃり
+- key: small_amount_of_snow_scatteringly_falling_from_the_sky
+  target: ちらほら
+  sources:
+  - ちらほら
+- key: rain_will_fall_any_moment_now
+  target: どんより
+  sources:
+  - どんより
+- key: powdered_snow_that_seems_quite_light
+  target: はらはら
+  sources:
+  - はらはら
+- key: large_drops_of_rain_or_hail_suddenly_coming_down
+  target: ばらばら
+  sources:
+  - ばらばら
+- key: small_amount_of_rain_or_hail_suddenly_coming_down
+  target: ぱらぱら
+  sources:
+  - ぱらぱら
+- key: strong_wind_raging
+  target: ごーっ
+  sources:
+  - ごーっ
+- key: wind_blowing_tree_leaves_together
+  target: さーさー
+  sources:
+  - さーさー
+- key: wind_momentarily_blowing
+  target: さーっ
+  sources:
+  - さーっ
+- key: wind_violently_shaking_tree_leaves
+  target: ざーっ
+  sources:
+  - ざーっ
+- key: tree_leaves_in_a_gentle_breeze
+  target: さやさや
+  sources:
+  - さやさや
+- key: plants_rustling_as_the_wind_blows
+  target: さわさわ
+  sources:
+  - さわさわ
+- key: blowing_through_a_crack_to_create_a_draft
+  target: すーすー
+  sources:
+  - すーすー
+- key: draft_or_gentle_breeze_on_the_body
+  target: すーっ
+  sources:
+  - すーっ
+- key: moving_through_the_wind_or_air
+  target: すかすか
+  sources:
+  - すかすか
+- key: gentle_breeze_quietly_blowing
+  target: そよそよ
+  sources:
+  - そよそよ
+- key: wind_lightly_quietly_blowing
+  target: そよ
+  sources:
+  - そよ
+  - そより
+- key: cloth_fluttering_in_the_wind
+  target: はたはた
+  sources:
+  - はたはた
+- key: cloth_strongly_flapping_in_the_wind
+  target: ばたばた
+  sources:
+  - ばたばた
+- key: cloth_lightly_flapping_in_the_wind
+  target: ぱたぱた
+  sources:
+  - ぱたぱた
+- key: slightly_strong_wind_blowing
+  target: ひゅー
+  sources:
+  - ひゅー
+  - ぴゅー
+- key: strong_wind_blowing_over
+  target: びゅー
+  sources:
+  - びゅー
+- key: strong_wind_hitting_trees_and_electric_lines
+  target: ひゅーひゅ
+  sources:
+  - ひゅーひゅ
+- key: strong_continuous_typhoon_winds
+  target: びゅーびゅー
+  sources:
+  - びゅーびゅー
+- key: strong_continuous_and_cold_wintry_winds
+  target: ぴゅーぴゅー
+  sources:
+  - ぴゅーぴゅー
+- key: something_cutting_and_flying_in_the_wind
+  target: ひゅっ
+  sources:
+  - ひゅっ
+  - びゅっ
+  - ぴゅっ
+- key: wind_sharply_whistling_through_the_air
+  target: ひゅるるん
+  sources:
+  - ひゅるるん
+- key: continuous_strong_wind_blowing
+  target: びゅんびゅん
+  sources:
+  - びゅんびゅん
+  - ぴゅんぴゅん
+- key: wind_blowing
+  target: ふー
+  sources:
+  - ふー
+- key: wind_violently_blasting_or_bursting_out
+  target: ぶぉーっ
+  sources:
+  - ぶぉーっ
+- key: wind_heavily_roaring_overhead
+  target: ぶんぶん
+  sources:
+  - ぶんぶん
+- key: grass_and_leaves_stirring_or_rustling
+  target: わさわさ
+  sources:
+  - わさわさ
+- key: cold_gradually_piercing_your_body
+  target: じわじわ
+  sources:
+  - じわじわ
+- key: cold_deeply_penetrating_your_body
+  target: しん
+  sources:
+  - しん
+- key: your_body_going_numb_with_cold
+  target: じんじん
+  sources:
+  - じんじん
+- key: wind_blowing_through_a_crack_when_its_chilly
+  target: すーすー
+  sources:
+  - すーすー
+- key: feeling_chilly_from_moving_air
+  target: すかすか
+  sources:
+  - すかすか
+- key: cold_from_goosebumps_running_up_your_spine
+  target: ぞーっ
+  sources:
+  - ぞーっ
+- key: shivering_from_the_cold_or_a_fever
+  target: ぞくぞく
+  sources:
+  - ぞくぞく
+- key: suddenly_getting_intense_shivers
+  target: ぞくり
+  sources:
+  - ぞくり
+- key: cold_water_or_air_touching_your_skin
+  target: ひやっ
+  sources:
+  - ひやっ
+  - ひやり
+- key: your_skin_feeling_cold
+  target: ひやひや
+  sources:
+  - ひやひや
+- key: your_skin_feeling_cold_over_and_over
+  target: ひやりひやり
+  sources:
+  - ひやりひやり
+- key: tensing_up_from_the_cold
+  target: りん
+  sources:
+  - りん
+- key: feeling_incredibly_cold
+  target: ぎんぎん
+  sources:
+  - ぎんぎん
+- key: feeling_cool
+  target: ひんやり
+  sources:
+  - ひんやり
+- key: feeling_too_cold
+  target: きーん
+  sources:
+  - きーん
+- key: warm_spring_sunlight
+  target: うらら
+  sources:
+  - うらら
+- key: growing_hot_from_fire_or_anger
+  target: かっ
+  sources:
+  - かっ
+  - かっか
+- key: comfortable_warm_place
+  target: ぬくぬく
+  sources:
+  - ぬくぬく
+  - ぬっくり
+- key: warm_body_or_food
+  target: ほかほか
+  sources:
+  - ほかほか
+- key: feeling_comfortable_warmth
+  target: ぽかぽか
+  sources:
+  - ぽかぽか
+- key: warm_from_sunlight
+  target: ぽかりぽかり
+  sources:
+  - ぽかりぽかり
+- key: warm_and_feeling_good
+  target: ほこっ
+  sources:
+  - ほこっ
+  - ほこほこ
+- key: growing_heat_from_within_your_body
+  target: ぽっぽっ
+  sources:
+  - ぽっぽっ
+- key: feeling_warm_inside_your_heart_or_soul
+  target: ほのぼの
+  sources:
+  - ほのぼの
+- key: so_new_that_steam_is_rising_off_it
+  target: ほやほや
+  sources:
+  - ほやほや
+- key: soft_and_wrapped_in_warmth
+  target: ほわっ
+  sources:
+  - ほわっ
+- key: warm_comfortable_atmosphere
+  target: ほんわか
+  sources:
+  - ほんわか
+- key: too_much_warmth_unpleasantly_hot
+  target: むしむし
+  sources:
+  - むしむし
+- key: heat_spreading_out_in_front_of_you
+  target: むわっ
+  sources:
+  - むわっ
+  - もわっ
+- key: suddenly_feeling_heat
+  target: むん
+  sources:
+  - むん
+- key: wrapped_in_oppressive_heat
+  target: むんむ
+  sources:
+  - むんむ
+  - むんむん
+- key: steam_spreading_out_in_front_of_you
+  target: もわもわ
+  sources:
+  - もわもわ
+- key: small_amount_of_water_forcefully_shooting_through_the_air
+  target: ちゅっ
+  sources:
+  - ちゅっ
+  - ぴゅっ
+- key: water_forcefully_scattering
+  target: ばしゃっ
+  sources:
+  - ばしゃっ
+- key: water_gently_scattering
+  target: ぱしゃっ
+  sources:
+  - ぱしゃっ
+- key: huge_splash_of_water
+  target: ばちゃっ
+  sources:
+  - ばちゃっ
+- key: small_splash_of_water
+  target: ぱちゃっ
+  sources:
+  - ぱちゃっ
+- key: tears_endlessly_falling
+  target: はらはら
+  sources:
+  - はらはら
+- key: water_violently_splashing
+  target: びしゃっ
+  sources:
+  - びしゃっ
+- key: water_sharply_splashing
+  target: ぴしゃっ
+  sources:
+  - ぴしゃっ
+- key: water_violently_hitting_something_with_a_high_sound
+  target: びちゃっ
+  sources:
+  - びちゃっ
+- key: small_amount_of_water_splashing
+  target: ぴちゃっ
+  sources:
+  - ぴちゃっ
+- key: momentarily_heavy_splash
+  target: ぼしゃっ
+  sources:
+  - ぼしゃっ
+- key: water_droplets_falling_on_the_surface_of_something
+  target: ぽたり
+  sources:
+  - ぽたり
+  - ぽたん
+  - ぽつり
+  - ぽつん
+- key: fairly_large_water_droplets_falling_continuously
+  target: ぼたぼた
+  sources:
+  - ぼたぼた
+- key: small_amount_of_water_dripping
+  target: ぽたぽた
+  sources:
+  - ぽたぽた
+- key: fairly_large_water_droplets_heavily_falling
+  target: ぼとぼと
+  sources:
+  - ぼとぼと
+- key: small_amount_of_water_trickling_down
+  target: ぽとぽと
+  sources:
+  - ぽとぽと
+- key: tears_spilling_out_over_and_over
+  target: ぽろぽろ
+  sources:
+  - ぽろぽろ
+- key: large_amount_of_water_streaming_forcefully
+  target: がばがば
+  sources:
+  - がばがば
+- key: large_amount_of_water_echoing_from_a_ways_away
+  target: ごーっ
+  sources:
+  - ごーっ
+- key: water_lightly_flowing
+  target: ころころ
+  sources:
+  - ころころ
+- key: large_amount_of_water_pouring_out_all_at_once
+  target: さーっ
+  sources:
+  - さーっ
+  - ざーっ
+- key: large_amount_of_water_streaming_continuously
+  target: ざーざー
+  sources:
+  - ざーざー
+- key: quiet_shallow_brook
+  target: さらさら
+  sources:
+  - さらさら
+- key: water_lightly_flowing_continuously
+  target: しゃーしゃー
+  sources:
+  - しゃーしゃー
+- key: water_usually_from_a_faucet_flowing_continuously
+  target: じゃーじゃー
+  sources:
+  - じゃーじゃー
+- key: just_a_little_bit_of_water_flowing
+  target: しょろしょろ
+  sources:
+  - しょろしょろ
+- key: large_amount_of_sweat
+  target: だくだく
+  sources:
+  - だくだく
+- key: pouring_a_large_amount_of_water_of_liquids
+  target: だぼだぼ
+  sources:
+  - だぼだぼ
+- key: sweat_or_blood_falling
+  target: たらたら
+  sources:
+  - たらたら
+- key: sweat_blood_or_oil_dripping
+  target: だらだら
+  sources:
+  - だらだら
+- key: thin_brook_trickling
+  target: ちょろちょろ
+  sources:
+  - ちょろちょろ
+- key: large_amount_of_water_flowing_violently_all_at_once
+  target: どーっ
+  sources:
+  - どーっ
+- key: large_amount_of_water_flowing_down
+  target: どーどー
+  sources:
+  - どーどー
+- key: glugging_or_gurgling_from_a_small_mouth
+  target: とくとく
+  sources:
+  - とくとく
+- key: something_like_blood_overflowing_out
+  target: どくどく
+  sources:
+  - どくどく
+- key: large_amount_of_water_spurting_out_all_at_once
+  target: どばどば
+  sources:
+  - どばどば
+- key: water_or_sake_being_poured
+  target: どぶどぶ
+  sources:
+  - どぶどぶ
+- key: large_amount_of_liquid_being_poured_continuously
+  target: どぼどぼ
+  sources:
+  - どぼどぼ
+- key: something_thick_flowing
+  target: とろとろ
+  sources:
+  - とろとろ
+- key: soaked_in_a_moderate_amount_of_moisture
+  target: しっとり
+  sources:
+  - しっとり
+- key: uncomfortably_sweaty
+  target: じっとり
+  sources:
+  - じっとり
+- key: covered_in_an_uncomfortable_amount_of_rain
+  target: じとじと
+  sources:
+  - じとじと
+- key: completely_soaked_through_with_a_light_dampness
+  target: しとっ
+  sources:
+  - しとっ
+  - しとり
+- key: unpleasant_moisture_and_humidity
+  target: じとっ
+  sources:
+  - じとっ
+  - じとり
+- key: feeling_damp
+  target: じみじみ
+  sources:
+  - じみじみ
+- key: completely_soaked_in_humidity_and_moisture_sodden_and_clammy
+  target: じめじめ
+  sources:
+  - じめじめ
+- key: completely_soaked_and_oozing
+  target: じゅくじゅく
+  sources:
+  - じゅくじゅく
+- key: moisture_slowly_spreading
+  target: じわじわ
+  sources:
+  - じわじわ
+- key: liquids_soaking_and_oozing
+  target: じわっ
+  sources:
+  - じわっ
+- key: soaking_slowly_with_sweat_or_tears
+  target: じんわり
+  sources:
+  - じんわり
+- key: deeply_stained_with_sweat
+  target: べっとり
+  sources:
+  - べっとり
+- key: sticky_with_sweat_or_blood
+  target: べとべと
+  sources:
+  - べとべと
+- key: clothes_getting_completely_wet
+  target: ぐしょぐしょ
+  sources:
+  - ぐしょぐしょ
+  - ぐちょぐちょ
+- key: clothes_getting_severely_wet
+  target: ぐっしょり
+  sources:
+  - ぐっしょり
+- key: getting_wet_from_light_rain_or_fog
+  target: しとしと
+  sources:
+  - しとしと
+- key: uncomfortable_feeling_of_getting_wet_from_rain_or_water
+  target: ずくずく
+  sources:
+  - ずくずく
+- key: completely_immersed_in_bath_water_or_liquids
+  target: とっぷり
+  sources:
+  - とっぷり
+  - どっぷり
+- key: horribly_soaked_by_a_large_amount_of_water
+  target: びしょびしょ
+  sources:
+  - びしょびしょ
+  - びちょびちょ
+- key: water_collecting_on_the_surface
+  target: びしゃびしゃ
+  sources:
+  - びしゃびしゃ
+  - びちゃびちゃ
+- key: lightly_soaking_in_water
+  target: ひたひた
+  sources:
+  - ひたひた
+- key: disgustingly_drenched_in_a_large_amount_of_sweat
+  target: びっしょり
+  sources:
+  - びっしょり
+- key: completely_drenched_in_a_large_amount_of_water
+  target: びっちょり
+  sources:
+  - びっちょり
+- key: getting_soft_from_water_mushy_and_soggy
+  target: べちゃべちゃ
+  sources:
+  - べちゃべちゃ
+- key: unpleasant_from_excess_moisture
+  target: べちょべちょ
+  sources:
+  - べちょべちょ
+- key: water_bubbling_gently
+  target: こぽこぽ
+  sources:
+  - こぽこぽ
+- key: bubbling_loudly
+  target: ごぼごぼ
+  sources:
+  - ごぼごぼ
+- key: water_mixing_in_with_the_air
+  target: ごぽごぽ
+  sources:
+  - ごぽごぽ
+- key: waves_violently_breaking
+  target: ざざっ
+  sources:
+  - ざざっ
+- key: large_amount_of_water_moving
+  target: ざばっ
+  sources:
+  - ざばっ
+- key: jumping_into_water
+  target: ざぶっ
+  sources:
+  - ざぶっ
+  - ざぶん
+- key: water_violently_flying
+  target: じゃぶん
+  sources:
+  - じゃぶん
+  - じゃぼん
+- key: water_being_shifted_and_rippling
+  target: たぷんたぷん
+  sources:
+  - たぷんたぷん
+- key: something_slapping_against_water
+  target: たぽたぽ
+  sources:
+  - たぽたぽ
+- key: water_sloshing_lightly
+  target: ちゃぷちゃぷ
+  sources:
+  - ちゃぷちゃぷ
+- key: something_heavy_falling_into_water
+  target: どぶん
+  sources:
+  - どぶん
+  - どぼん
+- key: water_sloshing_gently
+  target: とぷんとぷん
+  sources:
+  - とぷんとぷん
+- key: something_sinking_underwater
+  target: どんぶりこ
+  sources:
+  - どんぶりこ
+- key: waves_lapping_against_the_shore
+  target: ひたひた
+  sources:
+  - ひたひた
+- key: bubbling
+  target: ぶくぶく
+  sources:
+  - ぶくぶく
+- key: small_bubbles_forming
+  target: ぷくぷく
+  sources:
+  - ぷくぷく
+- key: big_bubbles_rising_burbling
+  target: ぼこぼこ
+  sources:
+  - ぼこぼこ
+- key: sun_and_fire_continuously_burning_hot
+  target: かっか
+  sources:
+  - かっか
+- key: small_flame_continuously_burning
+  target: ちょろちょろ
+  sources:
+  - ちょろちょろ
+- key: small_flame_flickering_as_it_burns
+  target: ちろちろ
+  sources:
+  - ちろちろ
+- key: simmering_for_a_long_time
+  target: とろとろ
+  sources:
+  - とろとろ
+- key: strong_popping_of_a_fire
+  target: ぱちぱち
+  sources:
+  - ぱちぱち
+- key: large_flames_fiercely_burning
+  target: ぱっぱっ
+  sources:
+  - ぱっぱっ
+- key: something_burned_crispy
+  target: ぱりぱり
+  sources:
+  - ぱりぱり
+- key: sputtering_of_smokey_embers
+  target: ぶすぶす
+  sources:
+  - ぶすぶす
+  - ぷすぷす
+- key: flame_flaring_up_for_a_moment
+  target: ぼーっ
+  sources:
+  - ぼーっ
+  - ぼっ
+- key: fire_burning
+  target: ぼーぼー
+  sources:
+  - ぼーぼー
+- key: fire_flaring_up_explosively
+  target: ぼーん
+  sources:
+  - ぼーん
+- key: large_flame_flaring_every_once_in_a_while
+  target: ぼっぼっ
+  sources:
+  - ぼっぼっ
+- key: suddenly_bursting_into_flames
+  target: めらめら
+  sources:
+  - めらめら
+- key: road_that_isnt_paved
+  target: がたがた
+  sources:
+  - がたがた
+- key: something_jagged_or_rugged_like_bare_rock
+  target: ごつごつ
+  sources:
+  - ごつごつ
+- key: something_like_a_boulder_tumbling
+  target: ごろごろ
+  sources:
+  - ごろごろ
+- key: swelling_roundness_of_a_mountain
+  target: こんもり
+  sources:
+  - こんもり
+- key: forcefully_moving_sand
+  target: ざーっ
+  sources:
+  - ざーっ
+- key: stepping_on_soft_dirt_or_sand
+  target: さくさく
+  sources:
+  - さくさく
+- key: sand_mixing_as_you_step_on_it
+  target: さくっ
+  sources:
+  - さくっ
+- key: walking_on_soft_dirt_or_sand
+  target: さくりさくり
+  sources:
+  - さくりさくり
+- key: roughly_grabbing_something_like_sand
+  target: ざっく
+  sources:
+  - ざっく
+- key: dry_sand_sifting_or_falling
+  target: さらさら
+  sources:
+  - さらさら
+- key: pebbles_or_sand_crunching_together
+  target: じゃりじゃり
+  sources:
+  - じゃりじゃり
+- key: pebbles_hitting_each_other_while_they_fall
+  target: じゃりっ
+  sources:
+  - じゃりっ
+- key: sinking_into_a_swamp_or_a_sand
+  target: ずぶずぶ
+  sources:
+  - ずぶずぶ
+  - ずぼずぼ
+- key: stepping_on_sand_as_you_walk
+  target: そくそく
+  sources:
+  - そくそく
+- key: uneven_ground
+  target: でこぼこ
+  sources:
+  - でこぼこ
+- key: smearing_mud_or_paint
+  target: べちょっ
+  sources:
+  - べちょっ
+- key: lots_of_hollows_or_holes
+  target: ぼこぼこ
+  sources:
+  - ぼこぼこ
+- key: wandering_aimlessly
+  target: うろうろ
+  sources:
+  - うろうろ
+- key: walking_with_great_difficulty_barely_managing_to_walk
+  target: えっちらおっちら
+  sources:
+  - えっちらおっちら
+- key: horse_hooves
+  target: かっぽかっぽ
+  sources:
+  - かっぽかっぽ
+- key: feet_moving_vigorously
+  target: さっさ
+  sources:
+  - さっさ
+  - さっさっ
+- key: fast_paced_eager_walking
+  target: すたこら
+  sources:
+  - すたこら
+- key: running_away_without_looking_back
+  target: すたこらさっさ
+  sources:
+  - すたこらさっさ
+- key: briskly_walking_without_looking_around
+  target: すたすた
+  sources:
+  - すたすた
+- key: jogging_as_if_youre_in_a_hurry
+  target: せかせか
+  sources:
+  - せかせか
+- key: lightly_taking_off_into_a_run
+  target: たー
+  sources:
+  - たー
+  - たたー
+- key: high_pitched_footsteps_of_a_child_running
+  target: たかたか
+  sources:
+  - たかたか
+- key: staggering_or_tripping_over_your_feet
+  target: たじたじ
+  sources:
+  - たじたじ
+- key: powerfully_running_through
+  target: だだーっ
+  sources:
+  - だだーっ
+- key: running_at_full_speed
+  target: たたたた
+  sources:
+  - たたたた
+- key: rushing_forward
+  target: だだだだ
+  sources:
+  - だだだだ
+- key: light_running
+  target: たったかたったか
+  sources:
+  - たったかたったか
+- key: walking_quickly_with_long_strides
+  target: たったっ
+  sources:
+  - たったっ
+- key: scurrying_along_with_short_steps
+  target: ちょこちょこ
+  sources:
+  - ちょこちょこ
+- key: going_a_long_way_trudging_along
+  target: てくてく
+  sources:
+  - てくてく
+- key: walking_with_the_same_rhythm
+  target: てけてけ
+  sources:
+  - てけてけ
+- key: heavily_stomping_with_your_weight
+  target: どっしどっし
+  sources:
+  - どっしどっし
+- key: stamping_forcefully_with_your_foot
+  target: とーん
+  sources:
+  - とーん
+- key: small_steps_of_children
+  target: とことこ
+  sources:
+  - とことこ
+- key: rhythm_of_quick_small_steps
+  target: とっとことっとこ
+  sources:
+  - とっとことっとこ
+  - とっとっ
+- key: quickly_walking
+  target: とっと
+  sources:
+  - とっと
+- key: trotting_jogging
+  target: ととと
+  sources:
+  - ととと
+- key: noisily_running_around
+  target: どたばた
+  sources:
+  - どたばた
+- key: stooping_as_you_walk_a_long_way_trudging
+  target: とぼとぼ
+  sources:
+  - とぼとぼ
+- key: like_you_dont_care_haughtily
+  target: のさのさ
+  sources:
+  - のさのさ
+- key: strong_heavy_steps_lumbering
+  target: のしのし
+  sources:
+  - のしのし
+- key: hulking_and_slow_like_a_slow_giant
+  target: のそのそ
+  sources:
+  - のそのそ
+- key: walking_with_huge_clumsy_strides_like_a_giant
+  target: のっしのっし
+  sources:
+  - のっしのっし
+- key: slowly_aimlessly_walking
+  target: のらりのらり
+  sources:
+  - のらりのらり
+- key: proceeding_at_a_snail_s_pace_slow_and_sluggish
+  target: のろのろ
+  sources:
+  - のろのろ
+  - のろりのろり
+- key: light_horse_footsteps_clip_clop
+  target: ぱかぱか
+  sources:
+  - ぱかぱか
+  - ぱっぱか
+- key: pitter_patter_of_footsteps
+  target: ぱたぱた
+  sources:
+  - ぱたぱた
+  - ばたばた
+- key: taking_a_carefree_stroll
+  target: ひょこひょこ
+  sources:
+  - ひょこひょこ
+- key: wandering_around_without_any_goal_or_purpose
+  target: ふらふら
+  sources:
+  - ふらふら
+  - ぶらぶら
+- key: and_old_or_sick_person_weak_on_their_feet
+  target: よたよた
+  sources:
+  - よたよた
+- key: infant_still_learning_how_to_walk
+  target: よちよち
+  sources:
+  - よちよち
+- key: and_old_person_shaking_while_they_walk
+  target: よぼよぼ
+  sources:
+  - よぼよぼ
+- key: someone_who_looks_like_they_could_collapse_at_any_moment
+  target: よろよろ
+  sources:
+  - よろよろ
+- key: restless_and_unable_to_calm_down
+  target: わたわた
+  sources:
+  - わたわた
+- key: suddenly_wake_up_all_at_once
+  target: がばっ
+  sources:
+  - がばっ
+- key: taking_the_initiative_and_standing_up_willingly
+  target: さっ
+  sources:
+  - さっ
+- key: straight_backed
+  target: しゃっきり
+  sources:
+  - しゃっきり
+- key: standing_up_straight_looking_forward
+  target: しゃん
+  sources:
+  - しゃん
+- key: vigorously_standing_upright
+  target: すくっ
+  sources:
+  - すくっ
+  - すっく
+- key: getting_up_lightly
+  target: すたっ
+  sources:
+  - すたっ
+- key: getting_up_casually_and_carefree
+  target: すっ
+  sources:
+  - すっ
+- key: lightly_jumping_down
+  target: すとん
+  sources:
+  - すとん
+- key: standing_up_straight_silently_without_doing_anything
+  target: ぬーっ
+  sources:
+  - ぬーっ
+- key: slowly_ponderously_getting_up
+  target: のっそり
+  sources:
+  - のっそり
+- key: quickly_standing_up_in_reaction_to_something
+  target: ぱっ
+  sources:
+  - ぱっ
+- key: large_number_of_people_standing_up_and_moving_one_after_the_other
+  target: ばらばら
+  sources:
+  - ばらばら
+- key: lightly_getting_up
+  target: ひょい
+  sources:
+  - ひょい
+- key: jumping_up_and_standing_erect
+  target: ぴん
+  sources:
+  - ぴん
+- key: suddenly_waking_up_and_getting_up
+  target: むくっ
+  sources:
+  - むくっ
+  - むっく
+  - むっくり
+- key: squirming_while_getting_up
+  target: むくむく
+  sources:
+  - むくむく
+- key: half_asleep_nodding_off
+  target: うとうと
+  sources:
+  - うとうと
+  - うつらうつら
+- key: suddenly_hit_with_drowsiness
+  target: うとっ
+  sources:
+  - うとっ
+- key: your_body_moving_from_nodding_off
+  target: こっくりこっくり
+  sources:
+  - こっくりこっくり
+- key: sound_your_nose_makes_when_youre_fast_asleep
+  target: くーくー
+  sources:
+  - くーくー
+- key: snoring_while_youre_fast_asleep
+  target: ぐーぐー
+  sources:
+  - ぐーぐー
+  - ぐーすか
+- key: completely_and_totally_asleep
+  target: ぐっすり
+  sources:
+  - ぐっすり
+- key: completely_and_totally_asleep
+  target: こっくり
+  sources:
+  - こっくり
+- key: nodding_off_with_your_head_suddenly_drooping
+  target: こてっ
+  sources:
+  - こてっ
+- key: suddenly_losing_your_strength_and_collapsing
+  target: ことっ
+  sources:
+  - ことっ
+- key: falling_asleep_from_fatigue
+  target: ころっ
+  sources:
+  - ころっ
+  - ころり
+- key: lying_down_and_easily_falling_asleep
+  target: ごろっ
+  sources:
+  - ごろっ
+  - ごろり
+  - ごろん
+- key: laying_down_and_stretching_out
+  target: 昏昏
+  sources:
+  - 昏昏
+  - こんこん
+- key: falling_into_a_long_deep_sleep
+  target: すーすー
+  sources:
+  - すーすー
+- key: normal_even_breathing_while_asleep
+  target: すやすや
+  sources:
+  - すやすや
+- key: peaceful_breathing_while_asleep_sleeping_soundly
+  target: どたん
+  sources:
+  - どたん
+- key: feeling_tired_and_heavy
+  target: とろっ
+  sources:
+  - とろっ
+- key: looking_sleepy
+  target: とろとろ
+  sources:
+  - とろとろ
+- key: dozing_a_light_doze
+  target: とろん
+  sources:
+  - とろん
+- key: not_having_the_willpower_to_do_anything
+  target: ぐーたら
+  sources:
+  - ぐーたら
+- key: passing_the_time_doing_nothing
+  target: ごろごろ
+  sources:
+  - ごろごろ
+  - ごこりごこり
+- key: rolling_around_idly
+  target: ごろんごろん
+  sources:
+  - ごろんごろん
+- key: happily_ignoring_your_surroundings
+  target: のーのー
+  sources:
+  - のーのー
+- key: feel_at_ease_without_a_job_or_worries
+  target: のんびり
+  sources:
+  - のんびり
+- key: living_in_laziness_and_doing_nothing
+  target: ぶらぶら
+  sources:
+  - ぶらぶら
+- key: bored_and_doing_nothing
+  target: ぶらり
+  sources:
+  - ぶらり
+- key: living_idly_and_sloppily
+  target: ぼけっ
+  sources:
+  - ぼけっ
+- key: disgusted_and_fed_up
+  target: うんざり
+  sources:
+  - うんざり
+- key: horribly_exhausted_losing_energy
+  target: がっかり
+  sources:
+  - がっかり
+- key: horribly_tired_and_worn_out
+  target: くたくた
+  sources:
+  - くたくた
+  - ぐたぐた
+- key: tired_and_unable_to_move
+  target: くたっ
+  sources:
+  - くたっ
+  - ぐたっ
+  - ぐったり
+- key: horribly_exhausted_and_withering_away
+  target: げっそり
+  sources:
+  - げっそり
+- key: weakening_from_fatigue_and_heat
+  target: げんなり
+  sources:
+  - げんなり
+- key: mentally_and_emotionally_exhausted
+  target: ずたぼろ
+  sources:
+  - ずたぼろ
+- key: completely_exhausted_and_out_of_breath
+  target: へとへと
+  sources:
+  - へとへと
+- key: mentally_and_emotionally_worn_out
+  target: ぼろぼろ
+  sources:
+  - ぼろぼろ
+- key: staggering_and_unable_to_walk_straight_from_exhaustion
+  target: よたよた
+  sources:
+  - よたよた
+- key: joints_like_knees_shaking
+  target: がくがく
+  sources:
+  - がくがく
+- key: shivering_violently_from_coldness_or_fear
+  target: がたがた
+  sources:
+  - がたがた
+- key: teeth_chattering_from_coldness_or_fear
+  target: がちがち
+  sources:
+  - がちがち
+- key: goosebumps_from_a_bad_feeling
+  target: ざわざわ
+  sources:
+  - ざわざわ
+- key: chills_going_up_your_spine_from_fear
+  target: ぞーっ
+  sources:
+  - ぞーっ
+- key: body_shaking_from_cold_fear_or_excitement
+  target: ぞくぞく
+  sources:
+  - ぞくぞく
+- key: sudden_chill_from_cold_fear_or_excitement
+  target: ぞくっ
+  sources:
+  - ぞくっ
+- key: unpleasant_coldness
+  target: ぞぞ
+  sources:
+  - ぞぞ
+- key: visually_shaking_for_a_moment_from_fear
+  target: ぞっ
+  sources:
+  - ぞっ
+- key: body_or_part_of_it_spasming_suddenly
+  target: ひくっ
+  sources:
+  - ひくっ
+  - ぴくっ
+  - ぴくり
+  - ぴくん
+- key: body_suddenly_reflexively_shaking_or_trembling
+  target: びくっ
+  sources:
+  - びくっ
+- key: part_of_your_body_twitching_or_cramping
+  target: ひくひく
+  sources:
+  - ひくひく
+- key: part_of_your_body_shaking_from_fear
+  target: びくびく
+  sources:
+  - びくびく
+  - ぴくぴく
+- key: continuously_shaking_for_a_period_of_time
+  target: ぴくりぴくり
+  sources:
+  - ぴくりぴくり
+  - ぴくんぴくん
+- key: body_going_numb_from_sudden_stimulation
+  target: びりっ
+  sources:
+  - びりっ
+  - びりん
+- key: sudden_shaking_movement
+  target: ぴりっ
+  sources:
+  - ぴりっ
+- key: something_like_glass_resonating_from_an_explosion_rattling
+  target: びりびり
+  sources:
+  - びりびり
+- key: your_whole_body_suddenly_shaking_from_the_cold
+  target: ぶるっ
+  sources:
+  - ぶるっ
+- key: vibrating_for_a_moment
+  target: ぷるっ
+  sources:
+  - ぷるっ
+- key: moved_by_light_shaking_or_vibrating
+  target: ふるふる
+  sources:
+  - ふるふる
+  - ぷるぷる
+- key: trembling_from_cold_fear_or_anger
+  target: ぶるぶる
+  sources:
+  - ぶるぶる
+- key: suddenly_shaking_and_moving
+  target: ぶるり
+  sources:
+  - ぶるり
+- key: waving_or_shaking_something_around_like_an_arm
+  target: ぶるん
+  sources:
+  - ぶるん
+- key: continuously_intensely_shaking
+  target: ぶるんぶるん
+  sources:
+  - ぶるんぶるん
+- key: shaking_from_cold_fear_or_anger
+  target: わなわな
+  sources:
+  - わなわな
+- key: eyes_opening_and_closing_seeing_and_not_seeing_nodding_off
+  target: うつらうつら
+  sources:
+  - うつらうつら
+- key: eyes_wide_open_glaring
+  target: かっ
+  sources:
+  - かっ
+- key: intense_look_in_your_eyes_and_attitude
+  target: きっ
+  sources:
+  - きっ
+- key: looking_around_restlessly_over_and_over
+  target: きょときょと
+  sources:
+  - きょときょと
+- key: turning_around_looking_around_restlessly
+  target: きょろきょろ
+  sources:
+  - きょろきょろ
+- key: big_eyeballs_shining_keenly
+  target: ぎょろぎょろ
+  sources:
+  - ぎょろぎょろ
+- key: charming_eyes_opening_wide
+  target: きょろ
+  sources:
+  - きょろ
+- key: glaring_intently_at_someone
+  target: ぎょろ
+  sources:
+  - ぎょろ
+  - ぎょろり
+- key: quickly_surveying_your_surroundings
+  target: きょろり
+  sources:
+  - きょろり
+- key: glint_in_your_eyes_not_hiding_the_lust_in_your_eyes
+  target: ぎらぎら
+  sources:
+  - ぎらぎら
+- key: sudden_movement_of_your_eyes
+  target: きろっ
+  sources:
+  - きろっ
+- key: big_eyes_glaring
+  target: ぎろっ
+  sources:
+  - ぎろっ
+  - きろり
+- key: glaring_threateningly
+  target: ぎろり
+  sources:
+  - ぎろり
+- key: continuously_opening_your_eyes_wide
+  target: ぎんぎん
+  sources:
+  - ぎんぎん
+- key: keenly_staring_at_your_focal_point
+  target: ぐっ
+  sources:
+  - ぐっ
+- key: not_taking_your_eyes_off_your_target
+  target: じーっ
+  sources:
+  - じーっ
+  - じっ
+- key: staring_at_something_over_and_over_fixedly
+  target: しげしげ
+  sources:
+  - しげしげ
+- key: glaring_with_jealously_and_resentment
+  target: じとっ
+  sources:
+  - じとっ
+  - じとり
+- key: blinking_repeatedly
+  target: しばしば
+  sources:
+  - しばしば
+- key: blinking_wearily_after_your_eyes_were_open_a_long_time
+  target: しょぼしょぼ
+  sources:
+  - しょぼしょぼ
+- key: eyes_that_are_open_but_cant_understand_what_they_see
+  target: しょぼっ
+  sources:
+  - しょぼっ
+- key: rudely_staring_at_someone_over_and_over
+  target: じろじろ
+  sources:
+  - じろじろ
+- key: coldly_glaring_at_someone
+  target: じろっ
+  sources:
+  - じろっ
+  - じろり
+- key: rudely_sending_and_obstinate_look_at_someone
+  target: じろりじろり
+  sources:
+  - じろりじろり
+- key: strong_light_irritating_your_eyes
+  target: ちかちか
+  sources:
+  - ちかちか
+- key: look_out_of_the_corner_of_your_eye_over_and_over
+  target: ちらちら
+  sources:
+  - ちらちら
+- key: glancing_out_of_the_corner_of_your_eye_for_a_moment
+  target: ちらっ
+  sources:
+  - ちらっ
+  - ちらり
+- key: something_appearing_and_disappearing_flickering
+  target: ちらりちらり
+  sources:
+  - ちらりちらり
+- key: sharply_glancing_sideways
+  target: ちろっ
+  sources:
+  - ちろっ
+- key: gazing_intently_unabashedly
+  target: つくづく
+  sources:
+  - つくづく
+- key: with_eyes_dull_from_drunkenness
+  target: とろり
+  sources:
+  - とろり
+  - とろん
+  - どろん
+- key: dull_eyes_losing_life
+  target: どんより
+  sources:
+  - どんより
+- key: looking_with_big_wide_eyes
+  target: ぱちり
+  sources:
+  - ぱちり
+  - ぱちぱち
+  - ぱっちり
+- key: seeing_the_target_clearly
+  target: はっきり
+  sources:
+  - はっきり
+- key: squinting_at_something_small
+  target: ぽつっ
+  sources:
+  - ぽつっ
+  - ぽつん
+- key: only_able_to_see_dim_outlines
+  target: ぼんやり
+  sources:
+  - ぼんやり
+- key: plainly_visible_before_your_eyes
+  target: まざまざ
+  sources:
+  - まざまざ
+- key: staring_directly_into_your_face
+  target: まじまじ
+  sources:
+  - まじまじ
+- key: taking_big_bites_with_a_wide_open_mouth
+  target: あんぐり
+  sources:
+  - あんぐり
+- key: chewing_something_wildly_with_your_teeth
+  target: がしがし
+  sources:
+  - がしがし
+- key: devouring_something_and_giving_into_your_desires
+  target: がつがつ
+  sources:
+  - がつがつ
+- key: biting_something_deeply_and_not_letting_go
+  target: がっぷり
+  sources:
+  - がっぷり
+- key: continuing_to_eat_food_energetically
+  target: がばがば
+  sources:
+  - がばがば
+- key: taking_a_big_bite_of_something
+  target: がぶっ
+  sources:
+  - がぶっ
+  - がぶり
+- key: lightly_chewing_on_something_hard_with_your_teeth
+  target: かりかり
+  sources:
+  - かりかり
+- key: trying_to_munch_something_hard_with_your_teeth
+  target: がりがり
+  sources:
+  - がりがり
+- key: biting_once_into_something_hard
+  target: かりっ
+  sources:
+  - かりっ
+  - かりり
+  - かりん
+- key: chewing_a_mouthful_of_something_hard
+  target: がりっ
+  sources:
+  - がりっ
+  - がりり
+- key: eating_loudly_and_vulgarly
+  target: くしゃくしゃ
+  sources:
+  - くしゃくしゃ
+  - くちゃくちゃ
+  - ぐちゃぐちゃ
+- key: rinsing_out_your_mouth_or_chewing_something
+  target: ぐちゅぐちゅ
+  sources:
+  - ぐちゅぐちゅ
+- key: biting_something_hard_in_your_mouth
+  target: こりこり
+  sources:
+  - こりこり
+- key: biting_into_something_hard
+  target: こりっ
+  sources:
+  - こりっ
+- key: biting_forcefully_into_something_hard
+  target: ごりっ
+  sources:
+  - ごりっ
+- key: light_feeling_when_you_bite_into_something
+  target: さくっ
+  sources:
+  - さくっ
+- key: pleasant_crunchiness
+  target: しこっ
+  sources:
+  - しこっ
+- key: eating_fresh_vegetables_with_lots_of_texture_like_celery
+  target: しゃきしゃき
+  sources:
+  - しゃきしゃき
+- key: sipping_on_mostly_liquid_food
+  target: じゅるっ
+  sources:
+  - じゅるっ
+- key: refreshing_light_crunchiness
+  target: しょりしょり
+  sources:
+  - しょりしょり
+- key: eating_something_granular_and_feeling_the_roughness_in_your_mouth
+  target: じょりじょり
+  sources:
+  - じょりじょり
+- key: sipping_noodles_or_something_similar_loudly_and_vulgarly
+  target: ずるずる
+  sources:
+  - ずるずる
+- key: sipping_noodles_or_something_similar_lightly
+  target: つるつる
+  sources:
+  - つるつる
+- key: big_mouth_biting_forcefully
+  target: ばくっ
+  sources:
+  - ばくっ
+  - ぱくっ
+- key: opening_and_closing_a_big_mouth_repeatedly_usually_while_eating
+  target: ばくばく
+  sources:
+  - ばくばく
+  - ぱくぱく
+  - ばくりばくり
+  - ぱくりぱくり
+- key: eating_something_with_a_big_mouth_and_swallowing
+  target: ぱくり
+  sources:
+  - ぱくり
+  - ぱくん
+  - ぱっくん
+- key: chewing_something_hard_with_your_teeth
+  target: ばりばり
+  sources:
+  - ばりばり
+- key: eating_something_crispy
+  target: ぱりぱり
+  sources:
+  - ぱりぱり
+- key: eating_while_making_unpleasant_tongue_noises
+  target: ぴちゃぴちゃ
+  sources:
+  - ぴちゃぴちゃ
+  - ぺちゃぺちゃ
+- key: eating_and_making_vulgar_noises
+  target: べちゃべちゃ
+  sources:
+  - べちゃべちゃ
+- key: licking_quickly
+  target: ぺろっ
+  sources:
+  - ぺろっ
+  - べろっ
+- key: eating_up_all_the_food
+  target: ぺろり
+  sources:
+  - ぺろり
+  - べろり
+- key: running_your_tongue_over_something
+  target: べろべろ
+  sources:
+  - べろべろ
+  - ぺろぺろ
+- key: licking_exaggeratedly_over_and_over_again
+  target: ぺろぺろ
+  sources:
+  - ぺろぺろ
+- key: licking_something_exaggeratedly_once
+  target: べろん
+  sources:
+  - べろん
+  - ぺろん
+- key: running_your_tongue_over_something_exaggeratedly_multiple_times
+  target: べろんべろん
+  sources:
+  - べろんべろん
+  - ぺろんぺろん
+- key: loudly_biting_something_hard
+  target: ぼりっ
+  sources:
+  - ぼりっ
+- key: chewing_something_hard_with_your_teeth
+  target: ぼりぼり
+  sources:
+  - ぼりぼり
+- key: chewing_something_hard_lightly_with_your_teeth
+  target: ぽりぽり
+  sources:
+  - ぽりぽり
+- key: chewing_something_without_opening_your_mouth
+  target: むぐむぐ
+  sources:
+  - むぐむぐ
+- key: eating_something_swiftly
+  target: むしゃむしゃ
+  sources:
+  - むしゃむしゃ
+- key: taking_one_quick_bite
+  target: むしゃり
+  sources:
+  - むしゃり
+- key: eating_something_quickly_continuously
+  target: むしゃりむしゃり
+  sources:
+  - むしゃりむしゃり
+- key: muttering_with_food_in_your_mouth
+  target: むにゃむにゃ
+  sources:
+  - むにゃむにゃ
+- key: stuffing_food_in_your_mouth_and_chewing_over_and_over
+  target: もぐもぐ
+  sources:
+  - もぐもぐ
+- key: mumbling_while_you_eat_chewing_your_words
+  target: もごもご
+  sources:
+  - もごもご
+- key: eating_something_dry_and_unpleasant
+  target: もそもそ
+  sources:
+  - もそもそ
+- key: eating_with_gusto
+  target: もりもり
+  sources:
+  - もりもり
+- key: continuously_drinking_alcohol_like_beer_a_lot
+  target: がばがば
+  sources:
+  - がばがば
+- key: drinking_a_lot_at_one_time_with_a_big_mouth
+  target: がばっ
+  sources:
+  - がばっ
+- key: drinking_a_lot_quickly
+  target: がぶがぶ
+  sources:
+  - がぶがぶ
+- key: drinking_quickly_and_breathing_drink_take_a_breath_drink_take_a_breath
+  target: がぷがぷ
+  sources:
+  - がぷがぷ
+- key: drinking_a_lot_all_at_once
+  target: がぶっ
+  sources:
+  - がぶっ
+  - がぶり
+- key: drinking_a_lot_over_and_over_again
+  target: がぶりがぶり
+  sources:
+  - がぶりがぶり
+- key: drinking_quickly_all_of_a_sudden
+  target: がぼがぼ
+  sources:
+  - がぼがぼ
+- key: taking_a_drink_in_a_good_mood
+  target: かぽっ
+  sources:
+  - かぽっ
+  - がぼっ
+- key: drinking_down_some_strong_alcohol
+  target: きゅー
+  sources:
+  - きゅー
+  - きゅっ
+- key: lightly_drinking_something_like_sake_in_one_gulp
+  target: くい
+  sources:
+  - くい
+- key: gulping_down_something_like_sake_in_one_breath
+  target: ぐい
+  sources:
+  - ぐい
+- key: continuously_gulping_down_something_like_sake
+  target: くいくい
+  sources:
+  - くいくい
+- key: quickly_drinking_a_lot_of_something_like_sake
+  target: ぐいぐい
+  sources:
+  - ぐいぐい
+- key: drinking_something_in_one_gulp
+  target: くー
+  sources:
+  - くー
+  - ぐー
+  - ぐーっ
+  - くくー
+- key: gulping_down_something
+  target: くっ
+  sources:
+  - くっ
+  - ぐっ
+- key: drinking_quickly_without_stopping_for_air
+  target: ぐっぐっ
+  sources:
+  - ぐっぐっ
+- key: getting_black_out_drunk
+  target: ぐでんぐでん
+  sources:
+  - ぐでんぐでん
+- key: getting_so_drunk_you_cant_even_move_your_body
+  target: ぐたぐた
+  sources:
+  - ぐたぐた
+- key: gulping_noise_your_throat_makes_when_you_drink_alcohol
+  target: ぐびっ
+  sources:
+  - ぐびっ
+  - ぐぶり
+- key: repetitive_gulping_from_drinking_alcohol
+  target: ぐびぐび
+  sources:
+  - ぐびぐび
+  - ぐびりぐびり
+- key: drinking_and_tasting_delicious_flavors
+  target: こくこく
+  sources:
+  - こくこく
+- key: drinking_and_making_gulping_sounds_with_your_throat
+  target: ごくごく
+  sources:
+  - ごくごく
+  - ごっくりごっくり
+  - ごぶごぶ
+- key: sipping_or_swallowing_lightly
+  target: こくっ
+  sources:
+  - こくっ
+  - こくり
+  - こくん
+  - こっくん
+- key: sipping_or_swallowing_and_making_a_gulp_sound
+  target: ごくっ
+  sources:
+  - ごくっ
+  - ごくり
+  - ごくん
+  - ごっくん
+- key: sipping_or_swallowing_slowly_as_if_youre_savoring_the_flavors
+  target: こくりこくり
+  sources:
+  - こくりこくり
+- key: drinking_continuously_with_loud_gulp_gulp_gulping_sounds
+  target: ごくりごくり
+  sources:
+  - ごくりごくり
+- key: drinking_quickly_with_gulp_gulp_gulping_sounds
+  target: ごくんごくん
+  sources:
+  - ごくんごくん
+- key: drinking_loudly_in_one_breath
+  target: ごっくり
+  sources:
+  - ごっくり
+- key: swallowing_or_sipping_spit_soup_or_a_liquid
+  target: じゅるっ
+  sources:
+  - じゅるっ
+- key: swallowing_or_sipping_soup_or_a_liquid_with_higer_pitch_loud_sound_like_sucking_soba_noodles
+  target: ずーずー
+  sources:
+  - ずーずー
+- key: swallowing_or_sipping_soup_or_a_liquid_with_loudly_like_soba_noodles
+  target: ずーっ
+  sources:
+  - ずーっ
+  - すすっ
+  - ずずっ
+- key: loudly_slurping_noodles
+  target: ずるずる
+  sources:
+  - ずるずる
+- key: snort_of_mucus_or_soup
+  target: ずるっ
+  sources:
+  - ずるっ
+- key: slowly_sipping_alcohol
+  target: ちびりちびり
+  sources:
+  - ちびりちびり
+- key: sucking_a_liquid_with_a_straw_or_noodles_slowly
+  target: ちゅーちゅー
+  sources:
+  - ちゅーちゅー
+  - ちゅるちゅる
+- key: short_slurp_of_soup_or_a_liquid
+  target: ちゅっ
+  sources:
+  - ちゅっ
+- key: wet_licking_sound_an_animal_like_a_dog_makes
+  target: ぴちゃぴちゃ
+  sources:
+  - ぴちゃぴちゃ
+- key: hiccup_usually_of_a_drunk_person
+  target: ひっく
+  sources:
+  - ひっく
+- key: making_tongue_noises_while_drinking_and_or_eating
+  target: ぺちゃぺちゃ
+  sources:
+  - ぺちゃぺちゃ
+- key: getting_super_drunk_with_slurred_thinking_and_speaking
+  target: へべれけ
+  sources:
+  - へべれけ
+- key: getting_so_drunk_you_cant_move_your_body_normally
+  target: べろべろ
+  sources:
+  - べろべろ
+  - べろんべろん
+- key: getting_tipsy_or_a_comfortable_amount_of_drunkness
+  target: ほろっ
+  sources:
+  - ほろっ
+  - ほろり
+- key: getting_drunk_and_feeling_great_like_youre_floating
+  target: ぽわん
+  sources:
+  - ぽわん
+- key: getting_tongue_tied_from_alcohol_or_drugs
+  target: れろれろ
+  sources:
+  - れろれろ
+- key: vomiting_and_gargling
+  target: がらがら
+  sources:
+  - がらがら
+  - がらがらぺっ
+- key: vomiting_food_and_drinks
+  target: げー
+  sources:
+  - げー
+  - げっ
+- key: continuously_vomiting_food_and_drinks
+  target: げーげー
+  sources:
+  - げーげー
+  - げろげろ
+- key: vomiting_instantly
+  target: げろっ
+  sources:
+  - げろっ
+- key: violently_vomit_in_your_own_mouth
+  target: ぷっぷっ
+  sources:
+  - ぷっぷっ
+- key: forcefully_vomit_spit_and_phlegm
+  target: ぺっぺっ
+  sources:
+  - ぺっぺっ
+- key: feeling_the_urge_to_vomit_in_your_stomach_holding_it_down
+  target: むかっ
+  sources:
+  - むかっ
+  - むかむか
+- key: constantly_making_excuses_and_complaints
+  target: うだうだ
+  sources:
+  - うだうだ
+- key: complaining_a_lot
+  target: がたがた
+  sources:
+  - がたがた
+- key: higher_status_person_giving_you_a_lecture_or_scolding_you_with_strong_words_or_tone
+  target: がみがみ
+  sources:
+  - がみがみ
+- key: many_people_talking_loudly
+  target: がやがや
+  sources:
+  - がやがや
+- key: saying_something_clearly_with_a_straightforward_expression
+  target: きっぱり
+  sources:
+  - きっぱり
+- key: making_complaints_loudly_and_repeatedly
+  target: ぎゃーぎゃー
+  sources:
+  - ぎゃーぎゃー
+- key: shouting_crying_or_yelling_with_a_high_pitch_voice
+  target: きゃんきゃん
+  sources:
+  - きゃんきゃん
+  - きんきん
+- key: making_complaints_to_someone_or_aloud_to_yourself
+  target: ぐちぐち
+  sources:
+  - ぐちぐち
+- key: muttering_complaints
+  target: ぐずぐず
+  sources:
+  - ぐずぐず
+- key: doing_or_saying_the_same_thing_over_and_over_again_incessantly
+  target: くだくだ
+  sources:
+  - くだくだ
+  - ぐだぐだ
+  - くどくど
+- key: complaining_over_and_over_about_things_listing_them
+  target: ぐたぐた
+  sources:
+  - ぐたぐた
+- key: talking_forever_about_meaningless_things
+  target: ぐちゃぐちゃ
+  sources:
+  - ぐちゃぐちゃ
+- key: telling_various_excuses_or_complaints
+  target: ごじゃごじゃ
+  sources:
+  - ごじゃごじゃ
+  - ごたごた
+  - ごちゃごちゃ
+- key: whispering_secretly
+  target: こそこそ
+  sources:
+  - こそこそ
+- key: saying_something_into_someone_s_ear
+  target: ごちょごちょ
+  sources:
+  - ごちょごちょ
+- key: muttering_so_that_others_cant_hear_you
+  target: ごにょごにょ
+  sources:
+  - ごにょごにょ
+- key: explaining_your_situation_frankly
+  target: ざっくばらん
+  sources:
+  - ざっくばらん
+- key: making_illogical_excuses_panicking_and_making_terrible_excuses_that_dont_make_sense
+  target: しどろもどろ
+  sources:
+  - しどろもどろ
+- key: saying_something_sadly_with_a_quiet_calm_tone
+  target: しんみり
+  sources:
+  - しんみり
+- key: saying_something_very_straight_forward
+  target: ずけずけ
+  sources:
+  - ずけずけ
+- key: saying_or_pointing_out_something_straight_forward_get_to_the_point_in_a_very_outspoken_manner
+  target: ずばずば
+  sources:
+  - ずばずば
+  - ずばっ
+  - ずばり
+- key: speaking_really_fluently_smoothly
+  target: すらすら
+  sources:
+  - すらすら
+- key: complaining_about_something_over_and_over_for_a_really_long_time
+  target: たらたら
+  sources:
+  - たらたら
+- key: talking_about_or_explaining_something_really_unclearly_and_taking_a_long_time_to_do_it
+  target: だらだら
+  sources:
+  - だらだら
+- key: chatting_and_being_really_flirty
+  target: ちゃらちゃら
+  sources:
+  - ちゃらちゃら
+- key: not_hesitating_to_say_something_saying_whatever_you_think
+  target: つけつけ
+  sources:
+  - つけつけ
+  - つかつか
+- key: annoyingly_complaining_or_theorizing_at_someone
+  target: つべつべ
+  sources:
+  - つべつべ
+- key: saying_or_making_something_up_to_show_off
+  target: ぬけぬけ
+  sources:
+  - ぬけぬけ
+- key: talking_or_replying_in_a_clear_friendly_manner
+  target: はきはき
+  sources:
+  - はきはき
+- key: saying_things_without_holding_back_or_hesitating
+  target: ばしばし
+  sources:
+  - ばしばし
+- key: loudly_talking_with_a_high_pitched_voice
+  target: ぴーちくぱーちく
+  sources:
+  - ぴーちくぱーちく
+- key: stubbornly_taking_one_side_in_an_argument
+  target: ぴしゃっ
+  sources:
+  - ぴしゃっ
+  - ぴしゃり
+- key: whispering_so_the_people_around_you_cant_hear
+  target: ひそひそ
+  sources:
+  - ひそひそ
+- key: whining_and_complaining_a_lot
+  target: ぶーぶー
+  sources:
+  - ぶーぶー
+- key: air_moving_through_your_mouth_because_your_false_teeth_fell_out
+  target: ふがふが
+  sources:
+  - ふがふが
+- key: continuously_complaining_in_a_low_voice
+  target: ぶつくさ
+  sources:
+  - ぶつくさ
+  - ぶつぶつ
+- key: muttering_a_single_word_under_your_breath
+  target: ぶつっ
+  sources:
+  - ぶつっ
+  - ぶつり
+- key: continuously_chatting_about_frivolous_things
+  target: べちゃくちゃ
+  sources:
+  - べちゃくちゃ
+  - ぺちゃくちゃ
+  - ぺちゃぺちゃ
+- key: chatting_fluently
+  target: ぺらっ
+  sources:
+  - ぺらっ
+- key: speak_a_fluent_language_fluently
+  target: ぺらぺら
+  sources:
+  - ぺらぺら
+- key: saying_a_single_word_in_a_low_voice
+  target: ぼそり
+  sources:
+  - ぼそり
+  - ぽつり
+- key: speaking_with_a_really_low_lifeless_voice
+  target: ぼそぼそ
+  sources:
+  - ぼそぼそ
+- key: cheerfully_showing_someone_in_what_youre_saying_over_and_over
+  target: ぽんぽん
+  sources:
+  - ぽんぽん
+- key: sleep_talking_or_mumbling
+  target: むにゃむにゃ
+  sources:
+  - むにゃむにゃ
+- key: mumbling_talking_without_opening_your_mouth_very_much
+  target: もぐもぐ
+  sources:
+  - もぐもぐ
+  - もごもご
+- key: meddling_or_pressing_someone_for_information_that_isnt_your_business
+  target: やいのやいの
+  sources:
+  - やいのやいの
+- key: getting_tongue_tied_from_alcohol_or_drugs
+  target: れろれろ
+  sources:
+  - れろれろ
+- key: many_people_talking_loudly
+  target: わいわい
+  sources:
+  - わいわい
+  - わやわや
+- key: coughing_violently_and_clearing_your_throat
+  target: えへん
+  sources:
+  - えへん
+- key: clearing_your_throat_for_attention
+  target: おほん
+  sources:
+  - おほん
+- key: coughing_up_phlegm_into_your_mouth_from_your_throat
+  target: かーっ
+  sources:
+  - かーっ
+- key: violently_breathing_in_phlegm_or_spit
+  target: かっ
+  sources:
+  - かっ
+- key: food_or_air_caught_in_your_throat
+  target: ぐぐっ
+  sources:
+  - ぐぐっ
+- key: choking_slightly
+  target: けほけほ
+  sources:
+  - けほけほ
+- key: strong_coughing_fit
+  target: げほげほ
+  sources:
+  - げほげほ
+  - ごほごほ
+- key: light_cough
+  target: こほこほ
+  sources:
+  - こほこほ
+  - こんこん
+- key: coughing_strongly_once_to_clear_a_blocked_throat
+  target: ごほん
+  sources:
+  - ごほん
+- key: light_halting_cough
+  target: こほんこほん
+  sources:
+  - こほんこほん
+- key: strongly_coughing_many_time
+  target: ごほんごほん
+  sources:
+  - ごほんごほん
+- key: breathing_through_phlegm
+  target: ぜーぜー
+  sources:
+  - ぜーぜー
+- key: crowd_of_people_gathered_together_talking_noisily
+  target: がやがや
+  sources:
+  - がやがや
+- key: noisy_shrill_voice
+  target: きーきー
+  sources:
+  - きーきー
+- key: yelping_out_of_joy_or_fear
+  target: きゃーきゃー
+  sources:
+  - きゃーきゃー
+  - ぎゃーぎゃー
+- key: making_a_big_fuss_bawling
+  target: ぎゃんぎゃん
+  sources:
+  - ぎゃんぎゃん
+- key: noisy_complaining_and_fussing
+  target: ごたごた
+  sources:
+  - ごたごた
+- key: bunch_of_people_causing_a_commotion
+  target: ざわざわ
+  sources:
+  - ざわざわ
+- key: something_like_a_musical_instrument_making_a_lot_of_noise
+  target: じゃんじゃか
+  sources:
+  - じゃんじゃか
+- key: playful_noise_of_a_banquet_or_dinner_party
+  target: ちゃんちゃか
+  sources:
+  - ちゃんちゃか
+- key: large_number_of_people_scrambling_over_each_other_in_total_confusion
+  target: てんやわんや
+  sources:
+  - てんやわんや
+- key: getting_chaotic
+  target: どがちゃが
+  sources:
+  - どがちゃが
+- key: confusion_or_a_scandal
+  target: どさくさ
+  sources:
+  - どさくさ
+- key: crowd_of_people_jumbling_together_one_after_another
+  target: どさどさ
+  sources:
+  - どさどさ
+- key: people_heavily_and_recklessly_moving_around
+  target: どたどた
+  sources:
+  - どたどた
+- key: noisily_running_or_stomping_around
+  target: どたばた
+  sources:
+  - どたばた
+  - どたんばたん
+- key: many_footsteps_going_in_and_out_of_somewhere
+  target: どやどや
+  sources:
+  - どやどや
+- key: boisterous_revelry_the_sounds_of_music_and_enjoyment_at_a_banquet_or_party
+  target: どんちゃか
+  sources:
+  - どんちゃか
+  - どんちゃん
+- key: busily_moving_around
+  target: ぱたぱた
+  sources:
+  - ぱたぱた
+- key: uproar_unable_to_settle_down
+  target: やいやい
+  sources:
+  - やいやい
+- key: raised_voice_crying_or_screaming
+  target: わーわー
+  sources:
+  - わーわー
+- key: large_group_of_people_making_a_lot_of_noise
+  target: わいわい
+  sources:
+  - わいわい
+  - わやわや
+- key: large_group_of_people_stirring_all_at_once
+  target: わっ
+  sources:
+  - わっ
+- key: crowd_yelling_all_at_once
+  target: わっさわっさ
+  sources:
+  - わっさわっさ
+- key: noisiness
+  target: わんわ
+  sources:
+  - わんわ
+- key: cheerfully_loudly_laughing
+  target: あっはっは
+  sources:
+  - あっはっは
+  - あはは
+  - わはは
+- key: rude_laugh_with_your_mouth_open
+  target: あはあは
+  sources:
+  - あはあは
+- key: wily_laugh_with_your_mouth_pulled_to_the_sides
+  target: いひひ
+  sources:
+  - いひひ
+- key: chuckling_to_yourself_after_you_did_something_well
+  target: うっしっし
+  sources:
+  - うっしっし
+- key: laughing_in_a_loud_rude_voice_after_making_a_large_profit
+  target: うはうは
+  sources:
+  - うはうは
+- key: mean_laugh_of_someone_who_has_a_scheme_or_plan
+  target: うひひ
+  sources:
+  - うひひ
+- key: accidentally_letting_out_a_small_happy_laugh
+  target: うひょひょ
+  sources:
+  - うひょひょ
+- key: short_low_laugh
+  target: うふっ
+  sources:
+  - うふっ
+- key: with_your_mouth_only_open_a_little_as_if_you_know_something_they_dont_know
+  target: うふふ
+  sources:
+  - うふふ
+- key: shy_embarrassed_laugh
+  target: えへへ
+  sources:
+  - えへへ
+- key: with_a_narrow_mouth_acting_refined
+  target: おほほ
+  sources:
+  - おほほ
+  - ほほほ
+- key: laughter_that_seems_happy_but_is_despicable
+  target: かかか
+  sources:
+  - かかか
+- key: long_hearty_loud_laugh
+  target: がはは
+  sources:
+  - がはは
+- key: hearty_laugh_without_a_care_or_worry
+  target: からから
+  sources:
+  - からから
+- key: shrill_laugh
+  target: きゃー
+  sources:
+  - きゃー
+- key: laughter_of_children_playing_and_having_fun
+  target: きゃっきゃっ
+  sources:
+  - きゃっきゃっ
+- key: laughing_vulgarly_when_you_encounter_something_that_is_good_for_you_or_that_you_can_take_advantage_of
+  target: ぎゃはは
+  sources:
+  - ぎゃはは
+- key: trying_not_to_laugh_but_laughing_anyway
+  target: くーっ
+  sources:
+  - くーっ
+  - くっ
+- key: laughing_but_trying_to_hold_back
+  target: くくっ
+  sources:
+  - くくっ
+- key: laughing_quietly_unable_to_hold_it_in_chuckling
+  target: くすくす
+  sources:
+  - くすくす
+- key: letting_out_just_a_little_bit_of_a_laugh
+  target: くすっ
+  sources:
+  - くすっ
+  - くすり
+- key: light_laugh_out_of_your_nose
+  target: くすん
+  sources:
+  - くすん
+- key: laughing_quietly_unable_to_hold_it_in
+  target: くっく
+  sources:
+  - くっく
+  - くっくっ
+- key: weird_high_laugh
+  target: けけ
+  sources:
+  - けけ
+- key: high_laughter_that_sounds_fake_or_superficial
+  target: けたけた
+  sources:
+  - けたけた
+- key: loud_rude_laughter
+  target: げたげた
+  sources:
+  - げたげた
+- key: rudely_laughing_with_a_loose_expression
+  target: げたっ
+  sources:
+  - げたっ
+- key: mocking_laugh_making_fun_of_someone
+  target: けっけっ
+  sources:
+  - けっけっ
+- key: innocent_high_laughter
+  target: けらけら
+  sources:
+  - けらけら
+  - けろけろ
+- key: openly_vulgar_laughter_guffaw
+  target: げらげら
+  sources:
+  - げらげら
+- key: laughing_and_rolling_happily_because_something_is_really_funny_or_fun
+  target: ころころ
+  sources:
+  - ころころ
+- key: many_people_laughing_together_loudly
+  target: どっ
+  sources:
+  - どっ
+  - どっと
+- key: smiling_in_an_eerie_way_to_imply_something
+  target: にーっ
+  sources:
+  - にーっ
+- key: smiling_with_your_teeth_showing
+  target: にかっ
+  sources:
+  - にかっ
+- key: smiling_happily_to_show_that_youre_happy
+  target: にこっ
+  sources:
+  - にこっ
+  - にこり
+  - にっこり
+- key: laughing_and_smiling_brightly_showing_gratitude
+  target: にこにこ
+  sources:
+  - にこにこ
+- key: broad_evil_grin_unable_to_hide_your_joy
+  target: にたっ
+  sources:
+  - にたっ
+  - にたにた
+- key: repeatedly_smirking_smugly
+  target: にたりにたり
+  sources:
+  - にたりにたり
+- key: smiling_lovingly_without_making_a_sound
+  target: にっ
+  sources:
+  - にっ
+- key: laughing_and_smiling_with_the_utmost_happiness
+  target: にっこにこ
+  sources:
+  - にっこにこ
+- key: unintentionally_smiling_and_showing_your_joy
+  target: にやっ
+  sources:
+  - にやっ
+- key: giving_a_faint_cold_smile
+  target: にやにや
+  sources:
+  - にやにや
+  - にやり
+- key: smiling_with_satisfaction_because_things_went_your_way
+  target: にんまり
+  sources:
+  - にんまり
+- key: laughing_without_a_worry_or_care
+  target: はっはっ
+  sources:
+  - はっはっ
+  - ははは
+- key: shifty_laughing_of_a_bad_person_or_villain
+  target: ひっひっ
+  sources:
+  - ひっひっ
+  - ひひひ
+- key: busting_out_with_laughter_at_something_funny
+  target: ぷー
+  sources:
+  - ぷー
+  - ふっ
+  - ぷっ
+- key: fearless_smile
+  target: ふっふっ
+  sources:
+  - ふっふっ
+- key: suppressed_laugh_without_being_able_to_hide_your_joy
+  target: ふふ
+  sources:
+  - ふふ
+- key: laughing_through_your_nose_looking_down_on_someone_else
+  target: ふふん
+  sources:
+  - ふふん
+- key: laughing_meanly_triumphantly
+  target: へっへっ
+  sources:
+  - へっへっ
+  - へへへ
+- key: frivolous_superficial_laugh
+  target: へらへら
+  sources:
+  - へらへら
+- key: laughing_or_smiling_because_you_gained_something_usually_money_or_profit
+  target: ほくほく
+  sources:
+  - ほくほく
+- key: laughing_loudly_as_if_youre_out_of_breath_like_santa_s_laugh
+  target: ほっほっ
+  sources:
+  - ほっほっ
+- key: sudden_loud_laugh
+  target: わーっ
+  sources:
+  - わーっ
+- key: child_crying_loudly_without_considering_the_people_around_it
+  target: あーん
+  sources:
+  - あーん
+  - うわーん
+- key: person_crying_loudly
+  target: あんあん
+  sources:
+  - あんあん
+  - えんえん
+- key: spinelessly_crying_or_whining_with_your_mouth_shaped_like_the_character
+  target: うえんうえん
+  sources:
+  - うえんうえん
+- key: moved_to_tears
+  target: うるうる
+  sources:
+  - うるうる
+  - うるるん
+- key: unintentionally_crying
+  target: うるっ
+  sources:
+  - うるっ
+- key: child_crying_because_it_wants_attention
+  target: えーん
+  sources:
+  - えーん
+- key: person_crying_loudly_from_sadness
+  target: おーおー
+  sources:
+  - おーおー
+- key: adult_crying_pitifully
+  target: おいおい
+  sources:
+  - おいおい
+- key: baby_bawling
+  target: おぎゃーおぎゃー
+  sources:
+  - おぎゃーおぎゃー
+- key: obstinate_kid_shouting
+  target: ぎゃー
+  sources:
+  - ぎゃー
+  - ぎゃーぎゃー
+- key: lots_of_tears_flowing
+  target: ぐしょぐしょ
+  sources:
+  - ぐしょぐしょ
+- key: crying_and_sniffling
+  target: ぐすぐす
+  sources:
+  - ぐすぐす
+- key: sniffling_moved_to_tears
+  target: ぐすっ
+  sources:
+  - ぐすっ
+  - ぐすり
+- key: sniffling_and_snorting_snot
+  target: ぐすりぐすり
+  sources:
+  - ぐすりぐすり
+- key: your_nose_sniff_when_you_cry
+  target: くすん
+  sources:
+  - くすん
+  - ぐすん
+  - ぐっすん
+- key: crying_gently_or_feeling_pitty_for_someone_or_something
+  target: しくしく
+  sources:
+  - しくしく
+- key: crying_out_with_a_pitiful_voice
+  target: ひーひー
+  sources:
+  - ひーひー
+- key: crying_hiccup_similar_to_hyperventilation
+  target: ひっく
+  sources:
+  - ひっく
+- key: sobbing_but_trying_to_hold_back
+  target: ひっひっ
+  sources:
+  - ひっひっ
+- key: crying_while_grumbling
+  target: べそべそ
+  sources:
+  - べそべそ
+- key: shed_a_single_tear_out_of_sympathy_or_from_being_emotionally_moved
+  target: ほろっ
+  sources:
+  - ほろっ
+  - ほろり
+  - ぽろり
+- key: crying_large_tears
+  target: ぼろぼろ
+  sources:
+  - ぼろぼろ
+- key: tears_that_wont_stop_falling
+  target: ぽろぽろ
+  sources:
+  - ぽろぽろ
+- key: tears_spilling_down_your_cheeks_one_at_a_time
+  target: ほろりほろり
+  sources:
+  - ほろりほろり
+  - ぽろりぽろり
+- key: crying_like_a_spineless_baby
+  target: めーめー
+  sources:
+  - めーめー
+- key: uncontrollably_crying_with_no_self_respect
+  target: めそめそ
+  sources:
+  - めそめそ
+- key: woman_feebly_bursting_into_tears
+  target: よよ
+  sources:
+  - よよ
+- key: bawling_without_caring_about_where_you_are
+  target: わーわー
+  sources:
+  - わーわー
+  - わーん
+  - わんわん
+- key: suddenly_violently_bursting_into_tears
+  target: わっ
+  sources:
+  - わっ
+- key: getting_upset_because_something_didnt_go_as_planned
+  target: かーっ
+  sources:
+  - かーっ
+- key: blowing_up_out_of_shame_or_anger
+  target: かっ
+  sources:
+  - かっ
+- key: agitated_by_anger_or_dissatisfaction
+  target: かっか
+  sources:
+  - かっか
+  - かっかっ
+  - がみがみ
+- key: quick_to_take_offense_tightly_wound
+  target: かりかり
+  sources:
+  - かりかり
+- key: so_outraged_that_you_wont_listen_to_reason
+  target: かんかん
+  sources:
+  - かんかん
+- key: sudden_hardening_of_your_manner_or_expression
+  target: きっ
+  sources:
+  - きっ
+- key: feeling_unpleasant
+  target: ぞっ
+  sources:
+  - ぞっ
+- key: acting_curt_or_unfriendly
+  target: つっけんどん
+  sources:
+  - つっけんどん
+- key: facing_away_disgruntled
+  target: つん
+  sources:
+  - つん
+  - つんつん
+- key: acting_unsociable_or_crabby
+  target: つんけん
+  sources:
+  - つんけん
+- key: mean_attitude_expression_or_tone_of_voice
+  target: とげとげ
+  sources:
+  - とげとげ
+- key: facing_away_without_responding
+  target: ぷい
+  sources:
+  - ぷい
+- key: blowing_your_cheeks_out_with_anger_or_unhappiness
+  target: ぷー
+  sources:
+  - ぷー
+- key: blowing_your_cheeks_out_with_anger_or_unhappiness_looking_sullen
+  target: ぶすっ
+  sources:
+  - ぶすっ
+  - ぶすり
+- key: blowing_your_cheeks_out_with_anger_or_unhappiness
+  target: ぷっ
+  sources:
+  - ぷっ
+  - ぶりっ
+  - ぷりぷり
+- key: blowing_your_cheeks_out_and_refusing_to_speak
+  target: ぷん
+  sources:
+  - ぷん
+- key: opening_showing_your_anger_or_displeasure
+  target: ぷんぷん
+  sources:
+  - ぷんぷん
+- key: acting_unsociable_unfriendly
+  target: ぼさっ
+  sources:
+  - ぼさっ
+- key: showing_your_anger_or_displeasure
+  target: むーっ
+  sources:
+  - むーっ
+- key: anger_suddenly_welling_up_surge_of_anger
+  target: むかっ
+  sources:
+  - むかっ
+  - むかむか
+- key: losing_your_calm_and_getting_upset_often
+  target: むしゃむしゃ
+  sources:
+  - むしゃむしゃ
+- key: pouting_silently
+  target: むすっ
+  sources:
+  - むすっ
+- key: angered_by_someone_s_words_or_actions
+  target: むっ
+  sources:
+  - むっ
+- key: ignoring_social_graces_and_being_blunt_and_curt
+  target: むっつり
+  sources:
+  - むっつり
+- key: anger_coming_up_from_the_bottom_of_your_stomach_anger_welling_up
+  target: むらむら
+  sources:
+  - むらむら
+- key: suddenly_losing_some_of_your_energy
+  target: かくっ
+  sources:
+  - かくっ
+  - がくっ
+- key: discouraged_by_disappointing_results
+  target: がっかり
+  sources:
+  - がっかり
+  - がっくり
+- key: little_disappointed_because_your_hopes_didnt_come_true
+  target: かくん
+  sources:
+  - かくん
+  - かっくん
+- key: hit_with_disappointment_and_shock
+  target: がびーん
+  sources:
+  - がびーん
+- key: not_being_able_to_talk_back_at_all_after_being_accused_of_something_unable_to_argue
+  target: ぎゃふん
+  sources:
+  - ぎゃふん
+- key: knocked_down_emotionally_after_being_accused_of_something
+  target: ぎゅー
+  sources:
+  - ぎゅー
+- key: losing_motivation_and_hope
+  target: くしゃっ
+  sources:
+  - くしゃっ
+- key: completely_exhausted_from_fatigue_or_sickness
+  target: ぐったり
+  sources:
+  - ぐったり
+- key: worrying_about_the_past_or_trivial_things
+  target: くよくよ
+  sources:
+  - くよくよ
+- key: losing_weight_or_getting_sick_from_sickness_or_anxiety
+  target: げっそり
+  sources:
+  - げっそり
+- key: disappointed_by_your_own_failures
+  target: しおしお
+  sources:
+  - しおしお
+- key: not_energetic_depressed
+  target: しゅん
+  sources:
+  - しゅん
+  - しょぼしょぼ
+  - しょぼっ
+- key: depressed_losing_energy_and_willpower
+  target: しょぼん
+  sources:
+  - しょぼん
+- key: depressed_and_feeling_lonely
+  target: しょんぼり
+  sources:
+  - しょんぼり
+- key: lonely_and_quiet_solemn
+  target: しんみり
+  sources:
+  - しんみり
+- key: leaving_somewhere_depressed_dejected
+  target: すごすご
+  sources:
+  - すごすご
+- key: walking_depressed_trudging_along
+  target: とぼとぼ
+  sources:
+  - とぼとぼ
+- key: miserable_and_pitiful
+  target: とほほ
+  sources:
+  - とほほ
+- key: suddenly_losing_strength_and_having_to_sit_down
+  target: へたへた
+  sources:
+  - へたへた
+- key: losing_strength_and_having_to_sit_down
+  target: へなへな
+  sources:
+  - へなへな
+- key: mentally_weak_physically_growing_old
+  target: よぼよぼ
+  sources:
+  - よぼよぼ
+- key: happy_and_lighthearted
+  target: いそいそ
+  sources:
+  - いそいそ
+- key: happy_cheerfully_lighthearted_and_full_of_hope
+  target: うきうき
+  sources:
+  - うきうき
+- key: happily_and_skillfully_going_about_your_business
+  target: うしうし
+  sources:
+  - うしうし
+- key: full_of_smiles_and_happiness
+  target: うはうは
+  sources:
+  - うはうは
+- key: bringing_out_the_happy_youthfulness_in_a_bitter_woman
+  target: きゃぴきゃぴ
+  sources:
+  - きゃぴきゃぴ
+- key: happily_carefree_and_without_much_thought
+  target: ほいほい
+  sources:
+  - ほいほい
+- key: openly_happy_and_pleased_with_yourself
+  target: ほくほく
+  sources:
+  - ほくほく
+- key: feeling_exhilarated_and_jumping_for_joy
+  target: らんらん
+  sources:
+  - らんらん
+- key: feeling_exhilarated_euphoric_and_humming_happily
+  target: るんるん
+  sources:
+  - るんるん
+- key: your_heart_fluttering_from_joy_or_anticipation
+  target: わくわく
+  sources:
+  - わくわく
+- key: reflexive_sound_made_when_noticing_something_suddenly
+  target: あわわ
+  sources:
+  - あわわ
+- key: surprised_scream_or_shriek
+  target: うぎゃー
+  sources:
+  - うぎゃー
+- key: receiving_a_psychologically_intense_shock
+  target: がーん
+  sources:
+  - がーん
+- key: horribly_exaggeratedly_shocked
+  target: がびょーん
+  sources:
+  - がびょーん
+- key: someone_suddenly_touched_on_a_secret_of_yours
+  target: ぎく
+  sources:
+  - ぎく
+  - ぎくっ
+  - ぎくり
+  - ぎくん
+- key: suddenly_taken_by_surprise_and_off_balanced
+  target: ぎっくん
+  sources:
+  - ぎっくん
+- key: letting_out_a_scream_of_surprise_fear_or_pain
+  target: きゃー
+  sources:
+  - きゃー
+  - ぎゃー
+  - きゃーきゃー
+  - きゃっ
+  - ぎゃっ
+- key: completely_amazing_and_surprised
+  target: ぎょえー
+  sources:
+  - ぎょえー
+- key: something_suddenly_opening_your_eyes
+  target: ぎょぎょ
+  sources:
+  - ぎょぎょ
+  - ぎょっ
+- key: understanding_the_situation_with_your_eyes_wide_open
+  target: きょとっ
+  sources:
+  - きょとっ
+  - きょとん
+- key: receiving_a_strong_blow_to_your_heart
+  target: ぐっ
+  sources:
+  - ぐっ
+- key: observing_unexpected_things
+  target: げー
+  sources:
+  - げー
+  - げっ
+- key: surprised_or_dumbfounded
+  target: だー
+  sources:
+  - だー
+- key: heart_racing_from_excitement_fear_or_anticipation
+  target: どきっ
+  sources:
+  - どきっ
+  - どきり
+  - どっきり
+- key: blinking_rapidly_from_surprise
+  target: ぱちくり
+  sources:
+  - ぱちくり
+- key: suddenly_noticing_something_and_being_surprised_by_it
+  target: はっ
+  sources:
+  - はっ
+- key: cry_of_excitement_fear_or_pain
+  target: ひー
+  sources:
+  - ひー
+- key: trembling_from_a_momentary_fear
+  target: ぴくっ
+  sources:
+  - ぴくっ
+  - びくり
+- key: holding_your_breath_out_of_shock
+  target: ひっ
+  sources:
+  - ひっ
+- key: terribly_surprised
+  target: ひっく
+  sources:
+  - ひっく
+- key: surprised_by_something_sudden_or_unexpected
+  target: びっくら
+  sources:
+  - びっくら
+  - びっくり
+- key: momentarily_feeling_like_something_bad_is_about_to_happen
+  target: ひやっ
+  sources:
+  - ひやっ
+  - ひやり
+- key: feeling_like_you_dont_have_enough_time
+  target: 齷齪
+  sources:
+  - 齷齪
+  - あくせく
+- key: running_around_in_a_hurry
+  target: あたふた
+  sources:
+  - あたふた
+- key: struggling_and_gasping_for_breath_about_to_drown
+  target: あっぷあっぷ
+  sources:
+  - あっぷあっぷ
+- key: losing_time_or_a_grasp_on_your_senses
+  target: あわあわ
+  sources:
+  - あわあわ
+- key: exhilarated_and_enthusiastic
+  target: いそいそ
+  sources:
+  - いそいそ
+- key: unable_to_do_things_at_your_own_pace_rushed_and_in_a_hurry
+  target: いらいら
+  sources:
+  - いらいら
+- key: excited_because_of_joy_or_hope_cheerful
+  target: うきうき
+  sources:
+  - うきうき
+- key: itching_to_do_something_impatient_to_start_something
+  target: うずうず
+  sources:
+  - うずうず
+  - むずむず
+- key: flustered_or_panicked_by_something_suddenly_shocked_speechless
+  target: おたおた
+  sources:
+  - おたおた
+- key: hesitating_or_faltering_with_nervousness_or_anger
+  target: おどおど
+  sources:
+  - おどおど
+- key: unable_to_move_from_surprise_or_anxiety
+  target: おろおろ
+  sources:
+  - おろおろ
+- key: noisy_and_unable_to_calm_down
+  target: がさがさ
+  sources:
+  - がさがさ
+- key: shouting_unintentionally_in_confusion
+  target: ぎゃっ
+  sources:
+  - ぎゃっ
+- key: expression_lacking_calmness_or_stability
+  target: きろきろ
+  sources:
+  - きろきろ
+- key: impatiently_squirming
+  target: じたばた
+  sources:
+  - じたばた
+- key: confused_and_incoherent
+  target: しどもど
+  sources:
+  - しどもど
+- key: subject_and_words_spoken_are_unclear_incoherent
+  target: しどろもどろ
+  sources:
+  - しどろもどろ
+- key: running_out_of_patience
+  target: じりじり
+  sources:
+  - じりじり
+- key: feeling_impatient_and_that_youre_being_hurried
+  target: せかせか
+  sources:
+  - せかせか
+- key: making_a_big_deal_out_of_nothing
+  target: せこせこ
+  sources:
+  - せこせこ
+  - こせこせ
+- key: feeling_like_youre_in_a_hurry_to_finish
+  target: そそくさ
+  sources:
+  - そそくさ
+- key: fidgeting_from_anxiety
+  target: そわそわ
+  sources:
+  - そわそわ
+- key: unable_to_steady_your_movements_or_actions
+  target: ちゃかちゃか
+  sources:
+  - ちゃかちゃか
+- key: your_heart_beating_faster_from_worry_or_fear
+  target: どきどき
+  sources:
+  - どきどき
+- key: flustered_that_someone_sees_right_through_you
+  target: どぎまぎ
+  sources:
+  - どぎまぎ
+- key: noisily_rushing_around_doing_things
+  target: どたばた
+  sources:
+  - どたばた
+- key: hurrying_around_getting_things_done
+  target: ばたばた
+  sources:
+  - ばたばた
+- key: nervous_or_worried_about_something_on_edge
+  target: はらはら
+  sources:
+  - はらはら
+- key: trembling_from_anxiety_or_anger
+  target: びくびく
+  sources:
+  - びくびく
+- key: unable_to_calm_down_from_worry_or_impatience
+  target: やきもき
+  sources:
+  - やきもき
+- key: excited_from_anticipation_pleasure_or_happiness
+  target: わくわく
+  sources:
+  - わくわく
+- key: unable_to_concentrate_or_calm_down
+  target: わさわさ
+  sources:
+  - わさわさ
+- key: unsure_of_your_behavior_or_actions
+  target: いじいじ
+  sources:
+  - いじいじ
+- key: unable_to_be_proactive_or_make_a_decision
+  target: うじうじ
+  sources:
+  - うじうじ
+- key: faltering_or_hesitating_from_anger_or_nervousness
+  target: おずおず
+  sources:
+  - おずおず
+- key: acting_slow_out_of_unwillingness_or_laziness
+  target: ぐだぐだ
+  sources:
+  - ぐだぐだ
+- key: restlessness_from_worries_or_regrets
+  target: くよくよ
+  sources:
+  - くよくよ
+- key: unsure_of_what_decision_to_make_due_to_temptation
+  target: くらくら
+  sources:
+  - くらくら
+- key: unsure_due_to_weak_resolution_indecisiveness
+  target: ぐらぐら
+  sources:
+  - ぐらぐら
+- key: hesitating_because_someone_is_coercing_you
+  target: たじたじ
+  sources:
+  - たじたじ
+- key: losing_your_head_because_you_dont_know_what_to_do
+  target: まごまご
+  sources:
+  - まごまご
+- key: unable_to_make_decisions_because_of_embarrassment_or_shyness
+  target: もじもじ
+  sources:
+  - もじもじ
+- key: fascinated_by_something_beautiful_spellbound
+  target: うっとり
+  sources:
+  - うっとり
+- key: feeling_a_tightness_or_pressure_in_the_your_chest_from_sadness_or_grief
+  target: きゅーん
+  sources:
+  - きゅーん
+- key: tightening_in_your_chest_for_a_moment_from_strong_feelings
+  target: きゅん
+  sources:
+  - きゅん
+- key: sorrowful_bitter_feelings
+  target: さめざめ
+  sources:
+  - さめざめ
+- key: slowly_becoming_impressed_moved_or_touched_by_something
+  target: じーん
+  sources:
+  - じーん
+- key: thinking_deeply_and_quietly
+  target: じーっ
+  sources:
+  - じーっ
+- key: so_touched_by_something_that_youre_almost_moved_to_tears
+  target: じん
+  sources:
+  - じん
+- key: feeling_pity_and_a_little_sad_for_someone
+  target: しんみ
+  sources:
+  - しんみ
+- key: strongly_moved_by_something_and_that_feeling_runs_through_your_body
+  target: ぞっ
+  sources:
+  - ぞっ
+- key: believing_something_from_the_bottom_of_your_heart
+  target: つくづく
+  sources:
+  - つくづく
+- key: thinking_about_something_for_a_long_time
+  target: つらつら
+  sources:
+  - つらつら
+- key: suddenly_thinking_of_an_idea
+  target: ぴーん
+  sources:
+  - ぴーん
+- key: strong_instincts_or_intuition
+  target: ぴぴっ
+  sources:
+  - ぴぴっ
+  - ぴん
+- key: feeling_sympathy_for_someone
+  target: ほろり
+  sources:
+  - ほろり
+- key: feeling_or_idea_that_suddenly_came_up
+  target: むくむく
+  sources:
+  - むくむく
+- key: worrying_or_wondering_what_to_do
+  target: もやもや
+  sources:
+  - もやもや
+- key: itchiness_or_tickle_in_your_throat
+  target: いがいが
+  sources:
+  - いがいが
+- key: irritation_in_your_throat_or_on_your_skin_from_pain_or_hot_food
+  target: いらいら
+  sources:
+  - いらいら
+  - ひりひり
+- key: feeling_a_continuous_dull_pain
+  target: うずうず
+  sources:
+  - うずうず
+- key: pain_or_noise_echoing_in_your_head
+  target: がんがん
+  sources:
+  - がんがん
+- key: stomachache_with_sharp_pains
+  target: きりきり
+  sources:
+  - きりきり
+- key: head_constantly_aching_badly
+  target: ぎんぎん
+  sources:
+  - ぎんぎん
+- key: receiving_a_blow_to_the_heart_from_cold_words
+  target: ぐさぐさ
+  sources:
+  - ぐさぐさ
+- key: psychological_wounds_from_someone_s_words
+  target: ぐさっ
+  sources:
+  - ぐさっ
+  - ぐさり
+- key: ache_of_something_getting_in_your_eye
+  target: ごろごろ
+  sources:
+  - ごろごろ
+- key: sensation_of_pain_or_cold
+  target: じーん
+  sources:
+  - じーん
+- key: stabbing_pain_from_a_bug
+  target: しく
+  sources:
+  - しく
+- key: continuous_spasms_of_dull_pain
+  target: しくしく
+  sources:
+  - しくしく
+- key: prickling_pain_over_and_over
+  target: しくりしくり
+  sources:
+  - しくりしくり
+- key: numb_or_sleeping_limbs
+  target: じん
+  sources:
+  - じん
+- key: continuous_pain_and_numbness_from_the_afflicted_area
+  target: じんじん
+  sources:
+  - じんじん
+- key: throbbing_grinding_pain
+  target: ずきずき
+  sources:
+  - ずきずき
+  - ずんずん
+- key: sudden_violent_traveling_and_throbbing_pain
+  target: ずきっ
+  sources:
+  - ずきっ
+  - ずきり
+  - ずきん
+- key: continuous_throbbing_pain
+  target: ずきんずきん
+  sources:
+  - ずきんずきん
+- key: flashing_pain_in_your_eyes
+  target: ちかちか
+  sources:
+  - ちかちか
+- key: stabbing_pain_like_needles_over_and_over_prickling
+  target: ちくちく
+  sources:
+  - ちくちく
+- key: sudden_stabbing_pain_from_a_needle_or_a_bug
+  target: ちくっ
+  sources:
+  - ちくっ
+  - ちくり
+  - ちくん
+- key: cut_or_skin_that_feel_like_its_burning
+  target: ちりちり
+  sources:
+  - ちりちり
+- key: violent_throbbing
+  target: どきんどきん
+  sources:
+  - どきんどきん
+  - どっきどっき
+  - どっきんどっきん
+- key: numbness_or_itchiness_spreading_through_your_body
+  target: びーん
+  sources:
+  - びーん
+- key: twitching_and_on_edge
+  target: ぴきぴき
+  sources:
+  - ぴきぴき
+- key: feeling_a_sudden_itch_pain_or_hot_taste
+  target: ひりっ
+  sources:
+  - ひりっ
+  - ぴりっ
+- key: feeling_a_continued_pain_or_irritation
+  target: びりびり
+  sources:
+  - びりびり
+  - ぴりぴり
+- key: feeling_a_pain_from_something_for_a_moment_tingling_irritation
+  target: ひりり
+  sources:
+  - ひりり
+- key: numb_from_a_momentary_stimulus_tingling_stinging
+  target: びりり
+  sources:
+  - びりり
+  - ぴりり
+- key: feeling_itchy_like_you_were_bitten_by_or_have_bugs_on_you
+  target: むずむず
+  sources:
+  - むずむず
+  - もぞもぞ
+- key: without_any_hesitation
+  target: あっけらかん
+  sources:
+  - あっけらかん
+- key: so_calm_that_it_seems_like_time_is_passing_slower_than_normal
+  target: おっとり
+  sources:
+  - おっとり
+- key: without_hesitation_calmly
+  target: おめおめ
+  sources:
+  - おめおめ
+- key: shrewdly_being_pushy
+  target: がっちり
+  sources:
+  - がっちり
+- key: as_if_nothing_happened_nonchalantly
+  target: けりけろ
+  sources:
+  - けりけろ
+  - けろっ
+  - けろり
+- key: without_attachment_or_seriousness
+  target: さばさば
+  sources:
+  - さばさば
+- key: shamelessly_not_feeling_that_embarrassing_things_are_actually_embarrassing
+  target: しゃーしゃー
+  sources:
+  - しゃーしゃー
+- key: acting_as_if_something_is_not_a_big_deal_at_all
+  target: しらっ
+  sources:
+  - しらっ
+  - しれっ
+- key: nosy_acting_and_saying_things_without_any_hesitation
+  target: ずかずか
+  sources:
+  - ずかずか
+- key: saying_something_that_could_hurt_someone_else_blunt
+  target: ずけずけ
+  sources:
+  - ずけずけ
+- key: acting_shrewd_but_still_well_liked_cheeky
+  target: ちゃっかり
+  sources:
+  - ちゃっかり
+- key: saying_and_doing_things_without_reserve_rude
+  target: つけつけ
+  sources:
+  - つけつけ
+- key: doing_well_on_your_own_carefree_and_successful
+  target: ぬくぬく
+  sources:
+  - ぬくぬく
+- key: acting_like_you_didnt_do_something_negative_and_it_is_obvious_to_other_people_shamelessly
+  target: ぬけぬけ
+  sources:
+  - ぬけぬけ
+- key: without_any_worries_or_concerns
+  target: のーのー
+  sources:
+  - のーのー
+- key: showing_up_without_any_knowledge_or_understanding_of_what_is_going_on
+  target: のこのこ
+  sources:
+  - のこのこ
+- key: carefree_without_worries_or_concerns
+  target: のほほん
+  sources:
+  - のほほん
+- key: mentally_and_physically_relaxed
+  target: のんびり
+  sources:
+  - のんびり
+- key: showing_your_feelings_very_clearly
+  target: はっきり
+  sources:
+  - はっきり
+- key: loudly_bothering_other_people_for_things_pestering_people
+  target: やいやい
+  sources:
+  - やいやい
+- key: full_of_energy_and_very_mobile
+  target: ぎんぎん
+  sources:
+  - ぎんぎん
+- key: dealing_with_tasks_quickly_and_efficiently
+  target: しゃきしゃき
+  sources:
+  - しゃきしゃき
+- key: feeling_brisk_and_lively_in_both_body_and_mind
+  target: しゃき
+  sources:
+  - しゃき
+  - しゃっきり
+- key: both_your_movement_and_thoughts_are_logical_and_stable
+  target: しゃん
+  sources:
+  - しゃん
+- key: energetically_going_about_your_daily_tasks
+  target: しゃんしゃん
+  sources:
+  - しゃんしゃん
+- key: children_growing_up_without_complications
+  target: すくすく
+  sources:
+  - すくすく
+- key: doing_things_quickly_cheerfully_and_efficiently
+  target: ちゃきちゃき
+  sources:
+  - ちゃきちゃき
+- key: new_life_shining_with_hope_and_happiness
+  target: ぴかぴか
+  sources:
+  - ぴかぴか
+  - ぴっかぴか
+- key: young_and_healthy_or_a_fresh_lively_fish
+  target: ぴちぴち
+  sources:
+  - ぴちぴち
+- key: energetic_and_lively
+  target: ぴんぴん
+  sources:
+  - ぴんぴん
+- key: energetic_and_powerful
+  target: ぶいぶい
+  sources:
+  - ぶいぶい
+- key: bursting_with_energy_and_motivation
+  target: もりもり
+  sources:
+  - もりもり
+- key: plump_and_overweight
+  target: ころころ
+  sources:
+  - ころころ
+- key: short_and_overweight
+  target: ずんぐり
+  sources:
+  - ずんぐり
+- key: getting_fat_gaining_weight_swelling
+  target: ずんぐりむっくり
+  sources:
+  - ずんぐりむっくり
+- key: fat_loose_and_baggy
+  target: だぶだぶ
+  sources:
+  - だぶだぶ
+- key: getting_fat_or_flabby_around_your_stomach_and_waist
+  target: でっぷり
+  sources:
+  - でっぷり
+- key: shamefully_getting_fatter
+  target: でぶでぶ
+  sources:
+  - でぶでぶ
+- key: getting_big_and_flabby
+  target: ぶくんぶくん
+  sources:
+  - ぶくんぶくん
+- key: getting_way_too_fat_and_soft_and_flabby
+  target: ぶよぶよ
+  sources:
+  - ぶよぶよ
+- key: chubby_face_and_body
+  target: ぽちゃっ
+  sources:
+  - ぽちゃっ
+- key: getting_chubby_and_cute
+  target: ぼちゃぼちゃ
+  sources:
+  - ぼちゃぼちゃ
+- key: chubby_just_a_little_fat
+  target: ぽちゃぽちゃ
+  sources:
+  - ぽちゃぽちゃ
+- key: lovely_chubby_and_cute
+  target: ぽっちゃり
+  sources:
+  - ぽっちゃり
+- key: heavy_and_fat
+  target: ぼってり
+  sources:
+  - ぼってり
+- key: chubby_and_adorable
+  target: ぽってり
+  sources:
+  - ぽってり
+- key: so_fat_it_looks_like_your_head_is_just_riding_your_body
+  target: ぽてっ
+  sources:
+  - ぽてっ
+- key: having_undesirable_fat_on_your_body
+  target: ぼてぼて
+  sources:
+  - ぼてぼて
+- key: plump_like_a_baby_with_supple_skin
+  target: ぽてぽて
+  sources:
+  - ぽてぽて
+- key: supple_skin_and_plenty_of_flesh_in_all_the_right_places
+  target: むちっ
+  sources:
+  - むちっ
+  - むちむち
+  - むっちり
+- key: study_body_or_bone_structure
+  target: がしっ
+  sources:
+  - がしっ
+  - がっしり
+  - がっちり
+- key: nice_proportions_big_breasts_tight_waist_big_butt
+  target: ぼんきゅぼん
+  sources:
+  - ぼんきゅぼん
+- key: bulging_muscles_looking_strong
+  target: もりもり
+  sources:
+  - もりもり
+- key: so_thin_that_you_can_see_their_bones_skin_and_bones
+  target: がりがり
+  sources:
+  - がりがり
+- key: long_slender_and_well_proportioned
+  target: すらっ
+  sources:
+  - すらっ
+  - すらり
+- key: lanky_thin_and_tall
+  target: ひょろっ
+  sources:
+  - ひょろっ
+  - ひょろひょろ
+  - ひょろり
+  - ひょろん
+- key: slim_and_slender_figure
+  target: ほっそり
+  sources:
+  - ほっそり
+- key: forcefully_moving
+  target: がーっ
+  sources:
+  - がーっ
+- key: advancing_with_great_force
+  target: ががっ
+  sources:
+  - ががっ
+- key: suddenly_moving_and_then_going_back
+  target: がくりがくり
+  sources:
+  - がくりがくり
+- key: drastic_jerking_motions
+  target: がくんがくん
+  sources:
+  - がくんがくん
+- key: pushing_forward_without_paying_any_attention_to_your_surroundings
+  target: がんがん
+  sources:
+  - がんがん
+- key: pushing_forward_as_if_youre_being_pulled
+  target: ぐいぐい
+  sources:
+  - ぐいぐい
+- key: gradually_speeding_up_while_advancing
+  target: ぐんぐん
+  sources:
+  - ぐんぐん
+- key: things_going_forward_without_delay
+  target: さくさく
+  sources:
+  - さくさく
+- key: moving_on_willingly_without_any_hangups
+  target: さっさっ
+  sources:
+  - さっさっ
+- key: things_moving_forward_quickly_and_smoothly
+  target: さらさら
+  sources:
+  - さらさら
+- key: things_moving_forward_and_making_progress
+  target: じゃんじゃん
+  sources:
+  - じゃんじゃん
+- key: slowly_approaching_someone
+  target: じりじり
+  sources:
+  - じりじり
+- key: entering_the_inside_of_a_house_unreservedly
+  target: ずい
+  sources:
+  - ずい
+- key: feeling_comfortable_moving_forward_without_resistance_unhindered
+  target: すいすい
+  sources:
+  - すいすい
+- key: quiet_things_moving_forward
+  target: すーっ
+  sources:
+  - すーっ
+- key: rudely_entering_into_someone_else_s_area_or_space
+  target: ずかずか
+  sources:
+  - ずかずか
+- key: moving_quickly_and_quietly
+  target: すっ
+  sources:
+  - すっ
+- key: things_pressing_forward_even_more
+  target: ずっ
+  sources:
+  - ずっ
+- key: things_advancing_without_difficulty
+  target: すっすっ
+  sources:
+  - すっすっ
+- key: things_strongly_pressing_forward
+  target: ずっずっ
+  sources:
+  - ずっずっ
+  - ずんずん
+- key: smoothly_advancing_without_delay
+  target: すらすら
+  sources:
+  - すらすら
+  - するする
+- key: calmly_advance_without_resistance
+  target: すんなり
+  sources:
+  - すんなり
+- key: gradually_progressing_to_a_certain_state
+  target: そろそろ
+  sources:
+  - そろそろ
+- key: running_swiftly_with_force
+  target: だー
+  sources:
+  - だー
+- key: flying_through_the_minor_details
+  target: たったっ
+  sources:
+  - たったっ
+- key: moving_forward_maintaining_force
+  target: だっだっ
+  sources:
+  - だっだっ
+- key: advancing_against_your_better_judgement
+  target: ついつい
+  sources:
+  - ついつい
+- key: striding_toward_something_without_hesitation
+  target: つかつか
+  sources:
+  - つかつか
+- key: matter_that_progresses_quickly
+  target: てきぱき
+  sources:
+  - てきぱき
+- key: moving_purposefully_and_proactively
+  target: どしどし
+  sources:
+  - どしどし
+- key: moving_something_forward_without_hesitating
+  target: どんどこ
+  sources:
+  - どんどこ
+- key: things_continuing_to_go_well_for_a_while
+  target: とんとん
+  sources:
+  - とんとん
+- key: forcefully_moving_forward_without_hesitating
+  target: どんどん
+  sources:
+  - どんどん
+  - ばんばん
+- key: advancing_willingly
+  target: ほいほい
+  sources:
+  - ほいほい
+- key: steadily_progressing_gradually
+  target: ぽちぽち
+  sources:
+  - ぽちぽち
+  - ぼつぼつ
+- key: visably_making_rapid_progress
+  target: めきめき
+  sources:
+  - めきめき
+  - めっきり
+- key: something_light_and_hard_falling_or_dropping
+  target: かたん
+  sources:
+  - かたん
+  - かたり
+- key: something_heavy_suddenly_falling_or_dropping
+  target: がたん
+  sources:
+  - がたん
+  - がたり
+- key: heavy_things_falling_or_collapsing_one_after_another
+  target: がらがら
+  sources:
+  - がらがら
+- key: light_things_falling_or_collapsing
+  target: ことり
+  sources:
+  - ことり
+  - ことん
+- key: heavy_things_falling_or_collapsing
+  target: ごとり
+  sources:
+  - ごとり
+  - ごとん
+- key: falling_straight_down
+  target: すとん
+  sources:
+  - すとん
+- key: liquid_rolling_down_dripping
+  target: たらたら
+  sources:
+  - たらたら
+- key: something_falling_into_water
+  target: ちゃぽん
+  sources:
+  - ちゃぽん
+- key: something_falling_and_hitting_water
+  target: ちゃぽっ
+  sources:
+  - ちゃぽっ
+- key: snow_or_flowers_fluttering_as_they_fall
+  target: ちらちら
+  sources:
+  - ちらちら
+- key: something_falls_and_bounces
+  target: とーん
+  sources:
+  - とーん
+- key: big_lump_or_chunk_of_something_falling_all_at_once
+  target: どかっ
+  sources:
+  - どかっ
+- key: something_heavy_continuously_falling
+  target: どかどか
+  sources:
+  - どかどか
+- key: something_heavy_falling_or_hitting
+  target: どかり
+  sources:
+  - どかり
+- key: big_heavy_thing_falling_all_at_once
+  target: どさっ
+  sources:
+  - どさっ
+  - どさり
+  - どさん
+  - どたり
+  - どたん
+- key: heavy_things_falling_one_after_another
+  target: どさどさ
+  sources:
+  - どさどさ
+- key: huge_heavy_thing_falling_and_crashing
+  target: どすん
+  sources:
+  - どすん
+- key: something_like_a_vacant_body_falling
+  target: ばさっ
+  sources:
+  - ばさっ
+  - ばさり
+- key: something_like_an_unrolled_paper_falling
+  target: ぱさっ
+  sources:
+  - ぱさっ
+  - ぱさり
+- key: something_heavy_forcefully_falling
+  target: ばたっ
+  sources:
+  - ばたっ
+- key: something_light_falling
+  target: はたり
+  sources:
+  - はたり
+  - ぱたり
+- key: lots_of_things_forcefully_scattering
+  target: ばっばっ
+  sources:
+  - ばっばっ
+- key: paper_or_leaves_scattering
+  target: はらっ
+  sources:
+  - はらっ
+- key: rain_or_leaves_thinly_falling
+  target: ぱらっ
+  sources:
+  - ぱらっ
+- key: tears_or_petals_falling_one_by_one
+  target: はらはら
+  sources:
+  - はらはら
+- key: finely_falling_falling_in_pieces
+  target: ばらばら
+  sources:
+  - ばらばら
+- key: rain_hail_or_leaves_falling_sparsely
+  target: ぱらぱら
+  sources:
+  - ぱらぱら
+- key: something_light_falling
+  target: はらり
+  sources:
+  - はらり
+  - ぱらり
+- key: falling_while_feeling_heavy_or_important
+  target: ばらり
+  sources:
+  - ばらり
+- key: drop_of_water_or_a_liquid_falling
+  target: ぼたっ
+  sources:
+  - ぼたっ
+  - ぽたっ
+  - ぼたり
+  - ぽたり
+  - ぽとっ
+- key: large_drops_of_liquid_rolling_or_trickling_down_one_by_one
+  target: ぼたぼた
+  sources:
+  - ぼたぼた
+  - ぽとぽと
+- key: small_drops_continuously_falling
+  target: ぽたぽた
+  sources:
+  - ぽたぽた
+  - ぽとぽと
+- key: drops_of_water_falling_from_a_high_place
+  target: ぼたん
+  sources:
+  - ぼたん
+  - ぽたん
+- key: something_that_seems_to_break_when_it_falls
+  target: ぽちゃっ
+  sources:
+  - ぽちゃっ
+- key: something_small_falling_into_liquid
+  target: ぽちゃん
+  sources:
+  - ぽちゃん
+- key: single_drop_of_rain_falling
+  target: ぽつり
+  sources:
+  - ぽつり
+- key: dropping_something_carelessly
+  target: ぽてっ
+  sources:
+  - ぽてっ
+- key: thing_or_liquid_dropping_heavily
+  target: ぼとり
+  sources:
+  - ぼとり
+  - ぼとん
+- key: thing_or_drop_of_water_dropping_lightly
+  target: ぽとり
+  sources:
+  - ぽとり
+  - ぽとん
+- key: falling_one_by_one_after_a_pause
+  target: ぽとりぽとり
+  sources:
+  - ぽとりぽとり
+- key: single_tear_spilling_over_and_falling
+  target: ほろっ
+  sources:
+  - ほろっ
+  - ほろり
+- key: thing_inadvertently_falling
+  target: ぼろっ
+  sources:
+  - ぼろっ
+  - ぼろり
+- key: tears_or_drops_of_water_flowing
+  target: ほろほろ
+  sources:
+  - ほろほろ
+- key: something_granular_falling_in_large_quantities
+  target: ぼろぼろ
+  sources:
+  - ぼろぼろ
+- key: tears_or_grains_of_rice_spilling_and_falling_all_over
+  target: ぽろぽろ
+  sources:
+  - ぽろぽろ
+- key: tears_flowers_or_leaves_continuously_falling
+  target: ほろりほろり
+  sources:
+  - ほろりほろり
+- key: tears_or_liquids_falling_in_intervals
+  target: ぽろりぽろり
+  sources:
+  - ぽろりぽろり
+- key: something_falling_too_quickly
+  target: ぽろん
+  sources:
+  - ぽろん
+- key: suddenly_bending_strongly_back_and_forth
+  target: がくり
+  sources:
+  - がくり
+  - がっくり
+- key: suddenly_bending_back_and_forth_and_disconnecting
+  target: かくん
+  sources:
+  - かくん
+  - かっくん
+- key: sharply_bending_back_and_forth
+  target: ぎくしゃく
+  sources:
+  - ぎくしゃく
+- key: something_suddenly_bending_back_and_forth
+  target: ぎくっ
+  sources:
+  - ぎくっ
+  - ぎくり
+- key: sudden_violent_bending_back_and_forth
+  target: ぎくん
+  sources:
+  - ぎくん
+- key: breaking_or_spraining_a_leg_breaking_a_stick
+  target: ぐきり
+  sources:
+  - ぐきり
+- key: something_hard_and_slim_suddenly_breaking
+  target: ばきっ
+  sources:
+  - ばきっ
+  - ばきん
+- key: something_thin_breaking
+  target: ぱきっ
+  sources:
+  - ぱきっ
+  - ぱきん
+- key: something_dry_forcefully_breaking
+  target: ばきばき
+  sources:
+  - ばきばき
+- key: thin_things_breaking_one_after_another
+  target: ぱきぱき
+  sources:
+  - ぱきぱき
+- key: something_hard_and_slim_bending_back_and_forth
+  target: ぱしぱし
+  sources:
+  - ぱしぱし
+- key: something_hard_breaking
+  target: ぱちり
+  sources:
+  - ぱちり
+- key: something_small_and_thin_folding_or_breaking
+  target: びしっ
+  sources:
+  - びしっ
+  - びしり
+- key: small_break_or_crack
+  target: ぴしっ
+  sources:
+  - ぴしっ
+- key: small_cylindrical_thing_breaking
+  target: ぼきっ
+  sources:
+  - ぼきっ
+  - ぼきり
+- key: hard_light_cylindrical_thing_breaking
+  target: ぽきっ
+  sources:
+  - ぽきっ
+  - ぽきり
+- key: hard_cylindrical_things_breaking_over_and_over
+  target: ぼきぼき
+  sources:
+  - ぼきぼき
+- key: light_cylindrical_things_breaking_over_and_over
+  target: ぽきぽき
+  sources:
+  - ぽきぽき
+- key: hard_cylindrical_thing_completely_breaking
+  target: ぼきん
+  sources:
+  - ぼきん
+- key: light_cylindrical_thing_completely_breaking
+  target: ぽきん
+  sources:
+  - ぽきん
+- key: strong_hitting_or_breaking
+  target: ぼくっ
+  sources:
+  - ぼくっ
+- key: dead_branches_or_twigs_breaking_one_after_another
+  target: ぽちぽち
+  sources:
+  - ぽちぽち
+- key: snapping_cleanly
+  target: ぽっきり
+  sources:
+  - ぽっきり
+- key: swaying_slowly
+  target: うつらうつら
+  sources:
+  - うつらうつら
+- key: something_heavy_swaying_unstably
+  target: がたがた
+  sources:
+  - がたがた
+- key: sudden_violent_shake
+  target: がくん
+  sources:
+  - がくん
+- key: heavy_shaking_movement
+  target: ぐずり
+  sources:
+  - ぐずり
+- key: shaking_unstably_from_dizziness
+  target: くらくら
+  sources:
+  - くらくら
+- key: huge_irregular_continuous_shaking
+  target: ぐらぐら
+  sources:
+  - ぐらぐら
+- key: sudden_big_shake
+  target: くらっ
+  sources:
+  - くらっ
+  - くらり
+- key: sudden_huge_shake_for_just_a_moment
+  target: ぐらっ
+  sources:
+  - ぐらっ
+  - ぐらり
+- key: repeatedly_shaking_in_a_big_way
+  target: くらりくらり
+  sources:
+  - くらりくらり
+- key: huge_slow_shaking_movements
+  target: ぐらりぐらり
+  sources:
+  - ぐらりぐらり
+- key: rubbing_your_elbow_into_someone_s_shoulders
+  target: ぐりぐり
+  sources:
+  - ぐりぐり
+- key: even_swaying_of_a_train_car
+  target: ごとごと
+  sources:
+  - ごとごと
+- key: swaying_in_small_degrees
+  target: じわじわ
+  sources:
+  - じわじわ
+- key: liquid_sloshing_in_a_container
+  target: たぽたぽ
+  sources:
+  - たぽたぽ
+- key: something_big_swaying
+  target: たぷたぷ
+  sources:
+  - たぷたぷ
+- key: something_long_swaying_loosely
+  target: だらりだらり
+  sources:
+  - だらりだらり
+- key: shaking_little_by_little_trembling
+  target: ちょろちょろ
+  sources:
+  - ちょろちょろ
+- key: water_in_a_container_swaying
+  target: とぷんとぷん
+  sources:
+  - とぷんとぷん
+- key: flicking_cloth_or_your_tongue
+  target: びろびろ
+  sources:
+  - びろびろ
+- key: something_light_quietly_swaying
+  target: ふよふよ
+  sources:
+  - ふよふよ
+- key: shaking_from_loss_of_your_body_s_equilibrium
+  target: ふらふら
+  sources:
+  - ふらふら
+- key: something_hanging_and_swaying_dangling
+  target: ぶらぶら
+  sources:
+  - ぶらぶら
+- key: something_light_swaying_in_the_wind
+  target: ぷらぷら
+  sources:
+  - ぷらぷら
+- key: slowly_swaying_in_a_big_way
+  target: ふらりふらり
+  sources:
+  - ふらりふらり
+- key: heavily_continuously_slowly_swaying
+  target: ぶらりぶらり
+  sources:
+  - ぶらりぶらり
+- key: lightly_continuously_slowly_swaying
+  target: ぷらりぷらり
+  sources:
+  - ぷらりぷらり
+- key: heavily_hanging_down_and_dangling
+  target: ぶらん
+  sources:
+  - ぶらん
+- key: dangling_or_swinging_legs_back_and_forth
+  target: ぶらんぶらん
+  sources:
+  - ぶらんぶらん
+- key: vibrating_and_shaking
+  target: ぶるぶる
+  sources:
+  - ぶるぶる
+  - ぶるる
+  - ぶるん
+- key: vibrating_a_little
+  target: ぷるる
+  sources:
+  - ぷるる
+  - ぷるん
+- key: trembling_slightly
+  target: ぷるんぷるん
+  sources:
+  - ぷるんぷるん
+- key: fluttering
+  target: へらへら
+  sources:
+  - へらへら
+- key: flipping_something_thin_usually_pages
+  target: ぺらぺら
+  sources:
+  - ぺらぺら
+- key: shaking_flexibly
+  target: ぽよぽよ
+  sources:
+  - ぽよぽよ
+- key: something_large_swaying
+  target: ゆさゆさ
+  sources:
+  - ゆさゆさ
+- key: something_large_swaying
+  target: ゆさり
+  sources:
+  - ゆさり
+- key: something_large_swaying_over_and_over
+  target: ゆさりゆさり
+  sources:
+  - ゆさりゆさり
+- key: something_big_and_heavy_swaying
+  target: ゆっさゆっさ
+  sources:
+  - ゆっさゆっさ
+- key: one_huge_sway_or_shaking_movement
+  target: ゆらっ
+  sources:
+  - ゆらっ
+- key: shaking_over_and_over
+  target: ゆらゆら
+  sources:
+  - ゆらゆら
+- key: shaking_lightly_and_slowly_once
+  target: ゆらり
+  sources:
+  - ゆらり
+- key: loosely_swaying_over_and_over
+  target: ゆらりゆらり
+  sources:
+  - ゆらりゆらり
+- key: legs_swinging_while_crossed
+  target: よろりよろり
+  sources:
+  - よろりよろり
+- key: chopping_the_stalks_off_of_vegetables
+  target: ざくざく
+  sources:
+  - ざくざく
+- key: cutting_food_with_a_sharp_knife
+  target: さくっ
+  sources:
+  - さくっ
+  - さくり
+  - さっくり
+- key: deeply_plunging_a_blade_into_something
+  target: ざくっ
+  sources:
+  - ざくっ
+  - ざくり
+  - ざっくり
+- key: hollowing_something_out_by_cutting_into_it
+  target: ざぐり
+  sources:
+  - ざぐり
+  - ざっく
+- key: cutting_through_thick_cloth_with_scissors
+  target: じょきじょき
+  sources:
+  - じょきじょき
+- key: cutting_cloth_once_with_scissors
+  target: じょきり
+  sources:
+  - じょきり
+- key: cutting_cleanly_with_a_sharp_blade
+  target: すかすか
+  sources:
+  - すかすか
+- key: forcefully_cutting_something
+  target: ずきずき
+  sources:
+  - ずきずき
+- key: something_thats_been_cut_many_times_making_it_look_worn_or_ragged
+  target: ずたずた
+  sources:
+  - ずたずた
+- key: completely_cut_off_with_a_sharp_blade
+  target: すっぱり
+  sources:
+  - すっぱり
+  - すぱっ
+  - すぱり
+- key: easily_cut_down
+  target: すとん
+  sources:
+  - すとん
+- key: relentlessly_cutting_with_a_blade
+  target: ずばずば
+  sources:
+  - ずばずば
+- key: cutting_through_something_at_once
+  target: ずばり
+  sources:
+  - ずばり
+- key: viciously_cutting_many_times
+  target: ずばりずばり
+  sources:
+  - ずばりずばり
+- key: cutting_paper_or_plants_with_scissors
+  target: ちょきちょき
+  sources:
+  - ちょきちょき
+- key: completely_cutting_something_off_with_scissors
+  target: ちょきん
+  sources:
+  - ちょきん
+  - ちょっきり
+- key: exaggeratedly_cutting_something_off_with_a_blade
+  target: ばさり
+  sources:
+  - ばさり
+  - ばっさり
+- key: cutting_people_down_one_by_one_with_a_sword
+  target: ばっさばっさ
+  sources:
+  - ばっさばっさ
+- key: cutting_a_thread_group_or_joint
+  target: ばらり
+  sources:
+  - ばらり
+- key: suddenly_splitting_open_from_being_cut
+  target: ぴちっ
+  sources:
+  - ぴちっ
+- key: cutting_something_like_a_thread_or_from_a_group
+  target: ぷすり
+  sources:
+  - ぷすり
+- key: suddenly_completely_cut_off
+  target: びちっ
+  sources:
+  - びちっ
+- key: suddenly_easily_cutting_something_off
+  target: ぷちっ
+  sources:
+  - ぷちっ
+- key: easily_cutting_something_like_soba
+  target: ぶちぶち
+  sources:
+  - ぶちぶち
+- key: something_suddenly_coming_apart_of_disconnecting
+  target: ぷっつ
+  sources:
+  - ぷっつ
+- key: belt_rope_correspondence_or_suddenly_being_cut
+  target: ぷつっ
+  sources:
+  - ぷつっ
+- key: severing_ties_with_something_or_someone_once_and_for_all
+  target: ふっつり
+  sources:
+  - ふっつり
+- key: completely_cutting_yourself_from_a_group_or_a_relationship
+  target: ぷっつり
+  sources:
+  - ぷっつり
+- key: violently_severing_ties
+  target: ぶっつん
+  sources:
+  - ぶっつん
+- key: cut_apart_by_something_sharp
+  target: ぷっつん
+  sources:
+  - ぷっつん
+- key: cutting_something_into_small_pieces
+  target: ぶつぶつ
+  sources:
+  - ぶつぶつ
+- key: things_getting_torn_to_shreds
+  target: ぷつぷつ
+  sources:
+  - ぷつぷつ
+- key: suddenly_completely_cutting
+  target: ぶつり
+  sources:
+  - ぶつり
+  - ぶつん
+- key: speech_or_correspondence_suddenly_being_cut_off
+  target: ぷつり
+  sources:
+  - ぷつり
+  - ぷつん
+- key: cleanly_cut_or_interrupted
+  target: ぽっきり
+  sources:
+  - ぽっきり
+- key: cut_into_small_pieces_or_interrupted
+  target: ぽつぽつ
+  sources:
+  - ぽつぽつ
+- key: suddenly_cut_down_the_middle
+  target: ぽつり
+  sources:
+  - ぽつり
+- key: tearing_to_pieces_over_and_over
+  target: ずたずた
+  sources:
+  - ずたずた
+- key: something_hard_breaking_or_tearing
+  target: ばりっ
+  sources:
+  - ばりっ
+- key: something_thin_breaking_or_tearing
+  target: ぱりっ
+  sources:
+  - ぱりっ
+- key: strong_ripping_and_tearing
+  target: ぱりぱり
+  sources:
+  - ぱりぱり
+- key: cloth_or_paper_forcefully_being_torn
+  target: ぱりぱり
+  sources:
+  - ぱりぱり
+- key: forcefully_tearing_or_peeling
+  target: びっ
+  sources:
+  - びっ
+  - ぴっ
+  - びびっ
+- key: forcefully_tearing_cloth_or_paper
+  target: びりっ
+  sources:
+  - びりっ
+  - ぴりっ
+- key: continuously_splitting_cloth_or_paper
+  target: びりびり
+  sources:
+  - びりびり
+  - ぴりぴり
+- key: tearing_and_peeling_at_once
+  target: べりっ
+  sources:
+  - べりっ
+- key: forcefully_tearing_something_thin
+  target: ぺりっ
+  sources:
+  - ぺりっ
+- key: ripping_something_thick_over_and_over
+  target: べりべり
+  sources:
+  - べりべり
+- key: ripping_something_thin_over_and_over
+  target: ぺりぺり
+  sources:
+  - ぺりぺり
+- key: little_tears_in_cloth
+  target: ぼろぼろ
+  sources:
+  - ぼろぼろ
+- key: something_brittle_ripping_tearing_or_breaking
+  target: めりっ
+  sources:
+  - めりっ
+  - めりめり
+- key: small_things_sticking_together
+  target: ちょこん
+  sources:
+  - ちょこん
+  - ちょん
+- key: completely_stuck_together_with_no_gaps
+  target: ぴたっ
+  sources:
+  - ぴたっ
+  - ぴたり
+  - ぴったり
+  - ぴっちり
+- key: sticking_on_after_another
+  target: ぴたぴた
+  sources:
+  - ぴたぴた
+- key: on_one_side
+  target: びたり
+  sources:
+  - びたり
+- key: sticking_a_stamp_to_something_by_pressing_it_down
+  target: ぴたん
+  sources:
+  - ぴたん
+  - ぴたんぴたん
+- key: glued_and_sticking
+  target: べたっ
+  sources:
+  - べたっ
+- key: sticking_completely_to_a_flat_surface
+  target: ぺたっ
+  sources:
+  - ぺたっ
+  - ぺたん
+- key: clinging_together_in_a_lump
+  target: べたり
+  sources:
+  - べたり
+- key: sticking_from_being_pressed_down
+  target: ぺたり
+  sources:
+  - ぺたり
+- key: sticking_firmly
+  target: べたん
+  sources:
+  - べたん
+- key: lightly_pasting_and_sticking
+  target: ぺちょっ
+  sources:
+  - ぺちょっ
+- key: lightly_sticking_to_one_surface
+  target: ぺったり
+  sources:
+  - ぺったり
+- key: sticking_and_separating
+  target: ぺったんぺったん
+  sources:
+  - ぺったんぺったん
+- key: sticking_something_to_one_side
+  target: べっとり
+  sources:
+  - べっとり
+- key: sticking_something_mucousy_to_one_side
+  target: ぺっとり
+  sources:
+  - ぺっとり
+- key: deeply_stabbing_with_a_blade_over_and_over
+  target: ぐさぐさ
+  sources:
+  - ぐさぐさ
+- key: stabbing_deeply_once_with_a_blade
+  target: ぐさっ
+  sources:
+  - ぐさっ
+  - ぐさり
+- key: pierced_by_an_arrow_or_a_spear
+  target: ずばっ
+  sources:
+  - ずばっ
+- key: sharply_stabbing_in_your_vitals_or_your_core
+  target: ずばりずばり
+  sources:
+  - ずばりずばり
+- key: something_soft_being_pierced
+  target: ずぶずぶ
+  sources:
+  - ずぶずぶ
+- key: stabbed_at_the_base_with_a_blade
+  target: ずぶっ
+  sources:
+  - ずぶっ
+  - ずぶり
+- key: repeatedly_stabbed_with_something_like_needles
+  target: ちくちく
+  sources:
+  - ちくちく
+  - ちくりちくり
+- key: stabbed_once_with_something_like_a_needle
+  target: ちくっ
+  sources:
+  - ちくっ
+  - ちくり
+  - ちくん
+- key: lightly_poked_once
+  target: つん
+  sources:
+  - つん
+- key: lightly_poked_over_and_over
+  target: つんつん
+  sources:
+  - つんつん
+- key: stabbing_something_soft
+  target: ぶすっ
+  sources:
+  - ぶすっ
+  - ぷすっ
+  - ぶすり
+  - ぷすり
+- key: stabbing_over_and_over
+  target: ぶすぶす
+  sources:
+  - ぶすぶす
+  - ぷすぷす
+- key: continuously_stabbing_with_a_blade
+  target: ぶすりぶすり
+  sources:
+  - ぶすりぶすり
+- key: sudden_forceful_stabbing
+  target: ぶつっ
+  sources:
+  - ぶつっ
+- key: blade_forcefully_stabbing
+  target: ぶっつり
+  sources:
+  - ぶっつり
+- key: making_a_hole_using_something_sharp_over_and_over
+  target: ぶつぶつ
+  sources:
+  - ぶつぶつ
+- key: making_lots_of_hole_with_something_sharp
+  target: ぷつぷつ
+  sources:
+  - ぷつぷつ
+- key: stabbing_with_something_sharp_or_tapered
+  target: ぶつり
+  sources:
+  - ぶつり
+  - ぷつり
+- key: while_bending_up_down_and_side_to_side
+  target: うねうね
+  sources:
+  - うねうね
+- key: repeatedly_lightly_folding_back_and_forth
+  target: かくんかくん
+  sources:
+  - かくんかくん
+- key: suddenly_lightly_bending_something
+  target: かっくり
+  sources:
+  - かっくり
+- key: suddenly_strongly_bending_something
+  target: がっくり
+  sources:
+  - がっくり
+- key: bending_awkwardly_and_jerkily
+  target: ぎくぎく
+  sources:
+  - ぎくぎく
+- key: suddenly_bending_something
+  target: くい
+  sources:
+  - くい
+- key: lightly_bending_two_or_three_times
+  target: くいくい
+  sources:
+  - くいくい
+- key: part_of_something_suddenly_bending
+  target: くにゃ
+  sources:
+  - くにゃ
+  - ぐにゃ
+  - くにゃり
+  - ぐにゃり
+- key: soft_and_freely_bending
+  target: くにゃくにゃ
+  sources:
+  - くにゃくにゃ
+  - ぐにゃぐにゃ
+- key: bending_back_and_forth_like_its_shaking
+  target: くねくね
+  sources:
+  - くねくね
+- key: bending_or_twisting_easily
+  target: ぐんにゃり
+  sources:
+  - ぐんにゃり
+- key: bending_in_the_shape_of_a_z_literally_zigzag_in_english
+  target: ジグザグ
+  sources:
+  - ジグザグ
+- key: your_body_moving_flexibly
+  target: しゃなりしゃなり
+  sources:
+  - しゃなりしゃなり
+- key: bending_and_warping
+  target: しなしな
+  sources:
+  - しなしな
+  - しなっ
+- key: something_soft_folding
+  target: しんなり
+  sources:
+  - しんなり
+- key: weakly_bending_delicate
+  target: なよなよ
+  sources:
+  - なよなよ
+- key: weakly_bending_easily_pliable
+  target: へこへこ
+  sources:
+  - へこへこ
