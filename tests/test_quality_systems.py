@@ -244,6 +244,40 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
 
         self.assertEqual(estilos, ["dialogo", "onomatopeya"])
 
+    def test_json_payloads_include_estilo_in_transcription_and_translation(self):
+        class DummyQueue:
+            def __init__(self):
+                self.items = []
+
+            def put(self, item):
+                self.items.append(item)
+
+        translator = object.__new__(TranslateManga)
+        translator.indice_imagen = 0
+        translator.transcripcion_queue = DummyQueue()
+        translator.traduccion_queue = DummyQueue()
+        translator.ultimas_regiones = [self._region("dialogue"), self._region("sfx")]
+        translator.ultimo_estilos_texto = ["dialogo", "onomatopeya"]
+        translator.ultimas_asignaciones_hablante = []
+
+        boxes = [(1, 2, 30, 40), (50, 60, 70, 80)]
+        translator._push_original_texts_to_queue(boxes, ["やあ", "ドン"])
+        translator._push_translated_texts_to_queue(boxes, ["Hola", "BOOM"])
+
+        transcripcion = [
+            item["agregar_a_sublista"]["elemento_sublista"]
+            for item in translator.transcripcion_queue.items
+        ]
+        traduccion = [
+            item["agregar_a_sublista"]["elemento_sublista"]
+            for item in translator.traduccion_queue.items
+        ]
+
+        self.assertEqual([row["Estilo"] for row in transcripcion], ["dialogo", "onomatopeya"])
+        self.assertEqual([row["Estilo"] for row in traduccion], ["dialogo", "onomatopeya"])
+        self.assertNotIn("Subtitpo", transcripcion[0])
+        self.assertNotIn("Subtitpo", traduccion[0])
+
 
 if __name__ == "__main__":
     unittest.main()

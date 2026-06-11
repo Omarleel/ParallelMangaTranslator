@@ -602,15 +602,21 @@ class TranslateManga:
 
         return textos_traducidos_limpios
 
+    @staticmethod
+    def _es_estilo_onomatopeya(estilo: str) -> bool:
+        return str(estilo or "").strip().lower().startswith("onomatopeya")
+
     def _push_original_texts_to_queue(self, cuadros_delimitadores, textos):
         if self.transcripcion_queue is None:
             return
         for idx, ((x, y, w, h), texto) in enumerate(zip(cuadros_delimitadores, textos)):
             region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
+            estilo = self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo"
             elemento = {
                 "Índice": idx,
                 "Coordenadas": [[x, y], [x + w, y + h]],
                 "Texto": texto,
+                "Estilo": estilo,
             }
             if region is not None:
                 elemento.update({
@@ -640,11 +646,12 @@ class TranslateManga:
             return
         for idx, ((x, y, w, h), texto_traducido) in enumerate(zip(cuadros_delimitadores, textos_traducidos)):
             region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
+            estilo = self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo"
             elemento = {
                 "Índice": idx,
                 "Coordenadas": [[x, y], [x + w, y + h]],
                 "Texto": texto_traducido,
-                "Estilo": self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo",
+                "Estilo": estilo,
             }
             if region is not None:
                 elemento.update({
