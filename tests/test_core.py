@@ -419,6 +419,73 @@ class CoreQualityTests(unittest.TestCase):
 
         self.assertEqual(int(np.logical_and(ink, ~eroded).sum()), 0)
 
+    def test_renderer_splits_connected_bubble_lobes(self):
+        # Dos globos unidos por un cuello pueden llegar como una sola máscara.
+        # El renderer debe repartir el texto en ambos lóbulos, no usar sólo el
+        # rectángulo interior máximo de uno de ellos.
+        img = np.full((180, 300, 3), 255, dtype=np.uint8)
+        mask = np.zeros((120, 240), dtype=np.uint8)
+        cv2.ellipse(mask, (60, 60), (48, 45), 0, 0, 360, 255, -1)
+        cv2.ellipse(mask, (180, 60), (48, 45), 0, 0, 360, 255, -1)
+        cv2.rectangle(mask, (108, 55), (132, 65), 255, -1)
+
+        renderer = TextRenderer(absolute_min_font_size=7, inner_margin_ratio=0.03)
+        slots = renderer._connected_lobe_slots_from_mask(mask, 240, 120, "dialogo")
+        self.assertGreaterEqual(len(slots), 2)
+
+        out = renderer.render(
+            img,
+            [(30, 30, 240, 120)],
+            ["Primera frase para el globo izquierdo. Segunda frase para el globo derecho."],
+            text_styles=["dialogo"],
+            clip_masks=[mask],
+        )
+        crop = out[30:150, 30:270]
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        ink = gray < 245
+        left_ink = int(np.logical_and(ink[:, :120], mask[:, :120] > 0).sum())
+        right_ink = int(np.logical_and(ink[:, 120:], mask[:, 120:] > 0).sum())
+
+        self.assertGreater(left_ink, 10)
+        self.assertGreater(right_ink, 10)
+
+    def test_renderer_splits_diagonal_connected_bubble_lobes(self):
+        # Caso parecido a globos unidos vertical/diagonalmente: la erosión simple
+        # puede no romper la unión, pero el mapa de distancia sí debe detectar
+        # dos centros de globo y repartir el texto.
+        img = np.full((620, 540, 3), 255, dtype=np.uint8)
+        mask = np.zeros((518, 439), dtype=np.uint8)
+        cv2.ellipse(mask, (290, 125), (150, 150), 0, 0, 360, 255, -1)
+        cv2.ellipse(mask, (145, 310), (125, 150), 0, 0, 360, 255, -1)
+        cv2.rectangle(mask, (200, 180), (270, 270), 255, -1)
+
+        renderer = TextRenderer(absolute_min_font_size=7, inner_margin_ratio=0.03)
+        slots = renderer._connected_lobe_slots_from_mask(
+            mask,
+            439,
+            518,
+            "dialogo",
+            right_to_left=True,
+        )
+        self.assertGreaterEqual(len(slots), 2)
+
+        out = renderer.render(
+            img,
+            [(50, 50, 439, 518)],
+            ["¿Hay algún truco sobre cómo se siente después? Vi el trabajo anterior y no entiendo la escena."],
+            text_styles=["dialogo"],
+            clip_masks=[mask],
+            reading_order_right_to_left=True,
+        )
+        crop = out[50:568, 50:489]
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        ink = gray < 245
+        upper_right = int(np.logical_and(ink[:245, 190:], mask[:245, 190:] > 0).sum())
+        lower_left = int(np.logical_and(ink[245:, :240], mask[245:, :240] > 0).sum())
+
+        self.assertGreater(upper_right, 10)
+        self.assertGreater(lower_left, 10)
+
     def test_heuristic_bubble_detector_is_rejected(self):
         previous = os.environ.get("PMT_BUBBLE_DETECTOR")
         os.environ["PMT_BUBBLE_DETECTOR"] = "heuristic"

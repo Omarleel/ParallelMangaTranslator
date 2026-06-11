@@ -651,4 +651,5 @@ class TranslateManga:
             textos_para_render,
             text_styles=self.ultimo_estilos_texto,
             clip_masks=clip_masks,
+            reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,
         )

@@ -325,6 +325,379 @@ class TextRenderer:
         sh = max(1, min(height - sy, sh - 2 * extra))
         return sx, sy, sw, sh
 
+    @staticmethod
+    def _component_records(binary_mask: np.ndarray, min_area: int) -> List[Tuple[np.ndarray, Tuple[int, int, int, int], int]]:
+        """Componentes significativos de una máscara binaria local."""
+        num_labels, labels, stats, _centroids = cv2.connectedComponentsWithStats(
+            np.uint8(binary_mask > 0) * 255,
+            connectivity=8,
+        )
+        records: List[Tuple[np.ndarray, Tuple[int, int, int, int], int]] = []
+        for label_idx in range(1, num_labels):
+            area = int(stats[label_idx, cv2.CC_STAT_AREA])
+            if area < min_area:
+                continue
+            x = int(stats[label_idx, cv2.CC_STAT_LEFT])
+            y = int(stats[label_idx, cv2.CC_STAT_TOP])
+            w = int(stats[label_idx, cv2.CC_STAT_WIDTH])
+            h = int(stats[label_idx, cv2.CC_STAT_HEIGHT])
+            if w < 8 or h < 8:
+                continue
+            comp = np.zeros_like(binary_mask, dtype=np.uint8)
+            comp[labels == label_idx] = 255
+            records.append((comp, (x, y, w, h), area))
+        records.sort(key=lambda item: item[2], reverse=True)
+        return records
+
+    @staticmethod
+    def _box_center(box: Tuple[int, int, int, int]) -> Tuple[float, float]:
+        x, y, w, h = box
+        return x + w / 2.0, y + h / 2.0
+
+    @staticmethod
+    def _component_centroid(component: np.ndarray, fallback_box: Tuple[int, int, int, int]) -> Tuple[float, float]:
+        moments = cv2.moments(np.uint8(component > 0), binaryImage=True)
+        if abs(moments.get("m00", 0.0)) > 1e-6:
+            return float(moments["m10"] / moments["m00"]), float(moments["m01"] / moments["m00"])
+        x, y, w, h = fallback_box
+        return x + w / 2.0, y + h / 2.0
+
+    def _lobe_slots_from_centers(
+        self,
+        mask: np.ndarray,
+        centers: Sequence[Tuple[float, float]],
+        width: int,
+        height: int,
+        style: str,
+        *,
+        right_to_left: bool = False,
+        min_lobe_area_ratio: float = 0.07,
+        erosion_radius: int = 8,
+    ) -> List[Tuple[int, int, int, int]]:
+        centers = list(centers)
+        if len(centers) < 2:
+            return []
+
+        total_area = int(cv2.countNonZero(mask))
+        if total_area <= 0:
+            return []
+
+        ys, xs = np.where(mask > 0)
+        if len(xs) == 0:
+            return []
+
+        centers_arr = np.array(centers, dtype=np.float32)
+        points = np.stack([xs.astype(np.float32), ys.astype(np.float32)], axis=1)
+        distances = ((points[:, None, :] - centers_arr[None, :, :]) ** 2).sum(axis=2)
+        nearest = np.argmin(distances, axis=1)
+
+        slots: List[Tuple[int, int, int, int]] = []
+        seen: List[Tuple[int, int, int, int]] = []
+        for idx in range(len(centers)):
+            lobe = np.zeros_like(mask, dtype=np.uint8)
+            selected = nearest == idx
+            lobe[ys[selected], xs[selected]] = 255
+            lobe_area = int(cv2.countNonZero(lobe))
+            if lobe_area < max(80, int(total_area * float(min_lobe_area_ratio))):
+                continue
+
+            local_radius = max(2, min(22, int(round(erosion_radius))))
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (local_radius * 2 + 1, local_radius * 2 + 1))
+            lobe_inner = cv2.erode(lobe, kernel, iterations=1)
+            if cv2.countNonZero(lobe_inner) < max(50, int(lobe_area * 0.18)):
+                lobe_inner = lobe
+
+            slot = self._safe_text_area_from_mask(lobe_inner, width, height, style)
+            sx, sy, sw, sh = slot
+            if sw < max(18, width * 0.09) or sh < max(18, height * 0.09):
+                continue
+            if sw * sh < max(220, int(width * height * 0.018)):
+                continue
+
+            duplicate = False
+            for other in seen:
+                ox, oy, ow, oh = other
+                inter_x1 = max(sx, ox)
+                inter_y1 = max(sy, oy)
+                inter_x2 = min(sx + sw, ox + ow)
+                inter_y2 = min(sy + sh, oy + oh)
+                inter = max(0, inter_x2 - inter_x1) * max(0, inter_y2 - inter_y1)
+                if inter / max(1, min(sw * sh, ow * oh)) > 0.65:
+                    duplicate = True
+                    break
+            if duplicate:
+                continue
+            seen.append(slot)
+            slots.append(slot)
+
+        if len(slots) < 2:
+            return []
+        return self._order_slots_for_reading(slots, right_to_left=right_to_left)
+
+    def _distance_lobe_slots_from_mask(
+        self,
+        mask: np.ndarray,
+        width: int,
+        height: int,
+        style: str,
+        *,
+        right_to_left: bool = False,
+    ) -> List[Tuple[int, int, int, int]]:
+        """Fallback para globos conectados en diagonal o con cuello ancho.
+
+        La erosión simple sólo separa bien globos unidos por un cuello muy estrecho.
+        En páginas reales, dos globos pueden tocarse con una unión ancha y aun así
+        tener dos centros visuales claros. El mapa de distancia encuentra esos
+        centros internos y permite repartir la traducción entre los dos lóbulos.
+        """
+        if style.startswith("onomatopeya"):
+            return []
+
+        total_area = int(cv2.countNonZero(mask))
+        if total_area < max(180, int(width * height * 0.08)):
+            return []
+
+        dist = cv2.distanceTransform(np.uint8(mask > 0), cv2.DIST_L2, 5)
+        max_dist = float(dist.max())
+        min_side = max(1, min(width, height))
+        if max_dist < max(8.0, min_side * 0.055):
+            return []
+
+        best_centers: List[Tuple[float, float]] = []
+        best_score = -1.0
+        # Umbrales altos: buscan núcleos de lóbulos, no toda la masa del globo.
+        for frac in (0.72, 0.68, 0.64, 0.60, 0.56, 0.52):
+            seed = np.uint8(dist >= max_dist * frac) * 255
+            seed = cv2.morphologyEx(
+                seed,
+                cv2.MORPH_OPEN,
+                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+                iterations=1,
+            )
+            components = self._component_records(seed, min_area=max(20, int(total_area * 0.0025)))
+            if len(components) < 2:
+                continue
+
+            largest = max(1, components[0][2])
+            filtered = [
+                comp for comp in components
+                if comp[2] >= max(24, int(largest * 0.10), int(total_area * 0.0035))
+            ][:3]
+            if len(filtered) < 2:
+                continue
+
+            centers = [self._component_centroid(comp, box) for comp, box, _area in filtered]
+            # Las semillas deben representar centros visuales distintos. Si están
+            # demasiado cerca, probablemente son irregularidades de un solo globo.
+            min_pair_dist = min(
+                float(np.hypot(centers[i][0] - centers[j][0], centers[i][1] - centers[j][1]))
+                for i in range(len(centers))
+                for j in range(i + 1, len(centers))
+            )
+            if min_pair_dist < max(38.0, min_side * 0.26):
+                continue
+
+            areas = [area for _comp, _box, area in filtered]
+            balance = min(areas) / max(1, max(areas))
+            coverage = sum(areas) / max(1, int(cv2.countNonZero(seed)))
+            spread = min(1.0, min_pair_dist / max(1.0, min(width, height)))
+            score = len(filtered) * 2.0 + min(0.9, balance) + min(1.0, coverage) + spread
+            if score > best_score:
+                best_score = score
+                best_centers = centers
+
+        if len(best_centers) < 2:
+            return []
+
+        return self._lobe_slots_from_centers(
+            mask,
+            best_centers,
+            width,
+            height,
+            style,
+            right_to_left=right_to_left,
+            min_lobe_area_ratio=0.06,
+            erosion_radius=max(4, min(20, int(round(max_dist * 0.10)))),
+        )
+
+    def _order_slots_for_reading(
+        self,
+        slots: Sequence[Tuple[int, int, int, int]],
+        *,
+        right_to_left: bool = False,
+    ) -> List[Tuple[int, int, int, int]]:
+        if len(slots) <= 1:
+            return list(slots)
+        heights = [max(1, slot[3]) for slot in slots]
+        band = max(24.0, float(np.median(heights)) * 0.65)
+
+        def key(slot: Tuple[int, int, int, int]):
+            x, y, w, h = slot
+            cx, cy = self._box_center(slot)
+            row = int(round(cy / band))
+            return row, -cx if right_to_left else cx, y, x
+
+        return sorted(list(slots), key=key)
+
+    def _connected_lobe_slots_from_mask(
+        self,
+        local_mask: Optional[np.ndarray],
+        width: int,
+        height: int,
+        style: str,
+        *,
+        right_to_left: bool = False,
+    ) -> List[Tuple[int, int, int, int]]:
+        """Detecta globos conectados y devuelve slots seguros, uno por lóbulo.
+
+        Los modelos de globos a veces devuelven una sola máscara cuando dos globos
+        se tocan. Si se usa el rectángulo interior máximo de toda esa máscara, el
+        texto traducido cae en un solo lóbulo y el otro queda vacío. Esta rutina
+        intenta separar lóbulos por la estrechez del cuello usando erosión; no toca
+        onomatopeyas ni máscaras simples.
+        """
+        if local_mask is None or style.startswith("onomatopeya"):
+            return []
+        if width < 48 or height < 48:
+            return []
+
+        mask = self._normalize_clip_mask(local_mask, width, height)
+        total_area = int(cv2.countNonZero(mask))
+        if total_area < max(120, int(width * height * 0.08)):
+            return []
+
+        min_side = max(1, min(width, height))
+        best_components: List[Tuple[np.ndarray, Tuple[int, int, int, int], int]] = []
+        best_radius = 0
+        best_score = -1.0
+
+        # Probamos varias erosiones: una pequeña no rompe el cuello; una excesiva
+        # destruye lóbulos estrechos. Elegimos la separación con mejor cobertura.
+        for ratio in (0.055, 0.075, 0.095, 0.12, 0.15):
+            radius = max(3, min(36, int(round(min_side * ratio))))
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (radius * 2 + 1, radius * 2 + 1))
+            eroded = cv2.erode(mask, kernel, iterations=1)
+            if cv2.countNonZero(eroded) < max(80, int(total_area * 0.18)):
+                continue
+            min_area = max(36, int(total_area * 0.025))
+            components = self._component_records(eroded, min_area=min_area)
+            if len(components) < 2:
+                continue
+
+            largest = max(1, components[0][2])
+            filtered = [
+                comp for comp in components
+                if comp[2] >= max(40, int(largest * 0.20), int(total_area * 0.018))
+            ]
+            if len(filtered) < 2:
+                continue
+
+            # Evita convertir agujeros/trozos pequeños en slots. Para diálogos,
+            # dos o tres lóbulos son útiles; más suele ser ruido de colas/bordes.
+            filtered = filtered[:3]
+            coverage = sum(comp[2] for comp in filtered) / max(1, int(cv2.countNonZero(eroded)))
+            balance = min(comp[2] for comp in filtered) / max(1, max(comp[2] for comp in filtered))
+            score = len(filtered) * 2.0 + coverage + min(0.75, balance)
+            if score > best_score:
+                best_score = score
+                best_components = filtered
+                best_radius = radius
+
+        if len(best_components) < 2:
+            return self._distance_lobe_slots_from_mask(
+                mask,
+                width,
+                height,
+                style,
+                right_to_left=right_to_left,
+            )
+
+        centers = [self._box_center(box) for _comp, box, _area in best_components]
+        slots = self._lobe_slots_from_centers(
+            mask,
+            centers,
+            width,
+            height,
+            style,
+            right_to_left=right_to_left,
+            min_lobe_area_ratio=0.07,
+            erosion_radius=max(2, min(18, int(round(best_radius * 0.45)))),
+        )
+        if len(slots) < 2:
+            return self._distance_lobe_slots_from_mask(
+                mask,
+                width,
+                height,
+                style,
+                right_to_left=right_to_left,
+            )
+        return slots
+
+    @staticmethod
+    def _sentence_units(texto: str) -> List[str]:
+        texto = TextRenderer._normalize_text(texto)
+        # Conserva el signo de puntuación en la unidad. Incluye puntuación española,
+        # japonesa y puntos suspensivos para separar frases naturales de un mismo globo doble.
+        units = re.findall(r".+?(?:[.!?。！？…]+|$)(?:\s+|$)", texto, flags=re.S)
+        units = [re.sub(r"\s+", " ", unit).strip() for unit in units if unit.strip()]
+        return units or [texto]
+
+    def _split_text_for_slots(self, texto: str, slot_count: int) -> List[str]:
+        slot_count = max(1, int(slot_count))
+        texto = self._normalize_text(texto)
+        if slot_count == 1:
+            return [texto]
+
+        units = self._sentence_units(texto)
+        if len(units) >= slot_count:
+            chunks: List[str] = []
+            remaining_units = list(units)
+            for slot_idx in range(slot_count):
+                remaining_slots = slot_count - slot_idx
+                if remaining_slots == 1:
+                    chunks.append(" ".join(remaining_units).strip())
+                    break
+                remaining_chars = sum(len(unit) for unit in remaining_units)
+                target = max(1, remaining_chars / remaining_slots)
+                current: List[str] = []
+                current_len = 0
+                while remaining_units and len(remaining_units) > remaining_slots - 1:
+                    next_unit = remaining_units[0]
+                    if current and current_len + len(next_unit) > target * 1.18:
+                        break
+                    current.append(remaining_units.pop(0))
+                    current_len += len(next_unit)
+                    if current_len >= target * 0.82:
+                        break
+                chunks.append(" ".join(current).strip())
+            return [(chunk or " ") for chunk in chunks[:slot_count]]
+
+        # Si no hay suficientes frases, parte por palabras procurando equilibrio.
+        words = texto.split()
+        if len(words) < slot_count * 2:
+            # Último recurso para idiomas sin espacios: corte por caracteres.
+            total = len(texto)
+            chunks = []
+            start = 0
+            for slot_idx in range(slot_count):
+                end = total if slot_idx == slot_count - 1 else int(round(total * (slot_idx + 1) / slot_count))
+                chunks.append(texto[start:end].strip() or " ")
+                start = end
+            return chunks
+
+        chunks = []
+        start = 0
+        for slot_idx in range(slot_count):
+            remaining_slots = slot_count - slot_idx
+            if remaining_slots == 1:
+                chunks.append(" ".join(words[start:]).strip() or " ")
+                break
+            remaining_words = len(words) - start
+            take = max(1, int(round(remaining_words / remaining_slots)))
+            chunks.append(" ".join(words[start:start + take]).strip() or " ")
+            start += take
+        return chunks
+
     def render(
         self,
         imagen_limpia: np.ndarray,
@@ -332,6 +705,8 @@ class TextRenderer:
         textos: Sequence[str],
         text_styles: Optional[Sequence[str]] = None,
         clip_masks: Optional[Sequence[np.ndarray]] = None,
+        *,
+        reading_order_right_to_left: bool = False,
     ) -> np.ndarray:
         # OpenCV trabaja en BGR; PIL trabaja en RGB. Convertir explícitamente evita
         # desplazamientos de color en páginas a color.
@@ -353,48 +728,62 @@ class TextRenderer:
             if w <= 2 or h <= 2:
                 continue
 
-            safe_x, safe_y, safe_w, safe_h = self._safe_text_area_from_mask(clip_mask, w, h, style)
-
-            # Margen interno: en diálogos protege esquinas de globos ovalados; en SFX se reduce
-            # para que el efecto pueda ocupar más del espacio detectado. Con clip_mask, el margen
-            # se aplica sobre la caja interior real del globo, no sobre la bbox rectangular completa.
-            margin_ratio = self.inner_margin_ratio if not style.startswith("onomatopeya") else max(0.035, self.inner_margin_ratio * 0.45)
-            margen_x = max(2, int(safe_w * margin_ratio))
-            margen_y = max(2, int(safe_h * margin_ratio))
-            area_x = safe_x + margen_x
-            area_y = safe_y + margen_y
-            area_w = max(1, safe_w - 2 * margen_x)
-            area_h = max(1, safe_h - 2 * margen_y)
-
-            fuente, lineas, espacio_entre_lineas = self._fit_font(texto or " ", area_w, area_h, style=style)
-            alto_parrafo = self._paragraph_height(lineas, fuente, espacio_entre_lineas)
-            color_borde, color_texto = self._resolve_text_colors(imagen_limpia, x, y, w, h)
-            if style.startswith("onomatopeya"):
-                stroke_width = max(1, min(5, int(getattr(fuente, "size", self.min_font_size) * 0.11)))
-            elif style == "narracion":
-                stroke_width = max(1, min(2, int(getattr(fuente, "size", self.min_font_size) * 0.045)))
+            split_slots = self._connected_lobe_slots_from_mask(
+                clip_mask,
+                w,
+                h,
+                style,
+                right_to_left=reading_order_right_to_left,
+            )
+            if split_slots:
+                slot_texts = self._split_text_for_slots(texto, len(split_slots))
+                render_blocks = list(zip(split_slots, slot_texts))
             else:
-                stroke_width = max(1, min(3, int(getattr(fuente, "size", self.min_font_size) * 0.07)))
+                safe_x, safe_y, safe_w, safe_h = self._safe_text_area_from_mask(clip_mask, w, h, style)
+                render_blocks = [((safe_x, safe_y, safe_w, safe_h), texto)]
+
+            color_borde, color_texto = self._resolve_text_colors(imagen_limpia, x, y, w, h)
 
             # Dibujamos en una capa del tamaño exacto del globo/caja y la pegamos con máscara.
             # Así se garantiza que ningún píxel de texto quede fuera de la región asignada.
             capa = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             draw = ImageDraw.Draw(capa)
 
-            y_texto = area_y + max(0, (area_h - alto_parrafo) / 2)
-            for linea in lineas:
-                alto_linea = self._text_height(linea, fuente)
-                ancho_linea = self._text_width(linea, fuente)
-                x_texto = area_x + max(0, (area_w - ancho_linea) / 2)
-                draw.text(
-                    (x_texto, y_texto),
-                    linea,
-                    font=fuente,
-                    fill=self._to_rgba(color_texto),
-                    stroke_width=stroke_width,
-                    stroke_fill=self._to_rgba(color_borde),
-                )
-                y_texto += alto_linea + espacio_entre_lineas
+            for (safe_x, safe_y, safe_w, safe_h), block_text in render_blocks:
+                # Margen interno: en diálogos protege esquinas de globos ovalados; en SFX se reduce
+                # para que el efecto pueda ocupar más del espacio detectado. Con clip_mask, el margen
+                # se aplica sobre la caja interior real del globo, no sobre la bbox rectangular completa.
+                margin_ratio = self.inner_margin_ratio if not style.startswith("onomatopeya") else max(0.035, self.inner_margin_ratio * 0.45)
+                margen_x = max(2, int(safe_w * margin_ratio))
+                margen_y = max(2, int(safe_h * margin_ratio))
+                area_x = safe_x + margen_x
+                area_y = safe_y + margen_y
+                area_w = max(1, safe_w - 2 * margen_x)
+                area_h = max(1, safe_h - 2 * margen_y)
+
+                fuente, lineas, espacio_entre_lineas = self._fit_font(block_text or " ", area_w, area_h, style=style)
+                alto_parrafo = self._paragraph_height(lineas, fuente, espacio_entre_lineas)
+                if style.startswith("onomatopeya"):
+                    stroke_width = max(1, min(5, int(getattr(fuente, "size", self.min_font_size) * 0.11)))
+                elif style == "narracion":
+                    stroke_width = max(1, min(2, int(getattr(fuente, "size", self.min_font_size) * 0.045)))
+                else:
+                    stroke_width = max(1, min(3, int(getattr(fuente, "size", self.min_font_size) * 0.07)))
+
+                y_texto = area_y + max(0, (area_h - alto_parrafo) / 2)
+                for linea in lineas:
+                    alto_linea = self._text_height(linea, fuente)
+                    ancho_linea = self._text_width(linea, fuente)
+                    x_texto = area_x + max(0, (area_w - ancho_linea) / 2)
+                    draw.text(
+                        (x_texto, y_texto),
+                        linea,
+                        font=fuente,
+                        fill=self._to_rgba(color_texto),
+                        stroke_width=stroke_width,
+                        stroke_fill=self._to_rgba(color_borde),
+                    )
+                    y_texto += alto_linea + espacio_entre_lineas
 
             del draw
 
