@@ -22,19 +22,28 @@ class OcrTextPipelineMixin:
     """OCR y normalización textual."""
 
     def _cached_clean_guard_ocr_text(self, region: TextRegion) -> str:
-        """Reutiliza OCR hecho en limpieza sólo cuando es seguro conservarlo.
+        """Reutiliza OCR local previo sólo cuando es seguro conservarlo.
 
-        El OCR preventivo de CleanManga se hace antes de borrar una región free_text
-        para confirmar si es una onomatopeya que debe quedarse intacta. Si ya se
-        marcó como onomatopeya conservada, no tiene sentido volver a pasar OCR
-        sobre el mismo recorte durante la transcripción/traducción.
+        El OCR preventivo de CleanManga se hace antes de borrar una región free_text.
+        Si ese mismo recorte ya fue leído, no hace falta volver a mandarlo al OCR en
+        la fase de transcripción/traducción. Para columnas CJK verticales recuperadas
+        desde EasyOCR, la pista global se ignora, pero un OCR local cacheado sí se
+        puede reutilizar.
         """
         if region.kind != "free_text":
             return ""
         metadata = getattr(region, "metadata", {}) or {}
-        if not (metadata.get("free_text_onomatopoeia_keep") or metadata.get("free_text_onomatopoeia") or metadata.get("onomatopoeia")):
+        reusable = (
+            metadata.get("free_text_onomatopoeia_keep")
+            or metadata.get("free_text_onomatopoeia")
+            or metadata.get("onomatopoeia")
+            or metadata.get("vertical_text_retry")
+            or metadata.get("force_region_ocr")
+            or metadata.get("region_ocr_cache_reusable")
+        )
+        if not reusable:
             return ""
-        return str(metadata.get("clean_guard_ocr_text") or "").strip()
+        return str(metadata.get("region_ocr_text") or metadata.get("clean_guard_ocr_text") or "").strip()
 
     def obtener_textos(self, imagenes_interes):
         if self.ultimas_regiones and len(self.ultimas_regiones) == len(imagenes_interes):
@@ -60,6 +69,12 @@ class OcrTextPipelineMixin:
                 for indice, texto in zip(indices_pendientes, textos_ocr):
                     texto_normalizado = self.normalizar_texto_ocr(texto)
                     region = self.ultimas_regiones[indice] if indice < len(self.ultimas_regiones) else None
+                    if region is not None:
+                        metadata = getattr(region, "metadata", None)
+                        if isinstance(metadata, dict):
+                            metadata["region_ocr_text"] = texto_normalizado
+                            metadata["region_ocr_text_source"] = "translation_region_ocr"
+                            metadata["region_ocr_cache_reusable"] = True
                     textos[indice] = texto_normalizado if self._text_is_source_language(texto_normalizado, region) else ""
             return textos
 

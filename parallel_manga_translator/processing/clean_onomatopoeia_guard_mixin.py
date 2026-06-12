@@ -136,7 +136,23 @@ class CleanOnomatopoeiaGuardMixin:
         except Exception as exc:
             logger.debug("No se pudo verificar texto libre antes de limpiar: %s", exc)
             return ""
-        return str(textos[0] if textos else "").strip()
+
+        texto = str(textos[0] if textos else "").strip()
+
+        # Evita repetir OCR sobre el mismo recorte en la fase de traducción.
+        # OcrManager ya tiene caché persistente por hash de imagen, pero guardar el
+        # resultado en metadata cubre también ejecuciones con caché desactivada y
+        # deja explícito que esta región ya fue leída localmente.
+        if isinstance(metadata, dict):
+            metadata["clean_guard_ocr_attempted"] = True
+            if texto:
+                metadata["clean_guard_ocr_text"] = texto
+                metadata["clean_guard_ocr_cached"] = True
+                if metadata.get("vertical_text_retry") or metadata.get("ocr_global_hint_used_as_bbox_only"):
+                    metadata["region_ocr_text"] = texto
+                    metadata["region_ocr_text_source"] = "clean_guard_region_ocr"
+                    metadata["region_ocr_cache_reusable"] = True
+        return texto
 
     def _is_kept_onomatopoeia_region(self, region: TextRegion, imagen: Optional[np.ndarray] = None) -> bool:
         if not self._onomatopoeia_keep_requested():
