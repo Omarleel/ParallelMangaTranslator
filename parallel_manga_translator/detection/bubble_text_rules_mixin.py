@@ -277,6 +277,16 @@ class BubbleTextRulesMixin:
         meaningful_without_digits = stats["meaningful_without_digits"]
         only_digits_or_symbols = meaningful_without_digits == 0
         weak_short_signal = meaningful_without_digits <= 1 and stats["meaningful"] <= 2
+        cjk_vertical_ocr_retry = (
+            self.idioma_entrada in {"Japonés", "Chino", "Coreano"}
+            and (stats["kana"] + stats["cjk"] + stats["hangul"]) >= 1
+            and bh >= max(48, int(round(img_height * 0.035)))
+            and bw >= 10
+            and bh / max(1, bw) >= 2.15
+            and bw / max(1, img_width) <= 0.22
+            and area_ratio <= min(self.free_text_hard_max_area_ratio, 0.060)
+            and symbol_ratio <= 0.55
+        )
 
         # Nada que parezca texto y además baja confianza: probablemente ruido.
         if not has_signal and not looks_sfx and confidence < self.free_text_min_confidence:
@@ -288,6 +298,16 @@ class BubbleTextRulesMixin:
         if not looks_sfx:
             if only_digits_or_symbols:
                 return False, "solo_numeros_o_simbolos_ocr_ruido"
+
+            # EasyOCR/Paddle fallan mucho al reconocer columnas japonesas/chinas:
+            # pueden detectar bien la caja, pero devolver una sola letra como texto
+            # (por ejemplo ``書`` para una frase vertical completa). En esos casos
+            # conservamos la caja como free_text para que el OCR especializado sobre
+            # el recorte vuelva a leerla; la pista global se usará sólo como bbox,
+            # no como contenido definitivo ni como señal de onomatopeya.
+            if cjk_vertical_ocr_retry:
+                return True, "cjk_vertical_bbox_retry_ocr"
+
             if weak_short_signal and confidence < max(0.35, self.free_text_min_confidence):
                 return False, "senal_textual_demasiado_debil"
             if area_ratio > 0.018 and meaningful_without_digits < 3 and symbol_ratio > 0.40:

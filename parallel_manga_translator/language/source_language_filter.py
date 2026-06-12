@@ -190,6 +190,14 @@ class SourceLanguageFilter:
         if not self.has_meaningful_text(text):
             return False
 
+        metadata = self._metadata(region)
+        if metadata.get("ocr_global_hint_used_as_bbox_only") or metadata.get("ocr_global_hint_untrusted"):
+            # Para columnas CJK verticales recuperadas desde una caja de EasyOCR,
+            # la lectura global puede ser sólo una letra equivocada o texto latino
+            # accidental. No uses esa pista para aceptar/rechazar la región; deja
+            # que el OCR del recorte decida después.
+            return False
+
         language = self.idioma_entrada
         region_kind = self._region_kind(region)
 

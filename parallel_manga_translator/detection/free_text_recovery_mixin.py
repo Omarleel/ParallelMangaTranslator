@@ -73,6 +73,14 @@ class FreeTextRecoveryMixin:
                 "free_text_original_kind": "free_text",
                 "free_text_sfx_reason": free_text_onomatopoeia_metadata.get("free_text_onomatopoeia_method", "") if free_text_onomatopoeia_metadata else ("shape_candidate" if looks_sfx else ""),
             }
+            if filter_reason == "cjk_vertical_bbox_retry_ocr":
+                metadata.update({
+                    "ocr_global_hint_used_as_bbox_only": True,
+                    "ocr_global_hint_untrusted": True,
+                    "force_region_ocr": True,
+                    "layout_hint": "vertical_cjk",
+                    "vertical_text_retry": True,
+                })
             metadata.update(free_text_onomatopoeia_metadata)
             free_regions.append(TextRegion(
                 bbox=bbox,
