@@ -63,8 +63,12 @@ class CleanDetectionPipelineMixin:
         except Exception:
             return False
         aspect = max(w, h) / max(1, min(w, h))
-        # Muchas onomatopeyas estilizadas aparecen como letras muy alargadas o grandes.
-        return aspect >= 4.2 and len(texto.strip()) <= 8
+        # Muchas onomatopeyas estilizadas aparecen como letras muy alargadas o grandes,
+        # pero una columna vertical japonesa de diálogo también es alargada. El fallback
+        # por proporción sólo aplica a líneas horizontales; los SFX verticales reales
+        # deben entrar por diccionario/similitud/heurística.
+        horizontalish = w >= max(1, h) * 1.35
+        return horizontalish and aspect >= 4.2 and len(str(texto or "").strip()) <= 8
 
     def _dedupe_detections(self, detections: Iterable, image_shape) -> List:
         """Une resultados de pasadas distintas sin duplicar textos detectados."""

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import json
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
-
-import cv2
-import numpy as np
 
 from parallel_manga_translator.detection.professional_bubble_detector import ProfessionalBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
@@ -53,6 +49,15 @@ class BubbleTextRulesMixin:
         # Las onomatopeyas reales ya se aceptaron arriba por diccionario.
         if not re.search(r"[A-Za-z\u3041-\u3096\u309d-\u309f\u30a1-\u30fa\u30fc-\u30ff\u3400-\u9fff\uac00-\ud7af]", compact_text):
             return False
+
+        # El fallback por forma era demasiado agresivo: una columna japonesa vertical
+        # de diálogo libre (por ejemplo 「すごい演技力ね」) también tiene aspect ratio alto.
+        # Por proporción sola sólo aceptamos trazos/renglones muy horizontales; los
+        # SFX verticales reales deben entrar por diccionario/similitud/heurística.
+        horizontalish = w >= max(1, h) * 1.35
+        if not horizontalish:
+            return False
+
         # Una línea muy horizontal y corta puede ser un SFX, pero en páginas de
         # notas los renglones japoneses largos también son muy anchos. Si contiene
         # hiragana/kanji suficientes para parecer frase, no lo clasifiques como SFX
@@ -93,6 +98,30 @@ class BubbleTextRulesMixin:
     def _compact_visible_text(text: str) -> str:
         return re.sub(r"\s+", "", str(text or ""))
 
+    @staticmethod
+    def _bubble_symbol_preserve_metadata(compact: str) -> Dict[str, object]:
+        """Protege expresiones visuales/símbolos dentro de globos.
+
+        Los detectores de texto a veces leen signos como ``!?`` como una sílaba
+        katakana aislada (por ejemplo ``パ``). Si marcamos eso como onomatopeya
+        o lo tratamos como diálogo normal, el limpiador borra el símbolo original.
+        Esta regla sólo cubre casos muy cortos y aislados para no bloquear frases.
+        """
+        compact = str(compact or "").strip()
+        if not compact:
+            return {}
+        punctuation_expression = bool(re.fullmatch(r"[!！?？⁉⁈‼…｡。・･、,\.~〜\-♪♫♥♡☆★]+", compact))
+        single_katakana_hint = bool(re.fullmatch(r"[ァ-ヿ]", compact))
+        if not (punctuation_expression or single_katakana_hint):
+            return {}
+        return {
+            "visual_expression": True,
+            "non_translatable_expression": True,
+            "skip_cleanup_translation": True,
+            "visual_expression_source": "short_bubble_symbol_or_single_katakana_hint",
+            "visual_expression_hint": compact,
+        }
+
     def _bubble_visual_expression_metadata(self, region: TextRegion) -> Dict[str, object]:
         """Materializa onomatopeyas cortas detectadas dentro de globos.
 
@@ -120,6 +149,17 @@ class BubbleTextRulesMixin:
             # medias no debe saltarse por contener una sílaba tipo パ.
             if not compact or len(compact) > 4:
                 continue
+
+            preserve = self._bubble_symbol_preserve_metadata(compact)
+            if preserve:
+                return preserve
+
+            # Una sola sílaba katakana es demasiado poco fiable dentro de globos:
+            # ``!?`` puede venir de Paddle/EasyOCR como ``パ``. Evita convertirla en
+            # onomatopeya interna y borrar el símbolo original.
+            if len(compact) < 2:
+                continue
+
             result = self._free_text_onomatopoeia_metadata(compact)
             if not result:
                 continue
@@ -151,10 +191,13 @@ class BubbleTextRulesMixin:
 
     def _region_onomatopoeia_debug_metadata(self, region: TextRegion) -> Dict[str, object]:
         metadata = getattr(region, "metadata", {}) or {}
-        if metadata.get("free_text_onomatopoeia") or metadata.get("onomatopoeia") or region.kind in {"sfx", "onomatopoeia"}:
+        # No marques todo ``kind=sfx`` como onomatopeya en debug: un falso SFX por
+        # proporción no debe terminar como ``is_free_text_onomatopoeia=true``. Sólo
+        # reporta onomatopeya cuando hay metadata explícita de diccionario/similitud.
+        if metadata.get("free_text_onomatopoeia") or metadata.get("onomatopoeia"):
             result = {
-                "free_text_onomatopoeia": bool(metadata.get("free_text_onomatopoeia") or region.kind in {"sfx", "onomatopoeia"}),
-                "onomatopoeia": True,
+                "free_text_onomatopoeia": bool(metadata.get("free_text_onomatopoeia")),
+                "onomatopoeia": bool(metadata.get("onomatopoeia")),
             }
             for key in ("onomatopoeia_key", "free_text_onomatopoeia_similarity", "free_text_onomatopoeia_source", "free_text_onomatopoeia_keep", "bubble_onomatopoeia", "translate_inside_bubble", "visual_expression", "skip_cleanup_translation", "visual_expression_source", "visual_expression_hint"):
                 if key in metadata:
