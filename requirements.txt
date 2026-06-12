@@ -1,7 +1,7 @@
 easyocr
 manga-ocr
 # PaddleOCR es opcional y se instala aparte para evitar conflictos CUDA con PyTorch/YOLO.
-# Usa requirements-paddle-optional.txt si quieres PMT_OCR_ENGINE=paddle o paddle_subprocess.
+# Usa requirements-paddle-optional.txt si config.yaml define ocr.engine: paddle o paddle_subprocess.
 deep_translator
 Pillow>=10.0
 wget

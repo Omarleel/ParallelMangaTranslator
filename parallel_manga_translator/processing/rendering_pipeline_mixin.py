@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import os
+from collections import deque
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+import cv2
+import numpy as np
+import torch
+
+from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
+from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
+from parallel_manga_translator.models.processing_models import TextRegion
+from parallel_manga_translator.translation.text_normalization import OcrTextNormalizer
+from parallel_manga_translator.infrastructure.logging_config import get_logger
+
+Box = Tuple[int, int, int, int]
+logger = get_logger(__name__)
+
+
+class RenderingPipelineMixin:
+    """Renderizado final y publicación de colas de salida."""
+
+    @staticmethod
+    def _es_estilo_onomatopeya(estilo: str) -> bool:
+        return str(estilo or "").strip().lower().startswith("onomatopeya")
+
+    def _push_original_texts_to_queue(self, cuadros_delimitadores, textos):
+        if self.transcripcion_queue is None:
+            return
+        for idx, ((x, y, w, h), texto) in enumerate(zip(cuadros_delimitadores, textos)):
+            if idx < len(getattr(self, "ultimos_source_language_flags", [])) and not self.ultimos_source_language_flags[idx]:
+                continue
+            region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
+            estilo = self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo"
+            elemento = {
+                "Índice": idx,
+                "Coordenadas": [[x, y], [x + w, y + h]],
+                "Texto": texto,
+                "Estilo": estilo,
+            }
+            if region is not None:
+                elemento.update({
+                    "Tipo": region.kind,
+                    "Confianza": round(float(region.confidence), 4),
+                    "Coordenadas texto original": [[region.text_bbox[0], region.text_bbox[1]], [region.text_bbox[0] + region.text_bbox[2], region.text_bbox[1] + region.text_bbox[3]]],
+                    "Fuente máscara": region.metadata.get("mask_source", ""),
+                })
+            if idx < len(self.ultimas_asignaciones_hablante):
+                speaker = self.ultimas_asignaciones_hablante[idx]
+                elemento.update({
+                    "Hablante": speaker.get("speaker_id", "unknown"),
+                    "Confianza hablante": round(float(speaker.get("confidence") or 0.0), 4),
+                    "Evidencia hablante": speaker.get("evidence", ""),
+                })
+            self.transcripcion_queue.put({
+                "agregar_a_sublista": {
+                    "clave_lista": "Transcripción",
+                    "pagina": self.indice_imagen + 1,
+                    "clave_sublista": "Globos de texto",
+                    "elemento_sublista": elemento,
+                }
+            })
+
+    def _push_translated_texts_to_queue(self, cuadros_delimitadores, textos_traducidos):
+        if self.traduccion_queue is None:
+            return
+        for idx, ((x, y, w, h), texto_traducido) in enumerate(zip(cuadros_delimitadores, textos_traducidos)):
+            if idx < len(getattr(self, "ultimos_source_language_flags", [])) and not self.ultimos_source_language_flags[idx]:
+                continue
+            region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
+            estilo = self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo"
+            elemento = {
+                "Índice": idx,
+                "Coordenadas": [[x, y], [x + w, y + h]],
+                "Texto": texto_traducido,
+                "Estilo": estilo,
+            }
+            if region is not None:
+                elemento.update({
+                    "Tipo": region.kind,
+                    "Confianza": round(float(region.confidence), 4),
+                    "Fuente máscara": region.metadata.get("mask_source", ""),
+                })
+            if idx < len(self.ultimas_asignaciones_hablante):
+                speaker = self.ultimas_asignaciones_hablante[idx]
+                elemento.update({
+                    "Hablante": speaker.get("speaker_id", "unknown"),
+                    "Confianza hablante": round(float(speaker.get("confidence") or 0.0), 4),
+                })
+            self.traduccion_queue.put({
+                "agregar_a_sublista": {
+                    "clave_lista": "Traducción",
+                    "pagina": self.indice_imagen + 1,
+                    "clave_sublista": "Globos de texto",
+                    "elemento_sublista": elemento,
+                }
+            })
+
+    def incrustar_textos(self, imagen_limpia, cuadros_delimitadores, textos):
+        textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
+        self.ultimos_textos_originales = textos_limpios
+        textos_traducidos = self.traducir_textos(textos_limpios)
+        self.ultimos_textos_traducidos = textos_traducidos
+        self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
+        self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos)
+        textos_para_render = [
+            "" if (idx < len(self.ultimos_source_language_flags) and not self.ultimos_source_language_flags[idx])
+            else ("" if self._should_keep_original_onomatopoeia(idx, original) else traducido)
+            for idx, (original, traducido) in enumerate(zip(textos_limpios, textos_traducidos))
+        ]
+        clip_masks = [region.local_mask() for region in self.ultimas_regiones] if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores) else None
+        return self.text_renderer.render(
+            imagen_limpia,
+            cuadros_delimitadores,
+            textos_para_render,
+            text_styles=self.ultimo_estilos_texto,
+            clip_masks=clip_masks,
+            reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,
+        )

@@ -11,6 +11,6 @@ env/
 config.ini
 credentials.json
 
-Dataset/
-Fonts/
-Models/
+/dataset/
+/fonts/
+/models/

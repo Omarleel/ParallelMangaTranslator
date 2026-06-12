@@ -9,15 +9,15 @@ import numpy as np
 
 sys.modules.setdefault("easyocr", types.SimpleNamespace(Reader=object))
 
-from Applications.CharacterMemoryManager import CharacterMemoryManager, validate_character_memory_response
-from Applications.EvaluationManager import EvaluationManager, EvaluationConfig, box_iou, char_error_rate
-from Applications.TranslatorManager import validate_translation_response
-from Applications.BubbleDetector import BubbleDetector
-from Applications.CleanManga import CleanManga
-from Applications.OnomatopoeiaManager import OnomatopoeiaManager
-from Applications.ProcessingModels import TextRegion
-from Applications.SourceLanguageFilter import SourceLanguageFilter
-from Applications.TranslateManga import TranslateManga
+from parallel_manga_translator.translation.character_memory_manager import CharacterMemoryManager, validate_character_memory_response
+from parallel_manga_translator.quality.evaluation_manager import EvaluationManager, EvaluationConfig, box_iou, char_error_rate
+from parallel_manga_translator.translation.translator_manager import validate_translation_response
+from parallel_manga_translator.detection.bubble_detector import BubbleDetector
+from parallel_manga_translator.processing.clean_manga import CleanManga
+from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
+from parallel_manga_translator.models.processing_models import TextRegion
+from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
+from parallel_manga_translator.processing.translate_manga import TranslateManga
 
 
 class StrictLLMJsonTests(unittest.TestCase):

@@ -1,8 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "parallel-manga-translator"
-version = "0.5.0-eval-strict-memory"
+version = "0.5.0"
 description = "Pipeline de traducción de manga con detección de globos, OCR, traducción y renderizado."
 requires-python = ">=3.10"
+readme = "README.md"
+
+[project.scripts]
+pmt = "parallel_manga_translator.cli:main"
+parallel-manga-translator = "parallel_manga_translator.cli:main"
+pmt-evaluate = "parallel_manga_translator.quality.evaluation_manager:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["parallel_manga_translator*"]
+
+[tool.setuptools.package-data]
+parallel_manga_translator = ["resources/**/*.yaml", "resources/**/*.md"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

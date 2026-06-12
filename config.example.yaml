@@ -2,24 +2,34 @@ translation:
   source_language: Japonés
   target_language: Español
   method: LLM          # LLM | Tradicional
+  traditional_provider: auto  # auto | google | deepl
   inpaint_model: lama_mpe
   lore: ""
   glossary: ""
 
 processing:
-  input_dir: Dataset
+  input_dir: dataset
   batch_size: 8
   parallel: false
   cache: true
   cache_dir: .cache
+  # null = autocalcular según CPU/GPU; entero = límite explícito de procesos paralelos.
+  max_workers: null
 
 ocr:
-  # auto: Japonés intenta MangaOCR y cae a EasyOCR; otros idiomas usan EasyOCR.
-  # easyocr | mangaocr | paddle | paddle_subprocess | auto
-  engine: auto
+  # Hay dos OCR distintos:
+  # - detection_engine localiza bounding boxes para limpieza, hints y división de globos.
+  # - transcription_engine lee/transcribe el texto final dentro de cada región.
+  # detection_engine: auto | easyocr | paddle | paddle_subprocess
+  # transcription_engine: auto | easyocr | mangaocr | paddle | paddle_subprocess
+  detection_engine: auto
+  transcription_engine: auto
+  # Compatibilidad con configs antiguas: si existe engine, se interpreta como transcription_engine.
+  # engine: auto
   # Para PaddleOCR GPU + YOLO GPU, usa subprocess para aislar Paddle de PyTorch.
   gpu: false
   paddle_subprocess: auto   # auto | true | false
+  fast_mode: false
 
 quality:
   # La detección de globos ahora SOLO usa modelo preentrenado. Sin modelo válido se lanza error.
@@ -99,7 +109,7 @@ quality:
   free_text_gap_min_y_overlap: 0.45
   free_text_gap_min_ink_density: 0.025
   free_text_gap_max_ink_density: 0.90
-  # Activa archivos técnicos para tests en Dataset/Outputs/DebugGlobos.
+  # Activa archivos técnicos para tests en dataset/outputs/debug_globos.
   bubble_merge_debug: false
   bubble_merge_debug_dir: ""
   bubble_merge_debug_pair_limit: 160
@@ -113,22 +123,30 @@ onomatopoeia:
   clean: true
 
 llm:
+  provider: groq
+  model: llama-3.3-70b-versatile
+  seed: 7
+  max_retries: 3
   # true intenta response_format json_schema estricto y cae a json_object si el proveedor no lo soporta.
   strict_json_schema: true
 
 character_memory:
   # Construye automáticamente memoria de personajes/hablantes usando IA en modo LLM.
   enabled: true
-  # Vacío = Dataset/character_memory.json. Usa una ruta explícita si quieres compartir memoria entre tomos.
+  # Vacío = dataset/character_memory.json. Usa una ruta explícita si quieres compartir memoria entre tomos.
   path: ""
   max_context_pages: 8
 
 evaluation:
   # Carpeta sugerida para anotaciones manuales de precisión.
-  ground_truth_dir: DatasetEval/ground_truth
+  ground_truth_dir: dataset_eval/ground_truth
   iou_threshold: 0.50
 
 export:
   pdf: true
   cbz: false
   skip_pdf: false
+
+logging:
+  level: INFO
+  file: debug.log

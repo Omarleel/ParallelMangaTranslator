@@ -4,19 +4,17 @@ import logging
 import tempfile
 import unittest
 
-os.environ.setdefault("PMT_BUBBLE_DETECTOR", "professional")
-os.environ.setdefault("PMT_REQUIRE_PROFESSIONAL_BUBBLE", "1")
-
 import cv2
 import numpy as np
 
-from Applications.BubbleDetector import BubbleDetector, BUBBLE_SPLIT_DEBUG_VERSION
-from Applications.ProfessionalBubbleDetector import ProfessionalBubbleCandidate
-from Applications.OnomatopoeiaManager import OnomatopoeiaManager
-from Applications.TextRendering import TextRenderer
-from Applications.ProcessingModels import TextRegion
-from Applications.ReadingOrderResolver import ReadingOrderResolver
-from Applications.ErrorHandling import PageFailureReport, StageProcessingError, processing_stage, write_failure_report
+from parallel_manga_translator.detection.bubble_detector import BubbleDetector, BUBBLE_SPLIT_DEBUG_VERSION
+from parallel_manga_translator.detection.professional_bubble_detector import ProfessionalBubbleCandidate
+from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
+from parallel_manga_translator.rendering.text_renderer import TextRenderer
+from parallel_manga_translator.models.processing_models import TextRegion
+from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
+from parallel_manga_translator.infrastructure.error_handling import PageFailureReport, StageProcessingError, processing_stage, write_failure_report
+from parallel_manga_translator.config.app_config import QualityConfig
 
 
 class ReadingOrderResolverTests(unittest.TestCase):
@@ -487,22 +485,14 @@ class CoreQualityTests(unittest.TestCase):
         self.assertGreater(lower_left, 10)
 
     def test_heuristic_bubble_detector_is_rejected(self):
-        previous = os.environ.get("PMT_BUBBLE_DETECTOR")
-        os.environ["PMT_BUBBLE_DETECTOR"] = "heuristic"
-        try:
-            with self.assertRaises(RuntimeError):
-                BubbleDetector("Japonés")
-        finally:
-            if previous is None:
-                os.environ.pop("PMT_BUBBLE_DETECTOR", None)
-            else:
-                os.environ["PMT_BUBBLE_DETECTOR"] = previous
+        with self.assertRaises(RuntimeError):
+            BubbleDetector("Japonés", quality_config=QualityConfig(bubble_detector="heuristic"))
 
     def test_ocr_manager_import_does_not_import_paddle(self):
         import sys
         sys.modules.pop("paddleocr", None)
         sys.modules.pop("paddle", None)
-        from Applications.OcrManager import OcrManager
+        from parallel_manga_translator.ocr.ocr_manager import OcrManager
         _ = OcrManager("Japonés")
         self.assertNotIn("paddleocr", sys.modules)
         self.assertNotIn("paddle", sys.modules)
