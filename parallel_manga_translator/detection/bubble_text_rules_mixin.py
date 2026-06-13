@@ -156,8 +156,9 @@ class BubbleTextRulesMixin:
 
             # Una sola sílaba katakana es demasiado poco fiable dentro de globos:
             # ``!?`` puede venir de Paddle/EasyOCR como ``パ``. Evita convertirla en
-            # onomatopeya interna y borrar el símbolo original.
-            if len(compact) < 2:
+            # onomatopeya interna y borrar el símbolo original. No bloquees kana
+            # no katakana que el diccionario sí reconozca explícitamente.
+            if len(compact) < 2 and re.fullmatch(r"[ァ-ヿ]", compact):
                 continue
 
             result = self._free_text_onomatopoeia_metadata(compact)
@@ -271,6 +272,16 @@ class BubbleTextRulesMixin:
         height_ratio = bh / max(1, img_height)
         stats = self._free_text_signal_stats(text_hint)
         has_signal = self._has_meaningful_text_signal(text_hint)
+
+        # Corte duro para el caso que estaba generando falsos positivos: varias
+        # letras cercanas se fusionan en una sola columna de texto libre y el
+        # limpiador termina borrando una franja enorme de la página. Una región
+        # OCR vertical fuera de globos que ocupa más de media página no es una
+        # unidad de texto válida para limpiar/traducir; aunque tenga caracteres
+        # CJK y buena confianza, debe descartarse antes del retry de OCR.
+        if height_ratio > 0.50 and bh > bw * 1.20:
+            return False, "altura_vertical_imposible"
+
         symbols = stats["symbols"]
         visible = max(1, stats["visible"])
         symbol_ratio = symbols / visible

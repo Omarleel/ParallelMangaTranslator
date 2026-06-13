@@ -352,17 +352,29 @@ class CoreQualityTests(unittest.TestCase):
 
         self.assertEqual(regions, [])
 
+    def test_vertical_free_text_taller_than_half_page_is_rejected(self):
+        # Falso positivo real: letras cercanas se fusionan en una columna gigante.
+        # Aunque el OCR devuelva caracteres japoneses con confianza alta, una caja
+        # de texto libre vertical de más de media página no debe limpiarse.
+        img = np.full((1000, 1000, 3), 255, dtype=np.uint8)
+        merged_column = ([[420, 120], [470, 120], [470, 760], [420, 760]], "き れ い だ ね", 0.93)
+
+        detector = BubbleDetector("Japonés")
+        regions = detector.build_regions_from_bubbles_and_text(img, [], [merged_column])
+
+        self.assertEqual(regions, [])
+
     def test_free_text_gap_recovery_adds_missed_vertical_column(self):
         # EasyOCR puede detectar las columnas laterales de texto libre y saltarse
         # una columna central con outline/trama. El fallback debe crear una
         # región extra solo para texto libre; así la limpieza y el OCR por recorte
         # tienen una segunda oportunidad.
-        img = np.full((360, 360, 3), 255, dtype=np.uint8)
-        left = ([[35, 55], [85, 55], [85, 285], [35, 285]], "なってる", 0.92)
-        right = ([[265, 45], [315, 45], [315, 305], [265, 305]], "俺いつの間にか", 0.91)
+        img = np.full((520, 360, 3), 255, dtype=np.uint8)
+        left = ([[35, 95], [85, 95], [85, 325], [35, 325]], "なってる", 0.92)
+        right = ([[265, 100], [315, 100], [315, 335], [265, 335]], "俺いつの間にか", 0.91)
 
         # Columna central omitida por el OCR global: caracteres negros separados.
-        for cy in [72, 118, 164, 210, 256]:
+        for cy in [112, 158, 204, 250, 296]:
             cv2.rectangle(img, (160, cy), (199, cy + 31), (0, 0, 0), -1)
 
         detector = BubbleDetector("Japonés")
@@ -376,10 +388,10 @@ class CoreQualityTests(unittest.TestCase):
         self.assertTrue(130 <= recovered[0].text_bbox[0] <= 170)
 
     def test_free_text_gap_recovery_ignores_thin_panel_line(self):
-        img = np.full((360, 360, 3), 255, dtype=np.uint8)
-        left = ([[35, 55], [85, 55], [85, 285], [35, 285]], "なってる", 0.92)
-        right = ([[265, 45], [315, 45], [315, 305], [265, 305]], "俺いつの間にか", 0.91)
-        cv2.line(img, (178, 30), (178, 330), (0, 0, 0), 2)
+        img = np.full((520, 360, 3), 255, dtype=np.uint8)
+        left = ([[35, 95], [85, 95], [85, 325], [35, 325]], "なってる", 0.92)
+        right = ([[265, 100], [315, 100], [315, 335], [265, 335]], "俺いつの間にか", 0.91)
+        cv2.line(img, (178, 70), (178, 370), (0, 0, 0), 2)
 
         detector = BubbleDetector("Japonés")
         regions = detector.build_regions_from_bubbles_and_text(img, [], [left, right])
