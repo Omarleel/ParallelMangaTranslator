@@ -99,7 +99,7 @@ class BubbleTextRulesMixin:
         return re.sub(r"\s+", "", str(text or ""))
 
     @staticmethod
-    def _bubble_symbol_preserve_metadata(compact: str) -> Dict[str, object]:
+    def _bubble_symbol_preserve_metadata(compact: str, region_bbox: Box) -> Dict[str, object]:
         """Protege expresiones visuales/símbolos dentro de globos.
 
         Los detectores de texto a veces leen signos como ``!?`` como una sílaba
@@ -110,6 +110,17 @@ class BubbleTextRulesMixin:
         compact = str(compact or "").strip()
         if not compact:
             return {}
+        
+        area = region_bbox[2] * region_bbox[3]
+        
+        # 2. Si el globo es grande (ajusta este umbral según tus necesidades)
+        # permitimos que el OCR falle sin que la regla lo proteja.
+        if area > len(compact) * 1000: 
+            return {}
+        
+        if len(compact) > 2:
+            return {}
+        
         punctuation_expression = bool(re.fullmatch(r"[!！?？⁉⁈‼…｡。・･、,\.~〜\-♪♫♥♡☆★]+", compact))
         single_katakana_hint = bool(re.fullmatch(r"[ァ-ヿ]", compact))
         if not (punctuation_expression or single_katakana_hint):
@@ -150,7 +161,7 @@ class BubbleTextRulesMixin:
             if not compact or len(compact) > 4:
                 continue
 
-            preserve = self._bubble_symbol_preserve_metadata(compact)
+            preserve = self._bubble_symbol_preserve_metadata(compact, region.bbox)
             if preserve:
                 return preserve
 

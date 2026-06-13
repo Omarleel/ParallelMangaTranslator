@@ -27,7 +27,7 @@ ocr:
   # Compatibilidad con configs antiguas: si existe engine, se interpreta como transcription_engine.
   # engine: auto
   # Para PaddleOCR GPU + YOLO GPU, usa subprocess para aislar Paddle de PyTorch.
-  gpu: false
+  gpu: true
   paddle_subprocess: auto   # auto | true | false
   fast_mode: false
 
@@ -57,7 +57,7 @@ quality:
   bubble_model_file: best.pt
   bubble_model_path: ""
   # Usa 0/cuda/cuda:0 para GPU, cpu para CPU, o vacío para que Ultralytics decida.
-  bubble_device: "cpu"
+  bubble_device: "gpu"
   bubble_confidence: 0.45
   bubble_img_size: 1024
   # auto: globo por relleno + SFX por inpainting rápido
