@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from parallel_manga_translator.detection.professional_bubble_detector import ProfessionalBubbleCandidate
+from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 from parallel_manga_translator.geometry.box_geometry import BoxGeometry
@@ -17,7 +17,7 @@ BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 
 class BubbleRegionBuilderMixin:
-    """Construcción de regiones a partir del detector profesional y detecciones OCR."""
+    """Construcción de regiones a partir del detector YOLO y detecciones OCR."""
 
     def _debug_raw_detection_items(self, detections: Sequence) -> List[Dict[str, object]]:
         items: List[Dict[str, object]] = []
@@ -86,13 +86,13 @@ class BubbleRegionBuilderMixin:
                 selected.append(region)
         return selected
 
-    def _match_professional_candidate(
+    def _match_yolo_candidate(
         self,
         text_box: Box,
-        candidates: Sequence[ProfessionalBubbleCandidate],
+        candidates: Sequence[YoloBubbleCandidate],
         used: set[int],
         allow_sfx: bool,
-    ) -> Tuple[int, ProfessionalBubbleCandidate] | Tuple[None, None]:
+    ) -> Tuple[int, YoloBubbleCandidate] | Tuple[None, None]:
         if not candidates:
             return None, None
         text_center = self._center(text_box)
@@ -125,22 +125,24 @@ class BubbleRegionBuilderMixin:
             return None, None
         return best_idx, candidates[best_idx]
 
-    def _region_from_professional_candidate(
+    def _region_from_yolo_candidate(
         self,
-        candidate: ProfessionalBubbleCandidate,
+        candidate: YoloBubbleCandidate,
         text_box: Box,
         text_hint: str,
         ocr_confidence: float,
         detections_count: int,
         fallback_sfx: bool,
     ) -> TextRegion:
-        kind = self._kind_from_professional_candidate(candidate, fallback_sfx=fallback_sfx)
+        kind = self._kind_from_yolo_candidate(candidate, fallback_sfx=fallback_sfx)
         metadata = {
             "mask_source": candidate.source,
-            "detector": "professional",
+            "detector": getattr(candidate, "detector", "yolo11_seg"),
+            "model_family": getattr(candidate, "model_family", "YOLO11-seg"),
             "label": candidate.label,
-            "bubble_model_repo": getattr(self.professional_detector, "repo_id", ""),
-            "bubble_model_file": getattr(self.professional_detector, "filename", ""),
+            "class_id": getattr(candidate, "class_id", 0),
+            "bubble_model_repo": getattr(self.yolo_detector, "repo_id", ""),
+            "bubble_model_file": getattr(self.yolo_detector, "filename", ""),
         }
         return TextRegion(
             bbox=candidate.bbox,
@@ -153,23 +155,25 @@ class BubbleRegionBuilderMixin:
             metadata=metadata,
         )
 
-    def _get_professional_candidates(self, image: np.ndarray) -> List[ProfessionalBubbleCandidate]:
-        candidates = self.professional_detector.detect(image)
-        logger.info("Detector profesional: %s candidatos encontrados", len(candidates))
+    def _get_yolo_candidates(self, image: np.ndarray) -> List[YoloBubbleCandidate]:
+        candidates = self.yolo_detector.detect(image)
+        logger.info("Detector YOLO: %s candidatos encontrados", len(candidates))
         return candidates
 
     def detect_primary_bubble_regions(self, image: np.ndarray) -> List[TextRegion]:
-        candidates = self._get_professional_candidates(image)
+        candidates = self._get_yolo_candidates(image)
         regions: List[TextRegion] = []
         for i, candidate in enumerate(candidates):
-            kind = self._kind_from_professional_candidate(candidate, fallback_sfx=False)
+            kind = self._kind_from_yolo_candidate(candidate, fallback_sfx=False)
             
             metadata = {
                 "mask_source": candidate.source,
-                "detector": "professional",
+                "detector": getattr(candidate, "detector", "yolo11_seg"),
+                "model_family": getattr(candidate, "model_family", "YOLO11-seg"),
                 "label": candidate.label,
-                "bubble_model_repo": getattr(self.professional_detector, "repo_id", ""),
-                "bubble_model_file": getattr(self.professional_detector, "filename", ""),
+                "class_id": getattr(candidate, "class_id", 0),
+                "bubble_model_repo": getattr(self.yolo_detector, "repo_id", ""),
+                "bubble_model_file": getattr(self.yolo_detector, "filename", ""),
                 "region_flow": "bubble_first_pretrained_only",
                 "ocr_scope": "inside_detected_region",
             }

@@ -12,7 +12,7 @@ from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
-from parallel_manga_translator.detection.professional_bubble_detector import ProfessionalBubbleCandidate, ProfessionalBubbleDetector
+from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate, YoloBubbleDetector
 from parallel_manga_translator.config.app_config import ProcessingConfig, QualityConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
@@ -30,7 +30,7 @@ BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 class BubbleDetector(BubbleGeometryMixin, BubbleTextRulesMixin, BubbleRegionBuilderMixin, BubbleSplitterMixin, BubbleDebugMixin, FreeTextRecoveryMixin):
     """Detector de regiones basado SOLO en modelos preentrenados para globos.
 
-    Ya no existe fallback heurístico para globos de texto. El flujo profesional es:
+    Ya no existe fallback heurístico para globos de texto. El flujo YOLO es:
 
         modelo preentrenado detecta globos -> OCR dentro de cada globo -> OCR global
         solo aporta pistas y textos libres/SFX fuera de globos.
@@ -60,10 +60,10 @@ class BubbleDetector(BubbleGeometryMixin, BubbleTextRulesMixin, BubbleRegionBuil
                 "quality.bubble_detection=false no está permitido en esta versión: la detección de globos "
                 "debe hacerse con un modelo preentrenado."
             )
-        self.professional_detector = ProfessionalBubbleDetector(quality_config=quality_config)
+        self.yolo_detector = YoloBubbleDetector(quality_config=quality_config)
 
     def _apply_settings(self, settings: BubbleDetectorSettings) -> None:
-        """Mantiene atributos históricos, pero agrupa la lectura de configuración."""
+        """Aplica la configuración del detector de globos."""
         self.enabled = settings.enabled
 
         self.split_merged_bubbles = settings.split.enabled

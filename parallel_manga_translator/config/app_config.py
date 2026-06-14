@@ -80,8 +80,8 @@ class QualityConfig:
     bubble_fill_feather: float = 1.0
     bubble_fill_flat_max_rectangularity: float = 0.86
     bubble_fill_shape_aware: bool = True
-    bubble_detector: str = "professional"
-    require_professional: bool = True
+    bubble_detector: str = "yolo11-seg"
+    require_yolo: bool = True
     bubble_first: bool = True
     ocr_region_mode: str = "bubble"
     bubble_model_repo: str = "huyvux3005/manga109-segmentation-bubble"
@@ -90,6 +90,11 @@ class QualityConfig:
     bubble_device: str = ""
     bubble_confidence: float = 0.35
     bubble_img_size: int = 1024
+    bubble_retina_masks: bool = True
+    bubble_model_classes: str = ""
+    bubble_include_labels: str = ""
+    bubble_exclude_labels: str = "ignore_art,panel,page,background"
+    bubble_max_area_ratio: float = 0.55
     inpaint_mode: str = "auto"
     split_merged_bubbles: bool = True
     bubble_split_min_ocr_groups: int = 2

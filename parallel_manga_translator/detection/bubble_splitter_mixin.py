@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from parallel_manga_translator.detection.professional_bubble_detector import ProfessionalBubbleCandidate
+from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 
@@ -105,7 +105,7 @@ class BubbleSplitterMixin:
 
         La agrupación OCR previa se mantiene conservadora para no mezclar globos
         distintos antes de tomar la decisión. Pero al momento de dividir una región
-        profesional fusionada no debemos crear una subregión por cada columna: si
+        YOLO fusionada no debemos crear una subregión por cada columna: si
         dos grupos OCR no activan una separación, se consideran parte del mismo
         globo y se fusionan en un cluster.
         """

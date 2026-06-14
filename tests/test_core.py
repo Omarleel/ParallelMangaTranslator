@@ -1,14 +1,16 @@
 import os
 import json
 import logging
+import sys
 import tempfile
+import types
 import unittest
 
 import cv2
 import numpy as np
 
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector, BUBBLE_SPLIT_DEBUG_VERSION
-from parallel_manga_translator.detection.professional_bubble_detector import ProfessionalBubbleCandidate
+from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate, YoloBubbleDetector
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.rendering.text_renderer import TextRenderer
 from parallel_manga_translator.models.processing_models import TextRegion
@@ -16,6 +18,100 @@ from parallel_manga_translator.layout.reading_order_resolver import ReadingOrder
 from parallel_manga_translator.infrastructure.error_handling import PageFailureReport, StageProcessingError, processing_stage, write_failure_report
 from parallel_manga_translator.config.app_config import QualityConfig
 
+
+
+
+class Yolo11SegDetectorTests(unittest.TestCase):
+    def test_yolo11_seg_is_primary_and_uses_high_resolution_masks(self):
+        image = np.full((96, 128, 3), 255, dtype=np.uint8)
+        mask_bubble = np.zeros((96, 128), dtype=np.float32)
+        mask_bubble[20:62, 18:82] = 1.0
+        mask_ignore = np.zeros((96, 128), dtype=np.float32)
+        mask_ignore[2:94, 2:126] = 1.0
+
+        class FakeYOLO:
+            last = None
+
+            def __init__(self, path):
+                self.path = path
+                self.calls = []
+                FakeYOLO.last = self
+
+            def predict(self, source, **kwargs):
+                self.calls.append(kwargs)
+                box_bubble = types.SimpleNamespace(
+                    xyxy=[np.array([18, 20, 82, 62], dtype=np.float32)],
+                    conf=[0.93],
+                    cls=[0],
+                )
+                box_ignore = types.SimpleNamespace(
+                    xyxy=[np.array([2, 2, 126, 94], dtype=np.float32)],
+                    conf=[0.99],
+                    cls=[1],
+                )
+                return [types.SimpleNamespace(
+                    boxes=[box_bubble, box_ignore],
+                    masks=types.SimpleNamespace(data=[mask_bubble, mask_ignore], xy=[]),
+                    names={0: "speech_bubble", 1: "ignore_art"},
+                )]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = os.path.join(tmpdir, "manga-yolo11s-seg.pt")
+            open(model_path, "wb").close()
+            fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO)
+            with unittest.mock.patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
+                detector = YoloBubbleDetector(QualityConfig(
+                    bubble_detector="yolo11-seg",
+                    bubble_model_path=model_path,
+                    bubble_device="gpu",
+                    bubble_model_classes="0,1",
+                    bubble_retina_masks=True,
+                    bubble_confidence=0.40,
+                    bubble_img_size=960,
+                ))
+                candidates = detector.detect(image)
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate.detector, "yolo11_seg")
+        self.assertEqual(candidate.model_family, "YOLO11-seg")
+        self.assertEqual(candidate.label, "speech_bubble")
+        self.assertEqual(candidate.source, "yolo11_seg_mask")
+        self.assertGreater(cv2.countNonZero(candidate.mask), 0)
+        self.assertIsNotNone(FakeYOLO.last)
+        self.assertEqual(FakeYOLO.last.path, model_path)
+        call_kwargs = FakeYOLO.last.calls[0]
+        self.assertTrue(call_kwargs["retina_masks"])
+        self.assertEqual(call_kwargs["device"], "cuda:0")
+        self.assertEqual(call_kwargs["classes"], [0, 1])
+        self.assertEqual(call_kwargs["imgsz"], 960)
+
+    def test_yolo11_seg_metadata_reaches_text_regions(self):
+        img = np.full((140, 180, 3), 255, dtype=np.uint8)
+        mask = np.zeros((140, 180), dtype=np.uint8)
+        cv2.ellipse(mask, (82, 65), (52, 30), 0, 0, 360, 255, -1)
+        candidate = YoloBubbleCandidate(
+            bbox=(30, 35, 104, 60),
+            mask=mask,
+            confidence=0.91,
+            label="speech_bubble",
+            source="yolo11_seg_mask",
+            detector="yolo11_seg",
+            model_family="YOLO11-seg",
+            class_id=0,
+        )
+
+        detector = BubbleDetector("Japonés", quality_config=QualityConfig(bubble_detector="yolo11-seg"))
+        detector.yolo_detector.detect = lambda _img: [candidate]
+        regions = detector.detect_primary_bubble_regions(img)
+
+        self.assertEqual(len(regions), 1)
+        metadata = regions[0].metadata
+        self.assertEqual(metadata["detector"], "yolo11_seg")
+        self.assertEqual(metadata["model_family"], "YOLO11-seg")
+        self.assertEqual(metadata["mask_source"], "yolo11_seg_mask")
+        self.assertEqual(metadata["label"], "speech_bubble")
+        self.assertEqual(metadata["class_id"], 0)
 
 class ReadingOrderResolverTests(unittest.TestCase):
     @staticmethod
@@ -112,39 +208,39 @@ class CoreQualityTests(unittest.TestCase):
         detection = ([[95, 95], [145, 95], [145, 122], [95, 122]], "行くぞ", 0.91)
         mask = np.zeros((240, 240), dtype=np.uint8)
         cv2.ellipse(mask, (120, 110), (72, 48), 0, 0, 360, 255, -1)
-        candidate = ProfessionalBubbleCandidate(
+        candidate = YoloBubbleCandidate(
             bbox=(49, 63, 143, 95),
             mask=mask,
             confidence=0.88,
             label="speech_bubble",
-            source="professional_yolo_seg",
+            source="yolo11_seg_polygon",
         )
 
         detector = BubbleDetector("Japonés")
-        detector.professional_detector.detect = lambda _img: [candidate]
+        detector.yolo_detector.detect = lambda _img: [candidate]
         regions = detector.detect_regions(img, [detection])
 
         self.assertEqual(len(regions), 1)
         region = regions[0]
         self.assertEqual(region.kind, "dialogue")
-        self.assertEqual(region.metadata["detector"], "professional")
+        self.assertEqual(region.metadata["detector"], "yolo11_seg")
         self.assertGreater(cv2.countNonZero(region.mask), 50 * 27)
         self.assertGreater(region.bbox[2], region.text_bbox[2])
         self.assertGreater(region.bbox[3], region.text_bbox[3])
 
-    def test_professional_candidate_can_be_associated_to_text_box(self):
+    def test_yolo_candidate_can_be_associated_to_text_box(self):
         img = np.zeros((240, 240, 3), dtype=np.uint8)
         mask = np.zeros((240, 240), dtype=np.uint8)
         cv2.ellipse(mask, (120, 110), (72, 48), 0, 0, 360, 255, -1)
-        candidate = ProfessionalBubbleCandidate(
+        candidate = YoloBubbleCandidate(
             bbox=(49, 63, 143, 95),
             mask=mask,
             confidence=0.88,
             label="speech_bubble",
-            source="professional_yolo_seg",
+            source="yolo11_seg_polygon",
         )
         detector = BubbleDetector("Japonés")
-        idx, matched = detector._match_professional_candidate(
+        idx, matched = detector._match_yolo_candidate(
             (95, 95, 50, 27),
             [candidate],
             set(),
@@ -164,7 +260,7 @@ class CoreQualityTests(unittest.TestCase):
             mask=mask,
             kind="dialogue",
             confidence=0.9,
-            metadata={"detector": "professional", "region_flow": "bubble_first"},
+            metadata={"detector": "yolo11_seg", "region_flow": "bubble_first"},
         )
         detector = BubbleDetector("Japonés")
         regions = detector.build_regions_from_bubbles_and_text(img, [bubble], [])
@@ -182,7 +278,7 @@ class CoreQualityTests(unittest.TestCase):
             mask=mask,
             kind="dialogue",
             confidence=0.9,
-            metadata={"detector": "professional", "region_flow": "bubble_first"},
+            metadata={"detector": "yolo11_seg", "region_flow": "bubble_first"},
         )
         inside = ([[70, 75], [110, 75], [110, 95], [70, 95]], "行くぞ", 0.88)
         outside_sfx = ([[180, 170], [225, 170], [225, 198], [180, 198]], "ドン", 0.85)
@@ -195,10 +291,10 @@ class CoreQualityTests(unittest.TestCase):
         self.assertIn("行くぞ", dialogue.source_text_hint)
         self.assertIn("ドン", sfx.source_text_hint)
 
-    def test_merged_professional_bubble_is_split_by_separated_ocr_groups(self):
+    def test_merged_yolo_bubble_is_split_by_separated_ocr_groups(self):
         img = np.full((260, 360, 3), 255, dtype=np.uint8)
         mask = np.zeros((260, 360), dtype=np.uint8)
-        # Simula una mala detección profesional: una sola región rectangular cubre dos globos cercanos.
+        # Simula una mala detección YOLO: una sola región rectangular cubre dos globos cercanos.
         cv2.rectangle(mask, (35, 60), (325, 165), 255, -1)
         merged_bubble = TextRegion(
             bbox=(35, 60, 290, 105),
@@ -206,7 +302,7 @@ class CoreQualityTests(unittest.TestCase):
             mask=mask,
             kind="dialogue",
             confidence=0.86,
-            metadata={"detector": "professional", "region_flow": "bubble_first"},
+            metadata={"detector": "yolo11_seg", "region_flow": "bubble_first"},
         )
         left_text = ([[65, 92], [115, 92], [115, 120], [65, 120]], "行くぞ", 0.91)
         right_text = ([[235, 92], [285, 92], [285, 120], [235, 120]], "待て", 0.89)
@@ -240,7 +336,7 @@ class CoreQualityTests(unittest.TestCase):
             mask=mask,
             kind="dialogue",
             confidence=0.86,
-            metadata={"detector": "professional", "region_flow": "bubble_first"},
+            metadata={"detector": "yolo11_seg", "region_flow": "bubble_first"},
         )
         first_text = ([[80, 58], [118, 58], [118, 178], [80, 178]], "そりゃ", 0.90)
         second_text = ([[158, 58], [196, 58], [196, 178], [158, 178]], "俺は", 0.91)
@@ -255,7 +351,7 @@ class CoreQualityTests(unittest.TestCase):
     def test_split_clusters_adjacent_columns_inside_same_bubble(self):
         img = np.full((280, 560, 3), 255, dtype=np.uint8)
         mask = np.zeros((280, 560), dtype=np.uint8)
-        # Una detección profesional demasiado grande cubre dos globos. Cada globo tiene
+        # Una detección YOLO demasiado grande cubre dos globos. Cada globo tiene
         # dos columnas OCR cercanas que NO deben transformarse en cuatro globos.
         cv2.rectangle(mask, (30, 35), (520, 235), 255, -1)
         merged_bubble = TextRegion(
@@ -264,7 +360,7 @@ class CoreQualityTests(unittest.TestCase):
             mask=mask,
             kind="dialogue",
             confidence=0.86,
-            metadata={"detector": "professional", "region_flow": "bubble_first"},
+            metadata={"detector": "yolo11_seg", "region_flow": "bubble_first"},
         )
         left_a = ([[65, 62], [155, 62], [155, 220], [65, 220]], "そりゃ", 0.91)
         left_b = ([[150, 64], [195, 64], [195, 205], [150, 205]], "そうだろ", 0.89)
@@ -294,7 +390,7 @@ class CoreQualityTests(unittest.TestCase):
             mask=mask,
             kind="dialogue",
             confidence=0.86,
-            metadata={"detector": "professional", "region_flow": "bubble_first"},
+            metadata={"detector": "yolo11_seg", "region_flow": "bubble_first"},
         )
         a = ([[55, 55], [88, 55], [88, 130], [55, 130]], "A", 0.90)
         b = ([[145, 55], [178, 55], [178, 130], [145, 130]], "B", 0.91)

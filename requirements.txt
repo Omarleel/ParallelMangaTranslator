@@ -14,7 +14,7 @@ groq
 loguru
 numpy<2
 PyYAML>=6.0
-ultralytics>=8.0.0
+ultralytics>=8.3.0
 huggingface_hub>=0.23.0
 # Evita que manga-ocr instale una versión de transformers que exige torch >= 2.4.
 transformers>=4.30,<4.46

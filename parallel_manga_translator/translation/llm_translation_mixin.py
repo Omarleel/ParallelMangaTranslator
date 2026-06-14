@@ -30,7 +30,7 @@ class LlmTranslationMixin:
         glossary_str = f"Glosario obligatorio:\n{glossary_text}\n" if glossary_text else ""
         memory_str = f"{character_memory_text.strip()}\n" if character_memory_text and character_memory_text.strip() else ""
         return (
-            f"Eres un traductor profesional de manga del {self.idioma_entrada} al {self.idioma_salida}.\n"
+            f"Eres un traductor YOLO de manga del {self.idioma_entrada} al {self.idioma_salida}.\n"
             f"{lore_str}"
             f"{glossary_str}"
             f"{memory_str}"

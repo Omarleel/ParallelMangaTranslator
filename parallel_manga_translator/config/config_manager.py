@@ -161,6 +161,12 @@ class ConfigManager:
 
     def _build_quality_config(self) -> QualityConfig:
         q = self._section("quality")
+
+        # Los pesos del detector YOLO se configuran únicamente con bubble_model_*.
+        bubble_model_path = str(q.get("bubble_model_path", "")).strip()
+        bubble_model_repo = str(q.get("bubble_model_repo", "huyvux3005/manga109-segmentation-bubble")).strip()
+        bubble_model_file = str(q.get("bubble_model_file", "best.pt")).strip()
+
         return QualityConfig(
             bubble_detection=bool_value(q.get("bubble_detection", True), True),
             bubble_fill=bool_value(q.get("bubble_fill", True), True),
@@ -170,16 +176,21 @@ class ConfigManager:
             bubble_fill_feather=float_value(q.get("bubble_fill_feather", 1.0), 1.0),
             bubble_fill_flat_max_rectangularity=float_value(q.get("bubble_fill_flat_max_rectangularity", 0.86), 0.86),
             bubble_fill_shape_aware=bool_value(q.get("bubble_fill_shape_aware", True), True),
-            bubble_detector=str(q.get("bubble_detector", "professional")),
-            require_professional=bool_value(q.get("require_professional", True), True),
+            bubble_detector=str(q.get("bubble_detector", "yolo11-seg")),
+            require_yolo=bool_value(q.get("require_yolo", True), True),
             bubble_first=bool_value(q.get("bubble_first", True), True),
             ocr_region_mode=str(q.get("ocr_region_mode", "bubble")),
-            bubble_model_repo=str(q.get("bubble_model_repo", "huyvux3005/manga109-segmentation-bubble")),
-            bubble_model_file=str(q.get("bubble_model_file", "best.pt")),
-            bubble_model_path=str(q.get("bubble_model_path", "")),
+            bubble_model_repo=bubble_model_repo,
+            bubble_model_file=bubble_model_file,
+            bubble_model_path=bubble_model_path,
             bubble_device=str(q.get("bubble_device", "")),
             bubble_confidence=float_value(q.get("bubble_confidence", 0.35), 0.35),
             bubble_img_size=int_value(q.get("bubble_img_size", 1024), 1024),
+            bubble_retina_masks=bool_value(q.get("bubble_retina_masks", True), True),
+            bubble_model_classes=str(q.get("bubble_model_classes", "")),
+            bubble_include_labels=str(q.get("bubble_include_labels", "")),
+            bubble_exclude_labels=str(q.get("bubble_exclude_labels", "ignore_art,panel,page,background")),
+            bubble_max_area_ratio=float_value(q.get("bubble_max_area_ratio", 0.55), 0.55),
             inpaint_mode=str(q.get("inpaint_mode", "auto")),
             split_merged_bubbles=bool_value(q.get("split_merged_bubbles", True), True),
             bubble_split_min_ocr_groups=int_value(q.get("bubble_split_min_ocr_groups", 2), 2),

@@ -29,7 +29,7 @@ dependencies:
       - loguru
       - numpy<2
       - PyYAML>=6.0
-      - ultralytics>=8.0.0
+      - ultralytics>=8.3.0
       - huggingface_hub>=0.23.0
       # Importado como cv2 en el código; falta en requirements.txt del adjunto
       - opencv-python-headless>=4.8

@@ -54,9 +54,9 @@ pip install -r requirements.txt
 py ParallelMangaTranslator.py
 ```
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Omarleel/ParallelMangaTranslator/blob/main/ParallelMangaTranslator.ipynb)
-## Mejoras profesionales incluidas
+## Mejoras YOLOes incluidas
 
-Esta versión usa **solo modelos preentrenados** para detectar globos de texto mediante YOLO/Ultralytics. El objetivo principal es limpiar y renderizar sobre la **máscara del globo**, no solo sobre la caja OCR de las letras. La detección heurística de globos fue eliminada: si el modelo profesional no está instalado, no se puede descargar o no existe la ruta indicada, el programa lanza error en vez de inventar globos por reglas OpenCV.
+Esta versión usa **YOLO11-seg fine-tuned como detector principal** para globos/texto de manga mediante Ultralytics. El objetivo principal es limpiar y renderizar sobre la **máscara del globo**, no solo sobre la caja OCR de las letras. La detección heurística de globos fue eliminada: si el modelo YOLO no está instalado, no se puede descargar o no existe la ruta indicada, el programa lanza error en vez de inventar globos por reglas OpenCV.
 
 ### Uso recomendado
 
@@ -81,17 +81,25 @@ Para calidad equilibrada:
 
 ```yaml
 quality:
-  bubble_detector: professional
+  bubble_detector: yolo11-seg
   inpaint_mode: auto
-  require_professional: true
+  require_yolo: true
+  bubble_retina_masks: true
 ```
 
-Para usar un modelo local de segmentación de globos:
+Para usar tus pesos locales YOLO11-seg fine-tuned:
 
 ```yaml
 quality:
-  bubble_model_path: /ruta/al/modelo/best.pt
+  bubble_detector: yolo11-seg
+  bubble_model_path: /ruta/al/modelo/yolo11s-manga-seg.pt
+  # Opcional: limita por IDs de clase si tu modelo detecta más cosas.
+  bubble_model_classes: "0,1,2"
+  # Opcional: excluye clases que nunca deben limpiarse.
+  bubble_exclude_labels: "ignore_art,panel,page,background"
 ```
+
+Para usar pesos desde Hugging Face, conserva `bubble_model_repo` y `bubble_model_file`.
 
 Para conservar onomatopeyas originales:
 
@@ -178,7 +186,7 @@ El código fue reorganizado como paquete Python con nombres `snake_case` y subpa
 ```text
 parallel_manga_translator/
   config/          configuración YAML, constantes y carga de secretos
-  detection/       detección de globos y regiones profesionales
+  detection/       detección de globos y regiones YOLOes
   geometry/        utilidades geométricas para cajas y máscaras
   infrastructure/  logging, caché y manejo estructurado de errores
   inpainting/      adaptadores de modelos de limpieza/inpainting

@@ -26,7 +26,7 @@ class CleanInpaintingPipelineMixin:
         return self.INPAINTER_FACTORIES[model_name]()
 
     def limpiar_manga(self, imagen: np.ndarray):
-        # Flujo profesional: primero detectar todos los globos con el segmentador entrenado.
+        # Flujo YOLO: primero detectar todos los globos con el segmentador entrenado.
         # El OCR global se ejecuta después solo para asociar pistas, onomatopeyas y texto libre.
         regiones_primarias = self.bubble_detector.detect_primary_bubble_regions(imagen)
         resultados = self.obtener_cuadros_delimitadores(imagen)
@@ -48,7 +48,7 @@ class CleanInpaintingPipelineMixin:
         if not regiones:
             return imagen.copy()
 
-        # El modo profesional por defecto limpia el interior completo de globos detectados.
+        # El modo YOLO por defecto limpia el interior completo de globos detectados.
         # Para SFX sobre dibujo conserva inpainting, porque rellenar con blanco destruiría arte.
         imagen_base = imagen.copy()
         bubble_regions = [r for r in regiones if r.kind in {"dialogue", "narration", "unknown"} and self._region_matches_source_language(r)]

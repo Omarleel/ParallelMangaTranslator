@@ -85,7 +85,7 @@ class RegionExtractionMixin:
     def _masked_region_crop_for_ocr(self, imagen: np.ndarray, region: TextRegion) -> np.ndarray:
         """Prepara un recorte de OCR desde la región detectada.
 
-        Para globos usa la máscara profesional completa: OCR dentro del globo, no dentro de la
+        Para globos usa la máscara YOLO completa: OCR dentro del globo, no dentro de la
         caja OCR antigua. Para texto libre/SFX se conserva su máscara local expandida.
         """
         height_img, width_img = imagen.shape[:2]

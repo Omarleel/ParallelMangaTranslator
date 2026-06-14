@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from parallel_manga_translator.detection.professional_bubble_detector import ProfessionalBubbleCandidate
+from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 
@@ -24,7 +24,7 @@ class BubbleTextRulesMixin:
         normalized = (label or "").strip().lower().replace("_", " ").replace("-", " ")
         return any(token in normalized for token in {"narration", "caption", "box", "thought"})
 
-    def _kind_from_professional_candidate(self, candidate: ProfessionalBubbleCandidate, fallback_sfx: bool = False) -> str:
+    def _kind_from_yolo_candidate(self, candidate: YoloBubbleCandidate, fallback_sfx: bool = False) -> str:
         if fallback_sfx or self._label_is_sfx(candidate.label):
             return "sfx"
         if self._label_is_narration(candidate.label):
@@ -316,7 +316,7 @@ class BubbleTextRulesMixin:
 
         # Filtro específico para texto libre: no conviertas números/símbolos
         # solitarios en regiones a limpiar. Los globos reales ya están cubiertos por
-        # el detector profesional; aquí solo queremos texto huérfano confiable.
+        # el detector YOLO; aquí solo queremos texto huérfano confiable.
         if not looks_sfx:
             if only_digits_or_symbols:
                 return False, "solo_numeros_o_simbolos_ocr_ruido"

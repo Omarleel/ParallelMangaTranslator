@@ -37,33 +37,44 @@ quality:
   bubble_fill: true
   # Limpieza de globo sin parches cuadrados:
   # - false: no se rellena plano todo el globo, solo se borra tinta del texto dentro de la máscara segura.
-  # - true: comportamiento antiguo, relleno plano del interior si la máscara no parece rectangular.
+  # - true: rellena plano el interior si la máscara no parece rectangular.
   bubble_fill_whole_interior: false
   # Margen interno para no tocar el borde negro del globo.
   bubble_fill_edge_margin: 6
   # Dilatación de la máscara de tinta del texto; sube a 3 si quedan halos, baja a 1 si borra demasiado.
   bubble_fill_text_dilate: 2
-  # Opciones de compatibilidad para módulos antiguos/experimentos de relleno.
+  # Opciones avanzadas para suavizado y relleno de máscara.
   bubble_fill_feather: 1.0
   bubble_fill_flat_max_rectangularity: 0.82
   bubble_fill_shape_aware: true
-  bubble_detector: professional
-  require_professional: true
+  bubble_detector: yolo11-seg
+  require_yolo: true
   bubble_first: true
   # bubble: OCR en el globo/máscara completa; text_hint: OCR en caja de texto asociada si existe.
   ocr_region_mode: bubble
-  # Modelo de segmentación de globos. Si bubble_model_path está vacío, se descarga de Hugging Face.
+  # Detector principal: YOLO11-seg fine-tuned o cualquier peso Ultralytics-seg compatible.
+  # Usa bubble_model_path para pesos locales, o bubble_model_repo/bubble_model_file para Hugging Face.
   bubble_model_repo: huyvux3005/manga109-segmentation-bubble
   bubble_model_file: best.pt
   bubble_model_path: ""
-  # Usa 0/cuda/cuda:0 para GPU, cpu para CPU, o vacío para que Ultralytics decida.
+  # Usa 0/cuda/cuda:0/gpu para GPU, cpu para CPU, o vacío/auto para que Ultralytics decida.
   bubble_device: "gpu"
   bubble_confidence: 0.45
   bubble_img_size: 1024
+  # Máscaras de alta resolución de Ultralytics; mejora bordes al limpiar.
+  bubble_retina_masks: true
+  # Opcional: IDs numéricos de clases YOLO a pasar a inferencia, por ejemplo "0,1".
+  bubble_model_classes: ""
+  # Opcional: labels permitidos si tu modelo fine-tuned tiene muchas clases. Vacío = acepta todas salvo excludes.
+  bubble_include_labels: ""
+  # Evita que clases de arte/página/panel entren al limpiador.
+  bubble_exclude_labels: "ignore_art,panel,page,background"
+  # Rechaza detecciones demasiado grandes respecto a la página completa.
+  bubble_max_area_ratio: 0.55
   # auto: globo por relleno + SFX por inpainting rápido
   # quality: usa el modelo de inpainting para SFX
   # bubble_only: solo limpia interiores de globos, máximo rendimiento
-  # legacy fue desactivado porque dependía de máscaras OCR/heurísticas.
+  # No hay modo heurístico: los globos dependen del detector YOLO.
   inpaint_mode: auto
 
   # Control técnico para evitar que globos cercanos terminen como una sola región.
@@ -82,7 +93,7 @@ quality:
   # Agrupación OCR conservadora: subir valores separa más textos/globos cercanos; bajar valores une más.
   # Importante para manga vertical: por defecto NO se fusionan columnas CJK adyacentes solo por cercanía.
   ocr_group_merge_x_overlap: 0.52
-  ocr_group_merge_y_gap_ratio: 0.55
+  ocr_group_merge_y_gap_ratio: 0.25
   ocr_group_merge_cjk_y_overlap: 0.80
   ocr_group_merge_cjk_x_gap_ratio: 0.35
   ocr_group_merge_cjk_columns: false

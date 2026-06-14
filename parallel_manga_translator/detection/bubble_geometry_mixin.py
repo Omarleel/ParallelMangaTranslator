@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from parallel_manga_translator.detection.professional_bubble_detector import ProfessionalBubbleCandidate
+from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 from parallel_manga_translator.geometry.box_geometry import BoxGeometry
