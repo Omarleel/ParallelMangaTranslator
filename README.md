@@ -56,7 +56,7 @@ py ParallelMangaTranslator.py
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Omarleel/ParallelMangaTranslator/blob/main/ParallelMangaTranslator.ipynb)
 ## Mejoras YOLOes incluidas
 
-Esta versión usa **YOLO11-seg fine-tuned como detector principal** para globos/texto de manga mediante Ultralytics. El objetivo principal es limpiar y renderizar sobre la **máscara del globo**, no solo sobre la caja OCR de las letras. La detección heurística de globos fue eliminada: si el modelo YOLO no está instalado, no se puede descargar o no existe la ruta indicada, el programa lanza error en vez de inventar globos por reglas OpenCV.
+Esta versión usa **YOLO11-seg fine-tuned como detector principal** para globos/texto de manga mediante Ultralytics. La máscara del globo se conserva como **zona segura para OCR/renderizado** y se separa de `clean_mask`, que representa la **tinta/texto original a borrar**. Así una detección de globo no limpia todo el interior por accidente. La detección heurística de globos fue eliminada: si el modelo YOLO no está instalado, no se puede descargar o no existe la ruta indicada, el programa lanza error en vez de inventar globos por reglas OpenCV.
 
 ### Uso recomendado
 

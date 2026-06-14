@@ -33,11 +33,12 @@ class CleanInpaintingPipelineMixin:
         regiones = self.bubble_detector.build_regions_from_bubbles_and_text(imagen, regiones_primarias, resultados)
         regiones = self._filter_regions_by_source_language(regiones)
         regiones = self._filter_regions_by_specialized_ocr_guard(imagen, regiones)
+        regiones = self._attach_clean_masks(imagen, regiones)
         self.last_regions = regiones
 
-        # Sin globos/modelo no inventamos regiones heurísticas. Si la página no tiene
-        # globos ni texto libre/SFX, la máscara queda vacía.
-        mascara_capa = BubbleDetector.compose_mask(regiones, imagen.shape) if regiones else np.zeros(imagen.shape[:2], dtype=np.uint8)
+        # Esta es la máscara de limpieza/tinta, no la máscara completa de globo.
+        # La máscara de globo se conserva en region.mask como zona segura para OCR/render.
+        mascara_capa = BubbleDetector.compose_clean_mask(regiones, imagen.shape) if regiones else np.zeros(imagen.shape[:2], dtype=np.uint8)
 
         imagen_limpia = self._clean_with_regions(imagen, mascara_capa, resultados, regiones)
         return mascara_capa, imagen_limpia, regiones
@@ -48,8 +49,8 @@ class CleanInpaintingPipelineMixin:
         if not regiones:
             return imagen.copy()
 
-        # El modo YOLO por defecto limpia el interior completo de globos detectados.
-        # Para SFX sobre dibujo conserva inpainting, porque rellenar con blanco destruiría arte.
+        # El modo YOLO mantiene dos máscaras distintas: region.mask es la zona segura
+        # del globo; region.clean_mask es la tinta/texto original que se borra.
         imagen_base = imagen.copy()
         bubble_regions = [r for r in regiones if r.kind in {"dialogue", "narration", "unknown"} and self._region_matches_source_language(r)]
         # Texto libre y onomatopeyas se limpian con inpainting, no con relleno plano de globo.
@@ -68,7 +69,7 @@ class CleanInpaintingPipelineMixin:
 
         # Las onomatopeyas/fx fuera de globo se inpaintan con máscara propia. En modo quality
         # se usa el modelo seleccionado; en auto/fast se prefiere OpenCV por velocidad.
-        sfx_mask = BubbleDetector.compose_mask(sfx_regions, imagen.shape) if sfx_regions else np.zeros(mascara_capa.shape, dtype=np.uint8)
+        sfx_mask = BubbleDetector.compose_clean_mask(sfx_regions, imagen.shape) if sfx_regions else np.zeros(mascara_capa.shape, dtype=np.uint8)
         if cv2.countNonZero(sfx_mask) > 0:
             if self.inpaint_mode == "quality" and self.inpaint_model not in {"opencv-tela", "B/N"}:
                 res_impainting = self._run_async_inpaint(imagen_base, sfx_mask)
@@ -125,14 +126,18 @@ class CleanInpaintingPipelineMixin:
 
             # Comportamiento antiguo, solo opt-in y solo si la máscara no parece una caja.
             # Esto evita que una segmentación rectangular pinte parches cuadrados sobre bordes.
-            if self.bubble_fill_whole_interior and self._mask_rectangularity(safe_mask) < 0.82:
-                salida = self._apply_solid_fill(salida, safe_mask, fill_color, sigma=1.0)
+            clean_mask = getattr(region, "clean_mask", None)
+            if clean_mask is None or getattr(clean_mask, "size", 0) == 0:
+                clean_mask, _source = self._build_clean_mask_for_region(salida, region)
+                region.clean_mask = self._binary_mask(clean_mask, salida.shape)
+            else:
+                clean_mask = self._binary_mask(clean_mask, salida.shape)
 
-            text_zone = self._bubble_text_zone(region, salida.shape)
-            ink_mask = self._text_ink_mask(salida, text_zone, safe_mask, self.bubble_fill_text_dilate)
-            if cv2.countNonZero(ink_mask) == 0:
+            if cv2.countNonZero(clean_mask) == 0:
                 continue
-            salida = self._apply_solid_fill(salida, ink_mask, fill_color, sigma=0.65)
+
+            sigma = 1.0 if str((region.metadata or {}).get("clean_mask_source", "")).endswith("opt_in") else 0.65
+            salida = self._apply_solid_fill(salida, clean_mask, fill_color, sigma=sigma)
         return salida
 
     def _ejecutar_inpainting(self, imagen: np.ndarray, mascara_capa: np.ndarray, resultados):

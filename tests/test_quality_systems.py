@@ -463,3 +463,90 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CleanMaskSeparationTests(unittest.TestCase):
+    def _cleaner(self):
+        cleaner = object.__new__(CleanManga)
+        cleaner.bubble_fill_edge_margin = 3
+        cleaner.bubble_fill_text_dilate = 1
+        cleaner.bubble_fill_whole_interior = False
+        cleaner.bubble_fill_flat_max_rectangularity = 0.86
+        return cleaner
+
+    def test_bubble_region_mask_and_ink_clean_mask_are_separate(self):
+        image = np.full((120, 120, 3), 255, dtype=np.uint8)
+        image[48:62, 44:70] = 0
+        bubble_mask = np.zeros((120, 120), dtype=np.uint8)
+        bubble_mask[18:100, 18:100] = 255
+        region = TextRegion(
+            bbox=(18, 18, 82, 82),
+            text_bbox=(44, 48, 26, 14),
+            mask=bubble_mask,
+            kind="dialogue",
+            detections_count=1,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+
+        bubble_pixels = int(np.count_nonzero(prepared.mask))
+        clean_pixels = int(np.count_nonzero(prepared.clean_mask))
+        self.assertGreater(bubble_pixels, 5000)
+        self.assertGreater(clean_pixels, 0)
+        self.assertLess(clean_pixels, bubble_pixels * 0.30)
+        self.assertEqual(
+            int(np.count_nonzero(BubbleDetector.compose_clean_mask([prepared], image.shape))),
+            clean_pixels,
+        )
+        self.assertGreater(
+            int(np.count_nonzero(BubbleDetector.compose_mask([prepared], image.shape))),
+            clean_pixels,
+        )
+        self.assertTrue(prepared.metadata["bubble_clean_mask_separated"])
+        self.assertEqual(prepared.metadata["clean_mask_source"], "text_ink_inside_bubble")
+
+    def test_bubble_without_text_zone_does_not_clean_whole_bubble(self):
+        image = np.full((100, 100, 3), 255, dtype=np.uint8)
+        bubble_mask = np.zeros((100, 100), dtype=np.uint8)
+        bubble_mask[10:90, 10:90] = 255
+        region = TextRegion(
+            bbox=(10, 10, 80, 80),
+            text_bbox=(10, 10, 80, 80),
+            mask=bubble_mask,
+            kind="dialogue",
+            detections_count=0,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+
+        self.assertEqual(int(np.count_nonzero(prepared.clean_mask)), 0)
+        self.assertEqual(int(np.count_nonzero(BubbleDetector.compose_clean_mask([prepared], image.shape))), 0)
+        self.assertGreater(int(np.count_nonzero(BubbleDetector.compose_mask([prepared], image.shape))), 0)
+        self.assertEqual(prepared.metadata["clean_mask_source"], "empty_text_ink_inside_bubble")
+
+    def test_dark_narration_box_uses_bright_ink_clean_mask(self):
+        image = np.full((100, 100, 3), 255, dtype=np.uint8)
+        image[15:85, 15:85] = 20
+        image[42:55, 38:64] = 245
+        box_mask = np.zeros((100, 100), dtype=np.uint8)
+        box_mask[15:85, 15:85] = 255
+        region = TextRegion(
+            bbox=(15, 15, 70, 70),
+            text_bbox=(38, 42, 26, 13),
+            mask=box_mask,
+            kind="narration",
+            detections_count=1,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+
+        clean_pixels = int(np.count_nonzero(prepared.clean_mask))
+        self.assertGreater(clean_pixels, 0)
+        self.assertLess(clean_pixels, int(np.count_nonzero(prepared.mask)) * 0.30)
+        self.assertEqual(prepared.metadata["clean_mask_source"], "text_ink_inside_bubble")

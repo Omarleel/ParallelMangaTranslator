@@ -59,6 +59,7 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
         self.bubble_fill_whole_interior = bool(quality_config.bubble_fill_whole_interior)
         self.bubble_fill_edge_margin = int(quality_config.bubble_fill_edge_margin)
         self.bubble_fill_text_dilate = int(quality_config.bubble_fill_text_dilate)
+        self.bubble_fill_flat_max_rectangularity = float(quality_config.bubble_fill_flat_max_rectangularity)
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.onomatopoeia_mode = str(onomatopoeia_config.mode or "translate").strip().lower()
         self.translate_onomatopoeia = bool(onomatopoeia_config.translate)

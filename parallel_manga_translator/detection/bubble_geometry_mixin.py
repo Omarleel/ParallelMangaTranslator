@@ -133,9 +133,35 @@ class BubbleGeometryMixin:
 
     @staticmethod
     def compose_mask(regions: Sequence[TextRegion], image_shape) -> np.ndarray:
+        """Compone la máscara de región segura.
+
+        En globos esta máscara representa el interior/área permitida para OCR y
+        renderizado. No debe asumirse que es la máscara de limpieza.
+        """
         height, width = image_shape[:2]
         mask = np.zeros((height, width), dtype=np.uint8)
         for region in regions:
             if region.mask is not None and region.mask.size:
+                mask = cv2.bitwise_or(mask, region.mask)
+        return mask
+
+    @staticmethod
+    def compose_clean_mask(regions: Sequence[TextRegion], image_shape) -> np.ndarray:
+        """Compone únicamente la máscara de tinta/texto a borrar.
+
+        Para globos se usa ``region.clean_mask``. Si una región de globo no tiene
+        clean_mask, se considera vacía para evitar limpiar todo el globo por
+        accidente. Para texto libre/SFX se conserva ``region.mask`` como fallback
+        porque esa máscara ya representa el texto expandido, no un globo completo.
+        """
+        height, width = image_shape[:2]
+        mask = np.zeros((height, width), dtype=np.uint8)
+        bubble_kinds = {"dialogue", "narration", "unknown"}
+        for region in regions:
+            region_clean = getattr(region, "clean_mask", None)
+            if region_clean is not None and getattr(region_clean, "size", 0):
+                mask = cv2.bitwise_or(mask, (region_clean > 0).astype(np.uint8) * 255)
+                continue
+            if region.kind not in bubble_kinds and region.mask is not None and region.mask.size:
                 mask = cv2.bitwise_or(mask, region.mask)
         return mask
