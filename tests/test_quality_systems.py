@@ -470,8 +470,13 @@ class CleanMaskSeparationTests(unittest.TestCase):
         cleaner = object.__new__(CleanManga)
         cleaner.bubble_fill_edge_margin = 3
         cleaner.bubble_fill_text_dilate = 1
+        cleaner.bubble_fill_feather = 1.0
         cleaner.bubble_fill_whole_interior = False
         cleaner.bubble_fill_flat_max_rectangularity = 0.86
+        cleaner.bubble_fill_strategy = "solid"
+        cleaner.bubble_fill_background_std_threshold = 18.0
+        cleaner.bubble_fill_inpaint_padding = 8
+        cleaner.inpaint_model = "opencv-tela"
         return cleaner
 
     def test_bubble_region_mask_and_ink_clean_mask_are_separate(self):
@@ -595,3 +600,118 @@ class CleanMaskSeparationTests(unittest.TestCase):
 
         self.assertGreater(float(np.mean(filled[45:52, 42:60])), 215.0)
         self.assertGreater(float(np.mean(prepared.metadata["fill_color_bgr"])), 215.0)
+
+    def test_inpaint_strategy_uses_configured_inpaint_even_on_uniform_background(self):
+        class DummyConfiguredInpainter:
+            def __init__(self):
+                self.calls = 0
+
+            def inpaint(self, img, mask):
+                self.calls += 1
+                out = img.copy()
+                out[mask > 0] = 77
+                return out
+
+        image = np.full((120, 120, 3), 255, dtype=np.uint8)
+        image[48:62, 44:70] = 0
+        bubble_mask = np.zeros((120, 120), dtype=np.uint8)
+        bubble_mask[18:102, 18:102] = 255
+        region = TextRegion(
+            bbox=(18, 18, 84, 84),
+            text_bbox=(44, 48, 26, 14),
+            mask=bubble_mask,
+            kind="dialogue",
+            detections_count=1,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        cleaner.bubble_fill_strategy = "inpaint"
+        cleaner.bubble_fill_background_std_threshold = 999.0
+        cleaner.inpainter = DummyConfiguredInpainter()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+        filled = cleaner._fill_bubble_interiors(image, [prepared])
+
+        self.assertEqual(cleaner.inpainter.calls, 1)
+        self.assertEqual(prepared.metadata["bubble_fill_method"], "configured_inpaint")
+        self.assertEqual(prepared.metadata["bubble_fill_strategy"], "inpaint")
+        self.assertAlmostEqual(float(np.mean(filled[50:58, 48:65])), 77.0, delta=6.0)
+
+    def test_varied_bubble_background_uses_configured_inpaint_model(self):
+        class DummyConfiguredInpainter:
+            def __init__(self):
+                self.calls = 0
+
+            def inpaint(self, img, mask):
+                self.calls += 1
+                out = img.copy()
+                out[mask > 0] = 123
+                return out
+
+        image = np.full((120, 120, 3), 255, dtype=np.uint8)
+        # Fondo variado dentro del globo: simula trama/transparencia sobre dibujo.
+        for y in range(18, 102):
+            for x in range(18, 102):
+                v = 170 + ((x * 7 + y * 5) % 70)
+                image[y, x] = (v, v, v)
+        image[48:62, 44:70] = 0
+        bubble_mask = np.zeros((120, 120), dtype=np.uint8)
+        bubble_mask[18:102, 18:102] = 255
+        region = TextRegion(
+            bbox=(18, 18, 84, 84),
+            text_bbox=(44, 48, 26, 14),
+            mask=bubble_mask,
+            kind="dialogue",
+            detections_count=1,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        cleaner.bubble_fill_strategy = "auto"
+        cleaner.bubble_fill_background_std_threshold = 4.0
+        cleaner.inpainter = DummyConfiguredInpainter()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+        filled = cleaner._fill_bubble_interiors(image, [prepared])
+
+        self.assertEqual(cleaner.inpainter.calls, 1)
+        self.assertEqual(prepared.metadata["bubble_fill_method"], "configured_inpaint")
+        self.assertEqual(prepared.metadata["bubble_fill_inpaint_model"], "opencv-tela")
+        self.assertGreater(prepared.metadata["background_variation_score"], 4.0)
+        self.assertAlmostEqual(float(np.mean(filled[50:58, 48:65])), 123.0, delta=6.0)
+
+    def test_bubble_fill_strategy_solid_forces_solid_fill(self):
+        class DummyConfiguredInpainter:
+            def __init__(self):
+                self.calls = 0
+
+            def inpaint(self, img, mask):
+                self.calls += 1
+                return img.copy()
+
+        image = np.full((120, 120, 3), 255, dtype=np.uint8)
+        for y in range(18, 102):
+            for x in range(18, 102):
+                v = 170 + ((x * 7 + y * 5) % 70)
+                image[y, x] = (v, v, v)
+        image[48:62, 44:70] = 0
+        bubble_mask = np.zeros((120, 120), dtype=np.uint8)
+        bubble_mask[18:102, 18:102] = 255
+        region = TextRegion(
+            bbox=(18, 18, 84, 84),
+            text_bbox=(44, 48, 26, 14),
+            mask=bubble_mask,
+            kind="dialogue",
+            detections_count=1,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        cleaner.bubble_fill_strategy = "solid"
+        cleaner.bubble_fill_background_std_threshold = 4.0
+        cleaner.inpainter = DummyConfiguredInpainter()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+        cleaner._fill_bubble_interiors(image, [prepared])
+
+        self.assertEqual(cleaner.inpainter.calls, 0)
+        self.assertEqual(prepared.metadata["bubble_fill_method"], "solid_color")
+        self.assertGreater(prepared.metadata["background_variation_score"], 4.0)

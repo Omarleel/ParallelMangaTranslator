@@ -79,7 +79,9 @@ class QualityConfig:
     bubble_fill_text_dilate: int = 2
     bubble_fill_feather: float = 1.0
     bubble_fill_flat_max_rectangularity: float = 0.86
-    bubble_fill_shape_aware: bool = True
+    bubble_fill_strategy: str = "inpaint"
+    bubble_fill_background_std_threshold: float = 18.0
+    bubble_fill_inpaint_padding: int = 18
     bubble_detector: str = "yolo11-seg"
     require_yolo: bool = True
     bubble_first: bool = True

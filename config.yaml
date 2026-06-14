@@ -46,7 +46,16 @@ quality:
   # Opciones avanzadas para suavizado y relleno de máscara.
   bubble_fill_feather: 1.0
   bubble_fill_flat_max_rectangularity: 0.82
-  bubble_fill_shape_aware: true
+  # Cómo borrar la tinta dentro del globo usando clean_mask:
+  # - inpaint: usa siempre translation.inpaint_model, por ejemplo lama_mpe, sobre la tinta.
+  # - auto: usa relleno sólido en fondos uniformes e inpaint configurado en fondos complejos.
+  # - solid: usa siempre color sólido local.
+  bubble_fill_strategy: inpaint
+  # Solo se usa con bubble_fill_strategy: auto.
+  # Sube si inpainta demasiados globos blancos; baja si quedan manchas planas en tramas/degradados.
+  bubble_fill_background_std_threshold: 18.0
+  # Contexto alrededor del globo/texto usado al inpaintar fondos complejos.
+  bubble_fill_inpaint_padding: 18
   bubble_detector: yolo11-seg
   require_yolo: true
   bubble_first: true

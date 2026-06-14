@@ -87,6 +87,22 @@ quality:
   bubble_retina_masks: true
 ```
 
+La máscara del globo y la máscara de tinta están separadas: `region.mask` es la zona segura y `region.clean_mask` es lo que se borra. Por defecto, el borrado de tinta dentro de globos usa el modelo configurado en `translation.inpaint_model`, así que si eliges `lama_mpe` no se rellena con blanco/sólido salvo fallback por error o modelo sin API de máscara.
+
+```yaml
+translation:
+  inpaint_model: lama_mpe  # opencv-tela | lama_mpe | lama_large_512px | aot | B/N
+
+quality:
+  # inpaint = siempre usa translation.inpaint_model sobre clean_mask
+  # auto = sólido en fondos uniformes, inpaint en fondos complejos
+  # solid = siempre color sólido local
+  bubble_fill_strategy: inpaint
+  bubble_fill_background_std_threshold: 18.0  # solo aplica con auto
+  bubble_fill_inpaint_padding: 18
+```
+
+
 Para usar tus pesos locales YOLO11-seg fine-tuned:
 
 ```yaml

@@ -84,36 +84,67 @@ class CleanInpaintingPipelineMixin:
         return imagen_base
 
     @staticmethod
-    def _dominant_fill_color(region_img: np.ndarray, local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None):
-        """Estima el color de fondo de una región segura.
+    def _background_sample_mask(local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None) -> np.ndarray:
+        """Devuelve la zona de fondo: región segura menos tinta a borrar.
 
-        ``local_mask`` representa la zona segura del globo/caja. Cuando existe
-        ``exclude_mask`` representa la tinta que se va a borrar y se excluye de
-        la muestra de fondo. Esto es importante para cajas negras con texto
-        blanco: si se muestrea el globo completo, la tinta blanca puede dominar
-        el color elegido y el borrado termina pintando blanco sobre fondo negro.
+        La misma muestra se usa para elegir color sólido y para decidir si el
+        fondo es uniforme o complejo. Excluir la tinta evita confundir texto
+        blanco sobre caja negra con un fondo claro.
         """
-        if region_img.size == 0 or local_mask.size == 0:
-            return (255, 255, 255)
+        if local_mask is None or getattr(local_mask, "size", 0) == 0:
+            return np.zeros((0, 0), dtype=np.uint8)
 
         base_mask = (local_mask > 0).astype(np.uint8)
         if cv2.countNonZero(base_mask) == 0:
+            return base_mask
+
+        if exclude_mask is None or not getattr(exclude_mask, "size", 0):
+            return base_mask
+
+        exclusion = (exclude_mask > 0).astype(np.uint8)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        dilated_exclusion = cv2.dilate(exclusion, kernel, iterations=1)
+        sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not(dilated_exclusion))
+
+        # Si la tinta ocupa casi todo el área segura, usa una exclusión menos
+        # agresiva antes de caer al área completa.
+        if cv2.countNonZero(sample_mask) < max(16, int(cv2.countNonZero(base_mask) * 0.04)):
+            sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not(exclusion))
+        if cv2.countNonZero(sample_mask) == 0:
+            sample_mask = base_mask
+        return sample_mask
+
+    @staticmethod
+    def _background_variation_score(region_img: np.ndarray, local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None) -> float:
+        """Mide variación del fondo seguro.
+
+        Valores bajos suelen ser globos blancos/negros/grises uniformes. Valores
+        altos indican degradados, tramas, globos transparentes o dibujo debajo;
+        esos casos se limpian mejor con inpainting que con un color plano.
+        """
+        if region_img.size == 0 or local_mask is None or getattr(local_mask, "size", 0) == 0:
+            return 0.0
+        sample_mask = CleanInpaintingPipelineMixin._background_sample_mask(local_mask, exclude_mask)
+        if sample_mask.size == 0 or cv2.countNonZero(sample_mask) == 0:
+            return 0.0
+        pixels = region_img[sample_mask > 0]
+        if pixels.size == 0:
+            return 0.0
+        pixels = pixels.reshape(-1, 3).astype(np.float32)
+        # Luma BGR aproximada. La desviación de luma captura tramas manga y
+        # fondos transparentes sin sobre-reaccionar a pequeñas variaciones RGB.
+        luma = pixels[:, 0] * 0.114 + pixels[:, 1] * 0.587 + pixels[:, 2] * 0.299
+        return float(np.std(luma))
+
+    @staticmethod
+    def _dominant_fill_color(region_img: np.ndarray, local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None):
+        """Estima el color de fondo de una región segura."""
+        if region_img.size == 0 or local_mask is None or getattr(local_mask, "size", 0) == 0:
             return (255, 255, 255)
 
-        sample_mask = base_mask.copy()
-        if exclude_mask is not None and getattr(exclude_mask, "size", 0):
-            exclusion = (exclude_mask > 0).astype(np.uint8)
-            # Quita también antialias/borde alrededor de la tinta para no contaminar
-            # el color de fondo con trazos blancos/negros dilatados.
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            exclusion = cv2.dilate(exclusion, kernel, iterations=1)
-            sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not(exclusion))
-            # Si la tinta ocupa casi todo el área segura, usa una exclusión menos
-            # agresiva antes de caer al área completa.
-            if cv2.countNonZero(sample_mask) < max(16, int(cv2.countNonZero(base_mask) * 0.04)):
-                sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not((exclude_mask > 0).astype(np.uint8)))
-            if cv2.countNonZero(sample_mask) == 0:
-                sample_mask = base_mask
+        sample_mask = CleanInpaintingPipelineMixin._background_sample_mask(local_mask, exclude_mask)
+        if sample_mask.size == 0 or cv2.countNonZero(sample_mask) == 0:
+            return (255, 255, 255)
 
         pixels = region_img[sample_mask > 0]
         if pixels.size == 0:
@@ -136,6 +167,62 @@ class CleanInpaintingPipelineMixin:
         salida = patch * (1.0 - alpha) + color * alpha
         return np.clip(salida, 0, 255).astype(np.uint8)
 
+    @staticmethod
+    def _mask_bounding_rect(mask: np.ndarray, image_shape, padding: int = 0) -> Tuple[int, int, int, int]:
+        points = cv2.findNonZero((mask > 0).astype(np.uint8)) if mask is not None and getattr(mask, "size", 0) else None
+        if points is None:
+            return (0, 0, 0, 0)
+        x, y, w, h = cv2.boundingRect(points)
+        height, width = image_shape[:2]
+        padding = max(0, int(padding))
+        x1 = max(0, x - padding)
+        y1 = max(0, y - padding)
+        x2 = min(width, x + w + padding)
+        y2 = min(height, y + h + padding)
+        return (x1, y1, max(0, x2 - x1), max(0, y2 - y1))
+
+    def _run_configured_inpaint_on_mask(self, imagen: np.ndarray, mask: np.ndarray, context_mask: Optional[np.ndarray] = None) -> tuple[np.ndarray, str]:
+        """Aplica el inpaint elegido en config.yaml sobre una máscara pequeña.
+
+        Se usa para globos transparentes, degradados o entramados donde un color
+        sólido dejaría manchas. El modelo elegido es `translation.inpaint_model`;
+        no hay un segundo selector paralelo para globos.
+        """
+        if mask is None or cv2.countNonZero(mask) == 0:
+            return imagen, "empty_mask"
+
+        model_name = str(getattr(self, "inpaint_model", "opencv-tela") or "opencv-tela")
+        if model_name == "B/N":
+            # B/N no tiene API por máscara; se mantiene el relleno sólido como
+            # fallback explícito para no romper esa configuración.
+            return imagen, "solid_fallback_bn_model_has_no_mask_api"
+
+        padding_cfg = int(getattr(self, "bubble_fill_inpaint_padding", 18) or 18)
+        bbox_mask = context_mask if context_mask is not None and cv2.countNonZero(context_mask) > 0 else mask
+        x, y, w, h = self._mask_bounding_rect(bbox_mask, imagen.shape, padding_cfg)
+        if w <= 0 or h <= 0:
+            return imagen, "empty_crop"
+
+        crop = imagen[y:y + h, x:x + w].copy()
+        local_mask = (mask[y:y + h, x:x + w] > 0).astype(np.uint8) * 255
+        if cv2.countNonZero(local_mask) == 0:
+            return imagen, "empty_local_mask"
+
+        try:
+            if model_name == "opencv-tela":
+                result_crop = self.inpainter.inpaint(crop, local_mask)
+            else:
+                result_crop = self._run_async_inpaint(crop, local_mask)
+        except Exception as exc:  # pragma: no cover - depende del modelo externo/GPU
+            logger.warning("No se pudo aplicar inpainting configurado '%s' en globo; uso relleno sólido. Error: %s", model_name, exc)
+            return imagen, f"solid_fallback_configured_inpaint_failed:{model_name}"
+
+        salida = imagen.copy()
+        if result_crop.shape[:2] != crop.shape[:2]:
+            result_crop = cv2.resize(result_crop, (w, h), interpolation=cv2.INTER_LINEAR)
+        salida[y:y + h, x:x + w] = result_crop
+        return salida, f"configured_inpaint:{model_name}"
+
     def _fill_bubble_interiors(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> np.ndarray:
         salida = imagen.copy()
         for region in regiones:
@@ -156,13 +243,48 @@ class CleanInpaintingPipelineMixin:
                 continue
 
             fill_color = self._dominant_fill_color(salida, safe_mask, clean_mask)
+            background_variation = self._background_variation_score(salida, safe_mask, clean_mask)
+            variation_threshold = float(getattr(self, "bubble_fill_background_std_threshold", 18.0) or 18.0)
+            fill_strategy = str(getattr(self, "bubble_fill_strategy", "inpaint") or "inpaint").strip().lower()
+            if fill_strategy in {"configured_inpaint", "config_inpaint", "lama"}:
+                fill_strategy = "inpaint"
+            if fill_strategy in {"adaptive"}:
+                fill_strategy = "auto"
+            if fill_strategy not in {"inpaint", "auto", "solid"}:
+                fill_strategy = "inpaint"
+
             metadata = getattr(region, "metadata", None)
             if isinstance(metadata, dict):
                 metadata["fill_color_source"] = "safe_region_minus_clean_mask"
                 metadata["fill_color_bgr"] = tuple(int(c) for c in fill_color)
+                metadata["background_variation_score"] = round(float(background_variation), 3)
+                metadata["background_variation_threshold"] = float(variation_threshold)
+                metadata["bubble_fill_strategy"] = fill_strategy
 
-            sigma = 1.0 if str((region.metadata or {}).get("clean_mask_source", "")).endswith("opt_in") else 0.65
+            # Estrategia de limpieza:
+            # - inpaint: usa siempre translation.inpaint_model sobre clean_mask.
+            # - auto: usa inpaint solo si el fondo seguro es complejo/entramado.
+            # - solid: relleno sólido mediano, útil para debug o máxima velocidad.
+            should_use_configured_inpaint = fill_strategy == "inpaint" or (
+                fill_strategy == "auto" and background_variation >= variation_threshold
+            )
+            if should_use_configured_inpaint:
+                salida_inpaint, method = self._run_configured_inpaint_on_mask(salida, clean_mask, safe_mask)
+                if method.startswith("configured_inpaint"):
+                    salida = salida_inpaint
+                    if isinstance(metadata, dict):
+                        metadata["bubble_fill_method"] = "configured_inpaint"
+                        metadata["bubble_fill_inpaint_model"] = str(getattr(self, "inpaint_model", ""))
+                    continue
+                if isinstance(metadata, dict):
+                    metadata["bubble_fill_inpaint_fallback"] = method
+
+            sigma = float(getattr(self, "bubble_fill_feather", 1.0) or 1.0)
+            if not str((region.metadata or {}).get("clean_mask_source", "")).endswith("opt_in"):
+                sigma = min(sigma, 0.65)
             salida = self._apply_solid_fill(salida, clean_mask, fill_color, sigma=sigma)
+            if isinstance(metadata, dict):
+                metadata["bubble_fill_method"] = "solid_color"
         return salida
 
     def _ejecutar_inpainting(self, imagen: np.ndarray, mascara_capa: np.ndarray, resultados):
