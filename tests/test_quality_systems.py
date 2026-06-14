@@ -217,6 +217,59 @@ class SourceLanguageFilterTests(unittest.TestCase):
         self.assertTrue(region.metadata["source_language_allowed"])
         self.assertNotIn("processing_skipped", region.metadata)
 
+    def test_cleaner_skips_region_when_specialized_ocr_finds_no_text(self):
+        cleaner = object.__new__(CleanManga)
+        cleaner.idioma_entrada = "Japonés"
+        cleaner._ocr_text_for_processing_guard = lambda _imagen, _region: ""
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        imagen = np.full((80, 80, 3), 255, dtype=np.uint8)
+
+        filtradas = cleaner._filter_regions_by_specialized_ocr_guard(imagen, [region])
+
+        self.assertEqual(filtradas, [])
+        self.assertTrue(region.metadata["specialized_ocr_guard_empty"])
+        self.assertTrue(region.metadata["processing_skipped"])
+        self.assertEqual(region.metadata["processing_skip_reason"], "ocr_especializado_sin_texto")
+
+    def test_translator_reuses_specialized_ocr_guard_text_for_dialogue(self):
+        translator = object.__new__(TranslateManga)
+        translator.idioma_entrada = "Japonés"
+        translator.source_language_filter = SourceLanguageFilter("Japonés")
+        translator.normalizar_texto_ocr = lambda texto: texto
+        translator.ocr_manager = types.SimpleNamespace(
+            extract_texts=lambda _imagenes: (_ for _ in ()).throw(AssertionError("no debe repetir OCR"))
+        )
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        region.metadata.update({
+            "specialized_ocr_guard_passed": True,
+            "region_ocr_cache_reusable": True,
+            "region_ocr_text": "行くぞ",
+        })
+        translator.ultimas_regiones = [region]
+
+        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+
+        self.assertEqual(textos, ["行くぞ"])
+
+    def test_translator_skips_region_empty_by_specialized_ocr_guard(self):
+        translator = object.__new__(TranslateManga)
+        translator.idioma_entrada = "Japonés"
+        translator.source_language_filter = SourceLanguageFilter("Japonés")
+        translator.normalizar_texto_ocr = lambda texto: texto
+        translator.ocr_manager = types.SimpleNamespace(
+            extract_texts=lambda _imagenes: (_ for _ in ()).throw(AssertionError("no debe llamar OCR"))
+        )
+        region = OnomatopoeiaKeepModeTests._region("dialogue")
+        region.metadata.update({
+            "specialized_ocr_guard_empty": True,
+            "processing_skip_reason": "ocr_especializado_sin_texto",
+        })
+        translator.ultimas_regiones = [region]
+
+        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+
+        self.assertEqual(textos, [""])
+
     def test_detector_materializes_bubble_onomatopoeia_as_translatable(self):
         detector = object.__new__(BubbleDetector)
         detector.idioma_entrada = "Japonés"

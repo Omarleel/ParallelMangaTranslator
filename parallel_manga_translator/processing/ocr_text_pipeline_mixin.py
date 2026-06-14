@@ -21,6 +21,16 @@ logger = get_logger(__name__)
 class OcrTextPipelineMixin:
     """OCR y normalización textual."""
 
+    @staticmethod
+    def _region_skipped_by_specialized_ocr_guard(region: Optional[TextRegion]) -> bool:
+        if region is None:
+            return False
+        metadata = getattr(region, "metadata", {}) or {}
+        return bool(
+            metadata.get("specialized_ocr_guard_empty")
+            or metadata.get("processing_skip_reason") == "ocr_especializado_sin_texto"
+        )
+
     def _cached_clean_guard_ocr_text(self, region: TextRegion) -> str:
         """Reutiliza OCR local previo sólo cuando es seguro conservarlo.
 
@@ -28,18 +38,25 @@ class OcrTextPipelineMixin:
         Si ese mismo recorte ya fue leído, no hace falta volver a mandarlo al OCR en
         la fase de transcripción/traducción. Para columnas CJK verticales recuperadas
         desde EasyOCR, la pista global se ignora, pero un OCR local cacheado sí se
-        puede reutilizar.
+        puede reutilizar. El guard especializado previo a la limpieza también cachea
+        el texto de cualquier región que sí pasó la verificación.
         """
-        if region.kind != "free_text":
-            return ""
         metadata = getattr(region, "metadata", {}) or {}
+        if self._region_skipped_by_specialized_ocr_guard(region):
+            return ""
         reusable = (
-            metadata.get("free_text_onomatopoeia_keep")
-            or metadata.get("free_text_onomatopoeia")
-            or metadata.get("onomatopoeia")
+            metadata.get("specialized_ocr_guard_passed")
+            or metadata.get("region_ocr_cache_reusable")
+            or (
+                region.kind == "free_text"
+                and (
+                    metadata.get("free_text_onomatopoeia_keep")
+                    or metadata.get("free_text_onomatopoeia")
+                    or metadata.get("onomatopoeia")
+                )
+            )
             or metadata.get("vertical_text_retry")
             or metadata.get("force_region_ocr")
-            or metadata.get("region_ocr_cache_reusable")
         )
         if not reusable:
             return ""
@@ -52,6 +69,9 @@ class OcrTextPipelineMixin:
             indices_pendientes: List[int] = []
 
             for indice, (imagen_interes, region) in enumerate(zip(imagenes_interes, self.ultimas_regiones)):
+                if self._region_skipped_by_specialized_ocr_guard(region):
+                    textos[indice] = ""
+                    continue
                 if not self._region_allows_source_language(region):
                     textos[indice] = ""
                     continue

@@ -48,6 +48,7 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
         self.inpaint_model = modelo_inpaint
         self.idioma_entrada = idioma_entrada
         self.fast_mode = bool(ocr_config.fast_mode)
+        self.ocr_config = ocr_config
         self.inpaint_mode = str(quality_config.inpaint_mode or "auto").strip().lower()
         self.bubble_fill = bool(quality_config.bubble_fill)
         # Por defecto NO rellenamos plano todo el interior del globo: en páginas reales

@@ -32,6 +32,7 @@ class CleanInpaintingPipelineMixin:
         resultados = self.obtener_cuadros_delimitadores(imagen)
         regiones = self.bubble_detector.build_regions_from_bubbles_and_text(imagen, regiones_primarias, resultados)
         regiones = self._filter_regions_by_source_language(regiones)
+        regiones = self._filter_regions_by_specialized_ocr_guard(imagen, regiones)
         self.last_regions = regiones
 
         # Sin globos/modelo no inventamos regiones heurísticas. Si la página no tiene
