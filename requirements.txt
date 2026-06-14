@@ -20,3 +20,7 @@ huggingface_hub>=0.23.0
 transformers>=4.30,<4.46
 opencv-python-headless>=4.8
 pytest
+# UI web local para revisión humana.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9

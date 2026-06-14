@@ -13,6 +13,7 @@ readme = "README.md"
 pmt = "parallel_manga_translator.cli:main"
 parallel-manga-translator = "parallel_manga_translator.cli:main"
 pmt-evaluate = "parallel_manga_translator.quality.evaluation_manager:main"
+pmt-ui = "parallel_manga_translator.ui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

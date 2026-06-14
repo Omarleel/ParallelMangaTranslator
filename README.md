@@ -37,6 +37,32 @@ pip cache purge
 pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
 ```
 
+
+
+## UI local de revisión humana
+
+Además de la CLI, el proyecto incluye una interfaz web local para revisar páginas a medida que se procesan. Permite cargar una carpeta desde el navegador o un archivo `.zip`, ver la salida automática de traducción y limpieza, alternar entre original/limpieza/traducción/corregida, editar traducciones manualmente, mover o redimensionar regiones de texto y revertir la limpieza por región antes de guardar una nueva imagen corregida.
+
+Instala las dependencias y lanza la UI:
+
+```bash
+pip install -r requirements.txt
+python ParallelMangaTranslatorUI.py
+# o, si instalaste el paquete en modo editable:
+pmt-ui
+```
+
+Abre `http://127.0.0.1:7860`. Los trabajos se guardan por defecto en `.pmt_ui_jobs/<job_id>/outputs/` con estas carpetas:
+
+```text
+limpieza/       salida limpia automática
+traduccion/     salida traducida automática
+corregida/      imágenes guardadas desde el asistente corrector
+correcciones/   JSON con textos, cajas y flags manuales
+```
+
+La UI procesa página por página en segundo plano para mejorar la experiencia: una página pendiente muestra un mensaje de espera, pero las páginas ya listas se pueden revisar y corregir inmediatamente. El botón **Exportar ZIP** descarga un paquete con `imagenes_finales/`, usando la versión corregida si existe y, si no, la traducción automática lista; también incluye `correcciones/` y `manifest_export.json` cuando corresponda. Usa la misma configuración funcional de `config.yaml`; puedes apuntar a otro archivo con `PMT_CONFIG=/ruta/config.yaml python ParallelMangaTranslatorUI.py`.
+
 ## Contribuciones
 
 Si deseas contribuir al desarrollo de ParallelMangaTranslator, ¡no dudes en hacerlo! Puedes enviar pull requests o reportar problemas en el repositorio del proyecto.
@@ -330,3 +356,35 @@ Esta versión separa explícitamente `region.mask` (zona segura del globo) de `r
 - render tipográfico con cortes suaves y balance de líneas.
 
 Ver `docs/QUALITY_PRECISION.md` para ajustar `fine_text_detection`, `ink_mask_refinement`, `panel_aware_reading_order` y opciones tipográficas.
+
+## UI de corrección humana
+
+La interfaz local se ejecuta con:
+
+```bash
+python ParallelMangaTranslatorUI.py
+```
+
+Abre `http://127.0.0.1:7860` y configura el trabajo antes de procesar:
+
+- carpeta de imágenes o archivo ZIP;
+- idioma de entrada y salida;
+- traductor: Google/tradicional o LLM;
+- opciones avanzadas de OCR para detección/localización y transcripción.
+
+La UI tiene dos vistas separadas: primero **Configuración** y después **Trabajo/Revisión**. Durante la revisión puedes avanzar por las páginas ya listas mientras el resto se procesa en segundo plano. En cada página hay herramientas para:
+
+- editar el texto traducido **directamente dentro de la región**, en tiempo real y con la tipografía/tamaño de vista previa;
+- elegir por región entre **tamaño de fuente automático** o **tamaño manual fijo** con slider/número;
+- mover o redimensionar regiones detectadas o manuales con previsualización del texto en tiempo real;
+- eliminar regiones detectadas o manuales con borrado limpio;
+- usar atajos sobre regiones: `Supr`, `Ctrl+C`, `Ctrl+X` y `Ctrl+V`;
+- hacer zoom con el control manual, los botones `+`/`-`, **Ajustar** o **Ctrl + rueda del ratón** sobre la página;
+- revertir limpieza por región;
+- crear nuevas regiones manualmente;
+- ejecutar OCR + traducción sobre una región creada o seleccionada;
+- usar un pincel simplificado con tres acciones: **Limpiar texto**, **Inpaint** y **Restaurar / borrar máscara**; el cursor circular muestra en tiempo real el tamaño exacto del pincel antes de pintar;
+- activar **Enfoque** para ocultar paneles y ampliar la página del manga;
+- exportar un ZIP final.
+
+Los cambios ligeros se guardan solos en `outputs/corregida/` y `outputs/correcciones/`. La escritura dentro del cuadro es instantánea y solo dispara autoguardado después de una pausa, sin esperar al backend para cada tecla. **Aplicar inpaint** actúa sobre la imagen actual sin volver a redibujar regiones, para no recalcular tamaños de fuente. Las regiones con tamaño manual mantienen el valor fijado aunque cambie el área de la caja. Antes de aplicar inpaint se guarda una copia interna de la página actual, de modo que **Restaurar / borrar máscara** pueda recuperar zonas inpainted si te pasas con la máscara. Los botones explícitos quedan reservados para tareas pesadas o destructivas: **OCR + traducir región**, **Aplicar inpaint**, **Restaurar automático** y **Exportar ZIP**. El ZIP final usa la versión corregida cuando existe, o la traducción automática si la página no fue editada.

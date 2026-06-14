@@ -132,14 +132,29 @@ class ConfigManager:
             ),
         )
 
+    @staticmethod
+    def _normalize_ocr_engine(value: Any, default: str = "auto") -> str:
+        """Devuelve un nombre de OCR seguro para valores faltantes o placeholders.
+
+        Algunos config.yaml antiguos o editores visuales pueden guardar `none`, `null`
+        o una cadena vacía. El registry de motores no acepta esos placeholders como
+        motor real, así que se interpretan como selección automática.
+        """
+        if value is None:
+            return default
+        normalized = str(value).strip().lower()
+        if normalized in {"", "none", "null", "nil", "default"}:
+            return default
+        return normalized
+
     def _build_ocr_config(self) -> OcrConfig:
         ocr_section = self._section("ocr")
         processing_section = self._section("processing")
         return OcrConfig(
-            detection_engine=str(ocr_section.get("detection_engine", "auto")),
-            transcription_engine=str(ocr_section.get("transcription_engine")),
+            detection_engine=self._normalize_ocr_engine(ocr_section.get("detection_engine", "auto")),
+            transcription_engine=self._normalize_ocr_engine(ocr_section.get("transcription_engine", "auto")),
             gpu=bool_value(ocr_section.get("gpu", False), False),
-            paddle_subprocess=str(ocr_section.get("paddle_subprocess", "auto")),
+            paddle_subprocess=self._normalize_ocr_engine(ocr_section.get("paddle_subprocess", "auto")),
             fast_mode=bool_value(ocr_section.get("fast_mode", processing_section.get("fast_mode", False)), False),
         )
 

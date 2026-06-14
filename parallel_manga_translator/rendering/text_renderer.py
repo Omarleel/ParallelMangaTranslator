@@ -78,6 +78,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         textos: Sequence[str],
         text_styles: Optional[Sequence[str]] = None,
         clip_masks: Optional[Sequence[np.ndarray]] = None,
+        font_sizes: Optional[Sequence[Optional[int]]] = None,
         *,
         reading_order_right_to_left: bool = False,
     ) -> np.ndarray:
@@ -91,7 +92,12 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         if clip_masks is None:
             clip_masks = [None] * len(textos)
 
-        for (x, y, w, h), texto, style, clip_mask in zip(cuadros_delimitadores, textos, text_styles, clip_masks):
+        if font_sizes is None:
+            font_sizes = [None] * len(textos)
+        else:
+            font_sizes = list(font_sizes) + [None] * max(0, len(textos) - len(font_sizes))
+
+        for (x, y, w, h), texto, style, clip_mask, requested_font_size in zip(cuadros_delimitadores, textos, text_styles, clip_masks, font_sizes):
             style = style or "dialogo"
             texto = self._prepare_display_text(texto, style)
             x = int(max(0, x))
@@ -134,7 +140,23 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                 area_w = max(1, safe_w - 2 * margen_x)
                 area_h = max(1, safe_h - 2 * margen_y)
 
-                fuente, lineas, espacio_entre_lineas = self._fit_font(block_text or " ", area_w, area_h, style=style)
+                fixed_font_size = None
+                try:
+                    if requested_font_size is not None:
+                        fixed_font_size = int(round(float(requested_font_size)))
+                except Exception:
+                    fixed_font_size = None
+
+                if fixed_font_size is not None and fixed_font_size > 0:
+                    fixed_font_size = max(self.absolute_min_font_size, min(self.max_font_size, fixed_font_size))
+                    fuente = self._get_font(fixed_font_size)
+                    espacio_entre_lineas = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
+                    # En modo manual no se reduce la fuente para que quepa: el usuario
+                    # decide el tamaño y la capa recorta de forma segura dentro de la región.
+                    lineas = self._split_lines(block_text or " ", fuente, area_w)
+                else:
+                    fuente, lineas, espacio_entre_lineas = self._fit_font(block_text or " ", area_w, area_h, style=style)
+
                 alto_parrafo = self._paragraph_height(lineas, fuente, espacio_entre_lineas)
                 if style.startswith("onomatopeya"):
                     stroke_width = max(1, min(5, int(getattr(fuente, "size", self.min_font_size) * 0.11)))

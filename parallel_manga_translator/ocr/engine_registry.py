@@ -37,6 +37,8 @@ class OcrRegistry(Generic[T]):
 
     def normalize_name(self, requested: str) -> str:
         normalized = str(requested or "auto").strip().lower()
+        if normalized in {"", "none", "null", "nil", "default"}:
+            normalized = "auto"
         return self._aliases.get(normalized, normalized)
 
     def resolve_paddle_mode(self, engine_name: str, settings: OcrSettings) -> str:

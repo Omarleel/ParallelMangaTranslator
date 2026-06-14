@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Parallel Manga Translator · Asistente corrector</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <section id="setupView" class="setup-view">
+    <div class="setup-card">
+      <div class="setup-hero">
+        <div class="brand-row">
+          <div class="brand-mark">PMT</div>
+          <div>
+            <h1>Asistente corrector de manga</h1>
+            <p>Configura el trabajo primero. Después entra a una vista de revisión dedicada, sin mezclar formularios con edición.</p>
+          </div>
+        </div>
+        <div class="step-strip" aria-label="Flujo de trabajo">
+          <span class="step-pill active">1 · Configuración</span>
+          <span class="step-pill">2 · Revisión</span>
+          <span class="step-pill">3 · Exportación</span>
+        </div>
+      </div>
+
+      <form id="uploadForm" class="setup-form">
+        <div class="form-section">
+          <div class="section-heading">
+            <h2>Proyecto</h2>
+            <p>Elige la fuente y los idiomas antes de cargar el módulo de trabajo.</p>
+          </div>
+          <label class="field">
+            <span>Título</span>
+            <input id="titleInput" name="title" type="text" placeholder="Ej. Capítulo 01" />
+          </label>
+
+          <div class="grid-fields two">
+            <label class="field compact">
+              <span>Idioma de entrada</span>
+              <select id="sourceLanguage" name="source_language">
+                <option>Japonés</option>
+                <option>Inglés</option>
+                <option>Coreano</option>
+                <option>Chino</option>
+                <option>Español</option>
+                <option>Portugués</option>
+                <option>Francés</option>
+                <option>Italiano</option>
+              </select>
+            </label>
+            <label class="field compact">
+              <span>Idioma de salida</span>
+              <select id="targetLanguage" name="target_language">
+                <option selected>Español</option>
+                <option>Inglés</option>
+                <option>Portugués</option>
+                <option>Francés</option>
+                <option>Italiano</option>
+                <option>Japonés</option>
+                <option>Coreano</option>
+                <option>Chino</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Traductor</span>
+            <select id="translatorSelect" name="translator">
+              <option value="google">Google / tradicional</option>
+              <option value="llm" selected>LLM</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="form-section">
+          <div class="section-heading">
+            <h2>Imágenes</h2>
+            <p>Carga una carpeta local o un ZIP. Si eliges ambos, se importarán ambos conjuntos.</p>
+          </div>
+          <div class="upload-grid">
+            <label class="dropzone" for="folderInput">
+              <strong>Carpeta de imágenes</strong>
+              <span id="folderLabel">Selecciona una carpeta con .jpg, .png, .webp o .bmp.</span>
+              <input id="folderInput" type="file" webkitdirectory directory multiple accept="image/*" />
+            </label>
+
+            <label class="dropzone" for="zipInput">
+              <strong>Archivo ZIP</strong>
+              <span id="zipLabel">O carga un zip con las páginas.</span>
+              <input id="zipInput" type="file" accept=".zip,application/zip" />
+            </label>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <button id="advancedToggle" class="ghost full" type="button">Mostrar opciones avanzadas</button>
+          <div id="advancedOptions" class="advanced-options hidden">
+            <div class="grid-fields two">
+              <label class="field compact">
+                <span>OCR para detección/localización</span>
+                <select id="detectionEngine" name="detection_engine">
+                  <option value="auto" selected>Auto</option>
+                  <option value="easyocr">EasyOCR</option>
+                  <option value="paddleocr">PaddleOCR</option>
+                  <option value="paddle_subprocess">PaddleOCR subprocess</option>
+                </select>
+              </label>
+              <label class="field compact">
+                <span>OCR para transcripción</span>
+                <select id="transcriptionEngine" name="transcription_engine">
+                  <option value="auto" selected>Auto</option>
+                  <option value="mangaocr">MangaOCR</option>
+                  <option value="easyocr">EasyOCR</option>
+                  <option value="paddleocr">PaddleOCR</option>
+                  <option value="paddle_subprocess">PaddleOCR subprocess</option>
+                </select>
+              </label>
+            </div>
+            <p class="hint">Auto usa la mejor opción disponible según idioma y proceso. La detección/localización no usa MangaOCR porque no entrega cajas.</p>
+          </div>
+        </div>
+
+        <div class="setup-actions">
+          <button class="primary" type="submit">Crear trabajo y abrir revisión</button>
+          <button id="continueLastBtn" class="ghost hidden" type="button">Continuar último trabajo</button>
+        </div>
+        <p id="uploadHint" class="hint">Las páginas listas se habilitan mientras el resto continúa en segundo plano.</p>
+      </form>
+    </div>
+  </section>
+
+  <section id="workView" class="work-view hidden">
+    <aside class="work-sidebar">
+      <div class="sidebar-head">
+        <div class="brand-mark small-mark">PMT</div>
+        <div>
+          <h2>Revisión</h2>
+          <p id="jobOptionsSummary">Sin proyecto.</p>
+        </div>
+      </div>
+
+      <section class="panel progress-panel" id="progressPanel">
+        <div class="progress-header">
+          <h2 id="jobTitle">Proyecto</h2>
+          <span id="jobBadge" class="badge">Esperando</span>
+        </div>
+        <p id="jobMessage" class="muted">Sin proyecto cargado.</p>
+        <div class="progress-bar"><span id="progressBar"></span></div>
+        <p id="progressText" class="muted">0 / 0 páginas</p>
+        <button id="exportBtn" class="ghost export-btn" type="button" disabled>Exportar ZIP</button>
+        <button id="newJobBtn" class="ghost export-btn" type="button">Nuevo trabajo</button>
+      </section>
+
+      <section class="panel pages-panel" id="pagesPanel">
+        <div class="section-heading compact-heading">
+          <h2>Páginas</h2>
+          <p>Verde: lista/corregida. Amarillo: procesando.</p>
+        </div>
+        <div id="pageList" class="page-list"></div>
+      </section>
+    </aside>
+
+    <main class="work-main">
+      <header class="toolbar">
+        <div class="toolbar-row nav-row">
+          <div class="nav-actions">
+            <button id="prevBtn" class="ghost" type="button">← Anterior</button>
+            <button id="nextBtn" class="ghost" type="button">Siguiente →</button>
+          </div>
+          <div class="view-switcher" role="group" aria-label="Vista de imagen">
+            <button data-variant="current" class="active" type="button">Actual</button>
+            <button data-variant="translated" type="button">Traducción</button>
+            <button data-variant="clean" type="button">Limpieza</button>
+            <button data-variant="original" type="button">Original</button>
+          </div>
+          <div class="zoom-controls" role="group" aria-label="Zoom de página">
+            <button id="zoomOutBtn" class="ghost mini" type="button" title="Alejar">−</button>
+            <input id="zoomSlider" type="range" min="25" max="300" step="5" value="100" />
+            <button id="zoomInBtn" class="ghost mini" type="button" title="Acercar">+</button>
+            <button id="zoomFitBtn" class="ghost mini" type="button" title="Ajustar al ancho">Ajustar</button>
+            <button id="focusBtn" class="ghost mini" type="button" title="Ocultar/mostrar paneles laterales">Enfoque</button>
+            <span id="zoomValue" class="zoom-value">100%</span>
+            <span class="zoom-hint">Ctrl + rueda</span>
+          </div>
+        </div>
+
+        <div class="toolbar-row tools-row">
+          <div class="tool-switcher" role="group" aria-label="Herramientas de corrección">
+            <button id="selectTool" class="active" type="button" data-tool="select">Seleccionar</button>
+            <button id="newRegionTool" type="button" data-tool="region">Nueva región</button>
+            <button id="brushTool" type="button" data-tool="brush">Pincel</button>
+            <button id="undoBrushBtn" type="button">Deshacer pincel</button>
+            <button id="undoDeleteBtn" type="button">Deshacer borrado</button>
+          </div>
+          <div class="brush-controls">
+            <label class="field inline-field">
+              <span>Modo pincel</span>
+              <select id="brushMode">
+                <option value="restore_clean" selected>Limpiar texto</option>
+                <option value="inpaint">Inpaint</option>
+                <option value="mask_eraser">Restaurar manga original / borrar inpaint</option>
+              </select>
+            </label>
+            <label class="brush-size">Tamaño <input id="brushSize" type="range" min="4" max="90" value="22" /><strong id="brushSizeValue">22 px</strong></label>
+            <button id="applyInpaintBtn" class="primary compact-heavy" type="button" disabled>Aplicar inpaint</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="review-layout" id="reviewLayout">
+        <div class="canvas-card">
+          <div id="waitState" class="wait-state hidden">
+            <h2>Página aún en procesamiento</h2>
+            <p>Esta página todavía no está lista. Puedes avanzar con las páginas ya procesadas.</p>
+          </div>
+          <div id="imageStage" class="image-stage hidden">
+            <img id="pageImage" alt="Página de manga" draggable="false" />
+            <div id="overlayLayer" class="overlay-layer"></div>
+          </div>
+        </div>
+
+        <aside class="editor-panel">
+          <div class="editor-header">
+            <div>
+              <h2 id="pageHeading">Página</h2>
+              <p id="pageStatus" class="muted">Selecciona una región.</p>
+            </div>
+            <span id="regionCount" class="badge soft">0 regiones</span>
+          </div>
+
+          <div class="tool-help">
+            <strong id="toolHelpTitle">Herramienta activa: seleccionar</strong>
+            <p id="toolHelpText">Haz clic en una región para editarla. Atajos: Supr borra, Ctrl+C copia, Ctrl+X corta y Ctrl+V pega.</p>
+          </div>
+
+          <div id="noRegion" class="no-region">
+            Selecciona una caja y escribe directamente dentro de ella. Mueve/redimensiona desde el borde o el tirador; los cambios ligeros se guardan automáticamente.
+          </div>
+
+          <div id="regionEditor" class="region-editor hidden">
+            <div class="region-meta">
+              <span id="regionTypeBadge" class="badge soft">Región</span>
+              <span class="kbd">Supr</span>
+              <span class="kbd">Ctrl+C/X/V</span>
+            </div>
+
+            <label class="field">
+              <span>Texto original OCR</span>
+              <textarea id="originalText" rows="3"></textarea>
+            </label>
+            <label class="field">
+              <span>Traducción editable</span>
+              <textarea id="translatedText" rows="5"></textarea>
+            </label>
+
+            <div class="grid-fields two">
+              <label class="field compact"><span>X</span><input id="boxX" type="number" /></label>
+              <label class="field compact"><span>Y</span><input id="boxY" type="number" /></label>
+              <label class="field compact"><span>Ancho</span><input id="boxW" type="number" /></label>
+              <label class="field compact"><span>Alto</span><input id="boxH" type="number" /></label>
+            </div>
+
+            <div class="font-card">
+              <label class="checkbox-row">
+                <input id="autoFontSize" type="checkbox" checked />
+                <span>Tamaño de fuente automático</span>
+              </label>
+              <label class="field compact font-size-field">
+                <span>Tamaño manual <strong id="fontSizeValue">24 px</strong></span>
+                <div class="font-size-row">
+                  <input id="fontSize" type="range" min="6" max="120" value="24" />
+                  <input id="fontSizeNumber" type="number" min="6" max="160" value="24" />
+                </div>
+              </label>
+              <p class="hint tiny">Desactiva “automático” para fijar el tamaño exacto de esta región. Si el texto es muy grande, se recortará dentro de la caja.</p>
+            </div>
+
+            <label class="checkbox-row">
+              <input id="restoreOriginal" type="checkbox" />
+              <span>Revertir limpieza en esta región</span>
+            </label>
+            <label class="checkbox-row">
+              <input id="visibleText" type="checkbox" checked />
+              <span>Renderizar texto de esta región</span>
+            </label>
+
+            <div class="mini-actions">
+              <button id="ocrRegionBtn" class="ghost" type="button">OCR + traducir región</button>
+              <button id="copyRegionBtn" class="ghost" type="button">Copiar región</button>
+              <button id="deleteRegionBtn" class="ghost danger" type="button">Eliminar región</button>
+            </div>
+          </div>
+
+          <div class="autosave-card">
+            <span id="autosaveDot" class="autosave-dot saved"></span>
+            <span id="autosaveStatus">Cambios guardados automáticamente.</span>
+          </div>
+
+          <div class="editor-actions">
+            <button id="saveBtn" class="ghost" type="button">Guardar ahora</button>
+            <button id="resetBtn" class="ghost danger" type="button">Restaurar automático</button>
+          </div>
+          <p class="hint">Los cambios ligeros se guardan solos. Los botones quedan para procesos pesados: <strong>OCR + traducir</strong>, <strong>Aplicar inpaint</strong> o exportar. Usa <strong>Ctrl + rueda</strong> sobre la página para acercar o alejar.</p>
+        </aside>
+      </section>
+    </main>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
