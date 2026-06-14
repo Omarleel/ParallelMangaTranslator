@@ -24,8 +24,6 @@ ocr:
   # transcription_engine: auto | easyocr | mangaocr | paddle | paddle_subprocess
   detection_engine: auto
   transcription_engine: auto
-  # Compatibilidad con configs antiguas: si existe engine, se interpreta como transcription_engine.
-  # engine: auto
   # Para PaddleOCR GPU + YOLO GPU, usa subprocess para aislar Paddle de PyTorch.
   gpu: false
   paddle_subprocess: auto   # auto | true | false
@@ -170,3 +168,23 @@ export:
 logging:
   level: INFO
   file: debug.log
+
+  # Detección fina de texto: usa polígonos OCR como semilla, no solo bboxes rectangulares.
+  fine_text_detection: true
+  fine_text_mask_dilate: 2
+  # Refina clean_mask con componentes conectados anclados a polígonos OCR/text_bbox.
+  ink_mask_refinement: true
+  ink_mask_min_component_area: 3
+  ink_mask_component_anchor_overlap: 0.03
+  ink_mask_component_anchor_max_gap_ratio: 0.45
+  # Orden de lectura por paneles detectados con OpenCV; si falla, cae al orden base de PMT.
+  panel_aware_reading_order: true
+  panel_detection_min_area_ratio: 0.015
+  panel_detection_max_area_ratio: 0.96
+  panel_detection_gutter_px: 10
+  # Render tipográfico: cortes suaves, balance de líneas y espaciado.
+  typography_smart_wrap: true
+  typography_hyphenation: true
+  typography_balance_lines: true
+  typography_line_spacing_factor: 1.0
+

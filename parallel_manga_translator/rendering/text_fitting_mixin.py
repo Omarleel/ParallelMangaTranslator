@@ -21,23 +21,81 @@ class TextFittingMixin:
         texto = re.sub(r"\n{3,}", "\n\n", texto)
         return texto.strip() or " "
 
+    @staticmethod
+    def _soft_hyphen_points(token: str) -> List[int]:
+        """Puntos de corte ligeros para alfabetos latinos, sin dependencia externa."""
+        if len(token) < 9 or not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", token):
+            return []
+        vowels = set("aeiouáéíóúüAEIOUÁÉÍÓÚÜ")
+        points: List[int] = []
+        for i in range(3, len(token) - 3):
+            prev_c = token[i - 1]
+            curr_c = token[i]
+            if prev_c in vowels and curr_c not in vowels:
+                points.append(i)
+            elif prev_c not in vowels and curr_c in vowels and i >= 4:
+                points.append(i)
+        # Prefiere cortes cerca del centro: menos líneas huérfanas.
+        center = len(token) / 2.0
+        return sorted(set(points), key=lambda idx: abs(idx - center))
+
     def _break_long_token(self, token: str, fuente, max_width: int) -> List[str]:
         """Parte palabras muy largas para que no atraviesen la caja."""
         if self._text_width(token, fuente) <= max_width:
             return [token]
+
+        if getattr(self, "hyphenation", True) and getattr(self, "smart_typography", True):
+            for split_at in self._soft_hyphen_points(token):
+                head = token[:split_at].rstrip() + "-"
+                tail = token[split_at:].lstrip()
+                if self._text_width(head, fuente) <= max_width and self._text_width(tail, fuente) <= max_width:
+                    return [head, tail]
 
         partes: List[str] = []
         actual = ""
         for char in token:
             candidata = actual + char
             if actual and self._text_width(candidata, fuente) > max_width:
-                partes.append(actual)
+                suffix = "-" if getattr(self, "hyphenation", True) and re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]$", actual) else ""
+                partes.append(actual + suffix)
                 actual = char
             else:
                 actual = candidata
         if actual:
             partes.append(actual)
         return partes or [token]
+
+    def _balance_wrapped_lines(self, lineas: List[str], fuente, max_width: int) -> List[str]:
+        if not getattr(self, "balance_lines", True) or not getattr(self, "smart_typography", True):
+            return lineas
+        if len(lineas) < 2 or len(lineas) > 5:
+            return lineas
+
+        balanced = list(lineas)
+        for _ in range(8):
+            changed = False
+            widths = [self._text_width(linea, fuente) for linea in balanced]
+            if not widths:
+                break
+            avg = sum(widths) / len(widths)
+            for idx in range(len(balanced) - 1):
+                words = balanced[idx].split()
+                next_words = balanced[idx + 1].split()
+                if len(words) <= 1:
+                    continue
+                # Si una línea es muy larga y la siguiente muy corta, mueve la última palabra.
+                if widths[idx] > avg * 1.18 or widths[idx + 1] < avg * 0.62:
+                    moved = words[-1]
+                    candidate_a = " ".join(words[:-1])
+                    candidate_b = (moved + " " + balanced[idx + 1]).strip()
+                    if candidate_a and self._text_width(candidate_a, fuente) <= max_width and self._text_width(candidate_b, fuente) <= max_width:
+                        balanced[idx] = candidate_a
+                        balanced[idx + 1] = candidate_b
+                        changed = True
+                        break
+            if not changed:
+                break
+        return balanced
 
     def _split_lines(self, texto: str, fuente, max_width: int) -> List[str]:
         max_width = max(1, int(max_width))
@@ -66,7 +124,8 @@ class TextFittingMixin:
             if linea_actual:
                 lineas.append(linea_actual)
 
-        return lineas or [" "]
+        lineas = lineas or [" "]
+        return self._balance_wrapped_lines(lineas, fuente, max_width)
 
     def _paragraph_height(self, lineas: Sequence[str], fuente, espacio_entre_lineas: float) -> float:
         if not lineas:
@@ -126,14 +185,14 @@ class TextFittingMixin:
         # Intento principal: fuente más grande que quepa.
         for tamanio in range(start_size, self.absolute_min_font_size - 1, -1):
             fuente = self._get_font(tamanio)
-            espacio = self._line_spacing(fuente) * (0.82 if style.startswith("onomatopeya") else 1.0)
+            espacio = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
             lineas = self._split_lines(texto, fuente, box_width)
             if self._fits(lineas, fuente, espacio, box_width, box_height):
                 return fuente, lineas, espacio
 
         # Último recurso: fuente mínima absoluta + recorte seguro.
         fuente = self._get_font(self.absolute_min_font_size)
-        espacio = self._line_spacing(fuente) * (0.82 if style.startswith("onomatopeya") else 1.0)
+        espacio = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
         lineas = self._split_lines(texto, fuente, box_width)
         lineas = self._truncate_to_fit(lineas, fuente, box_width, box_height, espacio)
         return fuente, lineas, espacio

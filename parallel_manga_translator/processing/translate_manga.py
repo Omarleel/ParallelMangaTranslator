@@ -51,21 +51,6 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
         self.idioma_salida = idioma_salida
         self.metodo_traduccion = metodo_traduccion
 
-        self.translator_manager = TranslatorManager(
-            idioma_entrada,
-            idioma_salida,
-            metodo=metodo_traduccion,
-            groq_api_key=groq_api_key,
-            lore_manga=lore_manga,
-            translation_config=translation_config,
-            character_memory_config=character_memory_config,
-        )
-        self.ocr_manager = OcrManager(idioma_entrada=idioma_entrada, config=ocr_config)
-        self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
-        self.text_renderer = TextRenderer(font_path=RUTA_FUENTE, min_font_size=TAMANIO_MINIMO_FUENTE)
-        self.text_normalizer = OcrTextNormalizer()
-        self.source_language_filter = SourceLanguageFilter(idioma_entrada)
-        self.onomatopoeia_manager = OnomatopoeiaManager()
         if translation_config is not None and quality_config is None:
             # Mantiene compatibilidad cuando se usa solo TranslationConfig desde código externo.
             from parallel_manga_translator.config.runtime_config import get_active_config
@@ -79,6 +64,29 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
             from parallel_manga_translator.config.runtime_config import get_active_config
 
             quality_config = get_active_config().quality
+
+        self.translator_manager = TranslatorManager(
+            idioma_entrada,
+            idioma_salida,
+            metodo=metodo_traduccion,
+            groq_api_key=groq_api_key,
+            lore_manga=lore_manga,
+            translation_config=translation_config,
+            character_memory_config=character_memory_config,
+        )
+        self.ocr_manager = OcrManager(idioma_entrada=idioma_entrada, config=ocr_config)
+        self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
+        self.text_renderer = TextRenderer(
+            font_path=RUTA_FUENTE,
+            min_font_size=TAMANIO_MINIMO_FUENTE,
+            smart_typography=bool(getattr(quality_config, "typography_smart_wrap", True)),
+            hyphenation=bool(getattr(quality_config, "typography_hyphenation", True)),
+            balance_lines=bool(getattr(quality_config, "typography_balance_lines", True)),
+            line_spacing_factor=float(getattr(quality_config, "typography_line_spacing_factor", 1.0)),
+        )
+        self.text_normalizer = OcrTextNormalizer()
+        self.source_language_filter = SourceLanguageFilter(idioma_entrada)
+        self.onomatopoeia_manager = OnomatopoeiaManager()
         self.historial_contexto = deque(maxlen=3)
         self.ultimo_estilos_texto = []
         self.ultimas_regiones: List[TextRegion] = []

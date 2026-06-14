@@ -32,8 +32,7 @@ class OcrFactory:
     @staticmethod
     def _requested_engine(config: OcrConfig) -> str:
         transcription_engine = str(config.transcription_engine or "auto").strip().lower()
-        legacy_engine = str(config.engine or "auto").strip().lower()
-        return legacy_engine if transcription_engine == "auto" and legacy_engine != "auto" else transcription_engine
+        return transcription_engine
 
     @classmethod
     def _resolve_engine_name(cls, requested: str, language: str, settings: OcrEngineSettings) -> str:

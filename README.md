@@ -91,7 +91,7 @@ La máscara del globo y la máscara de tinta están separadas: `region.mask` es 
 
 ```yaml
 translation:
-  inpaint_model: lama_mpe  # opencv-tela | lama_mpe | lama_large_512px | aot | B/N
+  inpaint_model: lama_mpe  # auto | opencv-tela | lama_mpe | lama_large_512px | aot | B/N
 
 quality:
   # inpaint = siempre usa translation.inpaint_model sobre clean_mask
@@ -319,3 +319,14 @@ La memoria se añade al prompt de traducción y también se exportan campos como
 ## Refactor SOLID / Clean Code
 
 La arquitectura fue dividida en fachadas pequeñas y módulos por responsabilidad. Ver `SOLID_REFACTOR.md` para el mapa completo de responsabilidades y los contratos en `parallel_manga_translator/architecture/ports.py`.
+
+### Precisión visual avanzada
+
+Esta versión separa explícitamente `region.mask` (zona segura del globo) de `region.clean_mask` (tinta real a borrar):
+
+- detección fina de texto con polígonos OCR (`text_mask`);
+- refinamiento de tinta por componentes conectados;
+- orden de lectura sensible a paneles;
+- render tipográfico con cortes suaves y balance de líneas.
+
+Ver `docs/QUALITY_PRECISION.md` para ajustar `fine_text_detection`, `ink_mask_refinement`, `panel_aware_reading_order` y opciones tipográficas.

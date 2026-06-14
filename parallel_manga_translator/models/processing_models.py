@@ -30,6 +30,9 @@ class TextRegion:
     detections_count: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
     clean_mask: Optional[np.ndarray] = None
+    # Cajas y máscara OCR finas para separar localización de texto de máscara de globo.
+    text_boxes: List[Box] = field(default_factory=list)
+    text_mask: Optional[np.ndarray] = None
 
     @property
     def render_bbox(self) -> Box:
@@ -64,4 +67,8 @@ class TextRegion:
             payload["metadata"] = self.metadata
         if self.clean_mask is not None and self.clean_mask.size:
             payload.setdefault("metadata", {})["clean_mask_pixels"] = int(np.count_nonzero(self.clean_mask))
+        if self.text_boxes:
+            payload.setdefault("metadata", {})["text_boxes"] = [list(map(int, box)) for box in self.text_boxes]
+        if self.text_mask is not None and self.text_mask.size:
+            payload.setdefault("metadata", {})["text_mask_pixels"] = int(np.count_nonzero(self.text_mask))
         return payload

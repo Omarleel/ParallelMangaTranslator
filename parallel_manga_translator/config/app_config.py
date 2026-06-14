@@ -17,8 +17,6 @@ class OcrConfig:
     detection_engine: str = "auto"
     # OCR de transcripción: lee el texto final dentro de cada región/globo.
     transcription_engine: str = "auto"
-    # Alias legacy de solo lectura: si un YAML antiguo usa `engine`, se toma como transcripción.
-    engine: str = "auto"
     gpu: bool = False
     paddle_subprocess: str = "auto"
     fast_mode: bool = False
@@ -126,6 +124,24 @@ class QualityConfig:
     free_text_gap_min_y_overlap: float = 0.45
     free_text_gap_min_ink_density: float = 0.025
     free_text_gap_max_ink_density: float = 0.90
+
+    # Precisión fina: OCR polygons -> máscara de tinta.
+    fine_text_detection: bool = True
+    fine_text_mask_dilate: int = 2
+    ink_mask_refinement: bool = True
+    ink_mask_min_component_area: int = 3
+    ink_mask_component_anchor_overlap: float = 0.03
+    ink_mask_component_anchor_max_gap_ratio: float = 0.45
+    # Orden de lectura sensible a paneles detectados con OpenCV.
+    panel_aware_reading_order: bool = True
+    panel_detection_min_area_ratio: float = 0.015
+    panel_detection_max_area_ratio: float = 0.96
+    panel_detection_gutter_px: int = 10
+    # Render tipográfico: wrapping balanceado, cortes suaves y espaciado configurable.
+    typography_smart_wrap: bool = True
+    typography_hyphenation: bool = True
+    typography_balance_lines: bool = True
+    typography_line_spacing_factor: float = 1.0
     bubble_merge_debug: bool = False
     bubble_merge_debug_dir: str = ""
     bubble_merge_debug_pair_limit: int = 160

@@ -135,11 +135,9 @@ class ConfigManager:
     def _build_ocr_config(self) -> OcrConfig:
         ocr_section = self._section("ocr")
         processing_section = self._section("processing")
-        legacy_engine = str(ocr_section.get("engine", "auto"))
         return OcrConfig(
             detection_engine=str(ocr_section.get("detection_engine", "auto")),
-            transcription_engine=str(ocr_section.get("transcription_engine", legacy_engine)),
-            engine=legacy_engine,
+            transcription_engine=str(ocr_section.get("transcription_engine")),
             gpu=bool_value(ocr_section.get("gpu", False), False),
             paddle_subprocess=str(ocr_section.get("paddle_subprocess", "auto")),
             fast_mode=bool_value(ocr_section.get("fast_mode", processing_section.get("fast_mode", False)), False),
@@ -222,6 +220,20 @@ class ConfigManager:
             free_text_gap_min_y_overlap=float_value(q.get("free_text_gap_min_y_overlap", 0.45), 0.45),
             free_text_gap_min_ink_density=float_value(q.get("free_text_gap_min_ink_density", 0.025), 0.025),
             free_text_gap_max_ink_density=float_value(q.get("free_text_gap_max_ink_density", 0.90), 0.90),
+            fine_text_detection=bool_value(q.get("fine_text_detection", True), True),
+            fine_text_mask_dilate=int_value(q.get("fine_text_mask_dilate", 2), 2),
+            ink_mask_refinement=bool_value(q.get("ink_mask_refinement", True), True),
+            ink_mask_min_component_area=int_value(q.get("ink_mask_min_component_area", 3), 3),
+            ink_mask_component_anchor_overlap=float_value(q.get("ink_mask_component_anchor_overlap", 0.03), 0.03),
+            ink_mask_component_anchor_max_gap_ratio=float_value(q.get("ink_mask_component_anchor_max_gap_ratio", 0.45), 0.45),
+            panel_aware_reading_order=bool_value(q.get("panel_aware_reading_order", True), True),
+            panel_detection_min_area_ratio=float_value(q.get("panel_detection_min_area_ratio", 0.015), 0.015),
+            panel_detection_max_area_ratio=float_value(q.get("panel_detection_max_area_ratio", 0.96), 0.96),
+            panel_detection_gutter_px=int_value(q.get("panel_detection_gutter_px", 10), 10),
+            typography_smart_wrap=bool_value(q.get("typography_smart_wrap", True), True),
+            typography_hyphenation=bool_value(q.get("typography_hyphenation", True), True),
+            typography_balance_lines=bool_value(q.get("typography_balance_lines", True), True),
+            typography_line_spacing_factor=float_value(q.get("typography_line_spacing_factor", 1.0), 1.0),
             bubble_merge_debug=bool_value(q.get("bubble_merge_debug", False), False),
             bubble_merge_debug_dir=str(q.get("bubble_merge_debug_dir", "")),
             bubble_merge_debug_pair_limit=int_value(q.get("bubble_merge_debug_pair_limit", 160), 160),

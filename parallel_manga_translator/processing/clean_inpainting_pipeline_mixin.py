@@ -43,9 +43,33 @@ class CleanInpaintingPipelineMixin:
         imagen_limpia = self._clean_with_regions(imagen, mascara_capa, resultados, regiones)
         return mascara_capa, imagen_limpia, regiones
 
+    def _is_color_page(self, image: np.ndarray, threshold: float = 5.0) -> bool:
+        """
+        Detecta si una página es color o escala de grises.
+
+        Si los canales RGB son prácticamente iguales en toda la imagen,
+        se considera B/N.
+        """
+        if image.ndim != 3 or image.shape[2] < 3:
+            return False
+
+        b, g, r = cv2.split(image.astype(np.float32))
+
+        rg = np.mean(np.abs(r - g))
+        rb = np.mean(np.abs(r - b))
+        gb = np.mean(np.abs(g - b))
+
+        color_score = (rg + rb + gb) / 3.0
+
+        return color_score > threshold
+    
+    def _resolve_auto_inpaint_model(self, image: np.ndarray) -> str:
+        if self._is_color_page(image):
+            return "lama_mpe"
+
+        return "B/N"
+
     def _clean_with_regions(self, imagen: np.ndarray, mascara_capa: np.ndarray, resultados, regiones: Sequence[TextRegion]) -> np.ndarray:
-        if self.inpaint_mode == "legacy":
-            raise RuntimeError("quality.inpaint_mode=legacy no está disponible en la versión sin detección heurística de globos.")
         if not regiones:
             return imagen.copy()
 
@@ -85,12 +109,7 @@ class CleanInpaintingPipelineMixin:
 
     @staticmethod
     def _background_sample_mask(local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None) -> np.ndarray:
-        """Devuelve la zona de fondo: región segura menos tinta a borrar.
-
-        La misma muestra se usa para elegir color sólido y para decidir si el
-        fondo es uniforme o complejo. Excluir la tinta evita confundir texto
-        blanco sobre caja negra con un fondo claro.
-        """
+        """Devuelve la zona de fondo: región segura menos tinta a borrar."""
         if local_mask is None or getattr(local_mask, "size", 0) == 0:
             return np.zeros((0, 0), dtype=np.uint8)
 
@@ -106,8 +125,6 @@ class CleanInpaintingPipelineMixin:
         dilated_exclusion = cv2.dilate(exclusion, kernel, iterations=1)
         sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not(dilated_exclusion))
 
-        # Si la tinta ocupa casi todo el área segura, usa una exclusión menos
-        # agresiva antes de caer al área completa.
         if cv2.countNonZero(sample_mask) < max(16, int(cv2.countNonZero(base_mask) * 0.04)):
             sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not(exclusion))
         if cv2.countNonZero(sample_mask) == 0:
@@ -116,12 +133,7 @@ class CleanInpaintingPipelineMixin:
 
     @staticmethod
     def _background_variation_score(region_img: np.ndarray, local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None) -> float:
-        """Mide variación del fondo seguro.
-
-        Valores bajos suelen ser globos blancos/negros/grises uniformes. Valores
-        altos indican degradados, tramas, globos transparentes o dibujo debajo;
-        esos casos se limpian mejor con inpainting que con un color plano.
-        """
+        """Mide variación del fondo seguro."""
         if region_img.size == 0 or local_mask is None or getattr(local_mask, "size", 0) == 0:
             return 0.0
         sample_mask = CleanInpaintingPipelineMixin._background_sample_mask(local_mask, exclude_mask)
@@ -131,8 +143,6 @@ class CleanInpaintingPipelineMixin:
         if pixels.size == 0:
             return 0.0
         pixels = pixels.reshape(-1, 3).astype(np.float32)
-        # Luma BGR aproximada. La desviación de luma captura tramas manga y
-        # fondos transparentes sin sobre-reaccionar a pequeñas variaciones RGB.
         luma = pixels[:, 0] * 0.114 + pixels[:, 1] * 0.587 + pixels[:, 2] * 0.299
         return float(np.std(luma))
 
@@ -150,8 +160,6 @@ class CleanInpaintingPipelineMixin:
         if pixels.size == 0:
             return (255, 255, 255)
 
-        # Mediana por canal: estable para fondos blancos, negros, grises y cajas
-        # con antialias. Al excluir clean_mask, ya no necesita forzar brillo.
         median = np.median(pixels.reshape(-1, 3), axis=0)
         return tuple(int(min(255, max(0, round(float(c))))) for c in median.tolist())
 
@@ -182,19 +190,14 @@ class CleanInpaintingPipelineMixin:
         return (x1, y1, max(0, x2 - x1), max(0, y2 - y1))
 
     def _run_configured_inpaint_on_mask(self, imagen: np.ndarray, mask: np.ndarray, context_mask: Optional[np.ndarray] = None) -> tuple[np.ndarray, str]:
-        """Aplica el inpaint elegido en config.yaml sobre una máscara pequeña.
-
-        Se usa para globos transparentes, degradados o entramados donde un color
-        sólido dejaría manchas. El modelo elegido es `translation.inpaint_model`;
-        no hay un segundo selector paralelo para globos.
-        """
+        """Aplica el inpaint elegido en config.yaml sobre una máscara pequeña."""
         if mask is None or cv2.countNonZero(mask) == 0:
             return imagen, "empty_mask"
 
         model_name = str(getattr(self, "inpaint_model", "opencv-tela") or "opencv-tela")
+        if model_name == "auto":
+            model_name = self._resolve_auto_inpaint_model(imagen)
         if model_name == "B/N":
-            # B/N no tiene API por máscara; se mantiene el relleno sólido como
-            # fallback explícito para no romper esa configuración.
             return imagen, "solid_fallback_bn_model_has_no_mask_api"
 
         padding_cfg = int(getattr(self, "bubble_fill_inpaint_padding", 18) or 18)
@@ -209,11 +212,16 @@ class CleanInpaintingPipelineMixin:
             return imagen, "empty_local_mask"
 
         try:
+            # Obtenemos la instancia del inpainter, usando la general o instanciando una nueva
+            inpainter_inst = getattr(self, "inpainter", None) if self.inpaint_model != "auto" else None
+            if inpainter_inst is None:
+                inpainter_inst = self._build_inpainter(model_name)
+
             if model_name == "opencv-tela":
-                result_crop = self.inpainter.inpaint(crop, local_mask)
+                result_crop = inpainter_inst.inpaint(crop, local_mask)
             else:
-                result_crop = self._run_async_inpaint(crop, local_mask)
-        except Exception as exc:  # pragma: no cover - depende del modelo externo/GPU
+                result_crop = self._run_async_inpaint(crop, local_mask, inpainter_instance=inpainter_inst)
+        except Exception as exc:  # pragma: no cover
             logger.warning("No se pudo aplicar inpainting configurado '%s' en globo; uso relleno sólido. Error: %s", model_name, exc)
             return imagen, f"solid_fallback_configured_inpaint_failed:{model_name}"
 
@@ -230,8 +238,6 @@ class CleanInpaintingPipelineMixin:
             if cv2.countNonZero(safe_mask) == 0:
                 continue
 
-            # Comportamiento antiguo, solo opt-in y solo si la máscara no parece una caja.
-            # Esto evita que una segmentación rectangular pinte parches cuadrados sobre bordes.
             clean_mask = getattr(region, "clean_mask", None)
             if clean_mask is None or getattr(clean_mask, "size", 0) == 0:
                 clean_mask, _source = self._build_clean_mask_for_region(salida, region)
@@ -261,10 +267,6 @@ class CleanInpaintingPipelineMixin:
                 metadata["background_variation_threshold"] = float(variation_threshold)
                 metadata["bubble_fill_strategy"] = fill_strategy
 
-            # Estrategia de limpieza:
-            # - inpaint: usa siempre translation.inpaint_model sobre clean_mask.
-            # - auto: usa inpaint solo si el fondo seguro es complejo/entramado.
-            # - solid: relleno sólido mediano, útil para debug o máxima velocidad.
             should_use_configured_inpaint = fill_strategy == "inpaint" or (
                 fill_strategy == "auto" and background_variation >= variation_threshold
             )
@@ -287,18 +289,55 @@ class CleanInpaintingPipelineMixin:
                 metadata["bubble_fill_method"] = "solid_color"
         return salida
 
-    def _ejecutar_inpainting(self, imagen: np.ndarray, mascara_capa: np.ndarray, resultados):
-        if self.inpaint_model == "B/N":
-            return self.inpainter.inpaint(imagen, resultados)
-        if self.inpaint_model == "opencv-tela":
-            return self.inpainter.inpaint(imagen, mascara_capa)
-        return self._run_async_inpaint(imagen, mascara_capa)
+    def _ejecutar_inpainting(self, imagen, mascara_capa, resultados):
+        model_name = getattr(self, "inpaint_model", "auto")
+        if model_name == "auto":
+            model_name = self._resolve_auto_inpaint_model(imagen)
+            inpainter = self._build_inpainter(model_name)
+        else:
+            inpainter = getattr(self, "inpainter", None)
+            if inpainter is None:
+                inpainter = self._build_inpainter(model_name)
 
-    def _run_async_inpaint(self, imagen: np.ndarray, mascara_capa: np.ndarray):
+        if model_name == "B/N":
+            bn_inpainter = self.INPAINTER_FACTORIES["B/N"]()
+            return bn_inpainter.inpaint(imagen, resultados)
+
+        if model_name == "opencv-tela":
+            tela_inpainter = self.INPAINTER_FACTORIES["opencv-tela"]()
+            return tela_inpainter.inpaint(imagen, mascara_capa)
+
+        return self._run_async_inpaint(imagen, mascara_capa, inpainter_instance=inpainter)
+
+    def _run_async_inpaint(self, imagen: np.ndarray, mascara_capa: np.ndarray, inpainter_instance=None):
+        if inpainter_instance is None:
+            model_name = getattr(self, "inpaint_model", "auto")
+            if model_name == "auto":
+                model_name = self._resolve_auto_inpaint_model(imagen)
+            inpainter_instance = getattr(self, "inpainter", None)
+            if inpainter_instance is None:
+                inpainter_instance = self._build_inpainter(model_name)
+
+        async def _do_inpaint():
+            # Soporte para inpainters de red neuronal que requieren carga asíncrona
+            if hasattr(inpainter_instance, "_load"):
+                await inpainter_instance._load()
+            
+            # Verificamos si usa _inpaint (Modelos neurales) o inpaint clásico
+            if hasattr(inpainter_instance, "_inpaint"):
+                return await inpainter_instance._inpaint(imagen, mascara_capa)
+            elif hasattr(inpainter_instance, "inpaint"):
+                res = inpainter_instance.inpaint(imagen, mascara_capa)
+                if asyncio.iscoroutine(res):
+                    return await res
+                return res
+            else:
+                raise AttributeError(f"El modelo {type(inpainter_instance).__name__} no tiene métodos de inpainting válidos")
+
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
-            return loop.run_until_complete(self.inpaint_async(imagen, mascara_capa))
+            return loop.run_until_complete(_do_inpaint())
         finally:
             loop.close()
             asyncio.set_event_loop(None)

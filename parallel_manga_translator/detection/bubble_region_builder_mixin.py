@@ -11,6 +11,7 @@ from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleC
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 from parallel_manga_translator.geometry.box_geometry import BoxGeometry
+from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner
 
 logger = get_logger(__name__)
 BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
@@ -233,6 +234,20 @@ class BubbleRegionBuilderMixin:
                 regions[idx].confidence = max(regions[idx].confidence, float(np.mean([self._confidence(det) for det in group])))
             except Exception:
                 pass
+            if getattr(self, "fine_text_detection", True):
+                text_mask = TextInkMaskRefiner.mask_from_detections(
+                    regions[idx].mask.shape,
+                    group,
+                    dilate_px=getattr(self, "fine_text_mask_dilate", 2),
+                    min_pad=1,
+                )
+                if cv2.countNonZero(text_mask) > 0:
+                    text_mask = cv2.bitwise_and(text_mask, (regions[idx].mask > 0).astype(np.uint8) * 255)
+                    regions[idx].text_mask = text_mask
+                    regions[idx].metadata["fine_text_mask_pixels"] = int(cv2.countNonZero(text_mask))
+                    regions[idx].metadata["fine_text_mask_source"] = "ocr_polygons_inside_yolo_region"
+            regions[idx].text_boxes = [tuple(map(int, box)) for box in boxes]
+            regions[idx].metadata["text_line_boxes"] = [list(map(int, box)) for box in boxes]
             regions[idx].metadata["ocr_global_hint"] = bool(regions[idx].source_text_hint)
             regions[idx].metadata["assigned_ocr_detections"] = len(group)
         return assigned, grouped

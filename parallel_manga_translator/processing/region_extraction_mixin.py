@@ -70,6 +70,15 @@ class RegionExtractionMixin:
 
     def _sort_regions_for_reading(self, regiones: Sequence[TextRegion]) -> List[TextRegion]:
         try:
+            if regiones and any("panel_index" in getattr(r, "metadata", {}) for r in regiones):
+                return sorted(
+                    list(regiones),
+                    key=lambda r: (
+                        int(r.metadata.get("panel_index", 9999)),
+                        int(r.metadata.get("reading_order_index", 9999)),
+                        self._reading_order_key(r),
+                    ),
+                )
             return self.reading_order_resolver.sort_regions(regiones)
         except Exception as exc:
             logger.warning("No se pudo ordenar regiones por lectura; usando fallback: %s", exc)

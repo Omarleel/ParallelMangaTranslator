@@ -21,6 +21,7 @@ from parallel_manga_translator.processing.clean_onomatopoeia_guard_mixin import 
 from parallel_manga_translator.processing.clean_mask_strategy_mixin import CleanMaskStrategyMixin
 from parallel_manga_translator.processing.clean_inpainting_pipeline_mixin import CleanInpaintingPipelineMixin
 from parallel_manga_translator.processing.clean_detection_pipeline_mixin import CleanDetectionPipelineMixin
+
 class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskStrategyMixin, CleanInpaintingPipelineMixin, CleanDetectionPipelineMixin):
     INPAINTER_FACTORIES = {
         "opencv-tela": OpenCVInpainter,
@@ -64,6 +65,12 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
         self.bubble_fill_strategy = str(quality_config.bubble_fill_strategy or "inpaint").strip().lower()
         self.bubble_fill_background_std_threshold = float(quality_config.bubble_fill_background_std_threshold)
         self.bubble_fill_inpaint_padding = int(quality_config.bubble_fill_inpaint_padding)
+        self.fine_text_detection = bool(quality_config.fine_text_detection)
+        self.fine_text_mask_dilate = int(quality_config.fine_text_mask_dilate)
+        self.ink_mask_refinement = bool(quality_config.ink_mask_refinement)
+        self.ink_mask_min_component_area = int(quality_config.ink_mask_min_component_area)
+        self.ink_mask_component_anchor_overlap = float(quality_config.ink_mask_component_anchor_overlap)
+        self.ink_mask_component_anchor_max_gap_ratio = float(quality_config.ink_mask_component_anchor_max_gap_ratio)
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.onomatopoeia_mode = str(onomatopoeia_config.mode or "translate").strip().lower()
         self.translate_onomatopoeia = bool(onomatopoeia_config.translate)
@@ -72,13 +79,9 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
         self.clean_onomatopoeia = bool(onomatopoeia_config.clean)
         self.bubble_detector = BubbleDetector(idioma_entrada=idioma_entrada, quality_config=quality_config, processing_config=processing_config)
         self.source_language_filter = SourceLanguageFilter(idioma_entrada)
-        self.inpainter = self._build_inpainter(modelo_inpaint)
+        if modelo_inpaint != "auto":
+            self.inpainter = self._build_inpainter(modelo_inpaint)
+        else:
+            self.inpainter = None
         self.text_detector = TextDetectionFactory.create(idioma_entrada, ocr_config)
         self.last_regions: List[TextRegion] = []
-
-
-    async def inpaint_async(self, imagen: np.ndarray, mascara_capa: np.ndarray):
-        await self.inpainter._load()
-        return await self.inpainter._inpaint(imagen, mascara_capa)
-
-

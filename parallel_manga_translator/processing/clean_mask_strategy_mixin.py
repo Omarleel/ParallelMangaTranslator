@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from parallel_manga_translator.models.processing_models import TextRegion
+from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner, TextMaskRefinementOptions
 
 
 class CleanMaskStrategyMixin:
@@ -163,6 +164,27 @@ class CleanMaskStrategyMixin:
             raw_mask = self._binary_mask(existing_clean, shape)
             if cv2.countNonZero(raw_mask) == 0 and region.mask is not None:
                 raw_mask = self._binary_mask(region.mask, shape)
+            text_mask = self._binary_mask(getattr(region, "text_mask", None), shape)
+            if getattr(self, "ink_mask_refinement", True) and cv2.countNonZero(raw_mask) > 0:
+                safe = self._binary_mask(region.mask, shape) if region.mask is not None else raw_mask
+                refined = TextInkMaskRefiner.refine(
+                    imagen,
+                    safe,
+                    raw_mask,
+                    raw_text_mask=text_mask if cv2.countNonZero(text_mask) > 0 else raw_mask,
+                    initial_ink_mask=raw_mask,
+                    options=TextMaskRefinementOptions(
+                        enabled=True,
+                        fine_text_detection=bool(getattr(self, "fine_text_detection", True)),
+                        fine_mask_dilate=int(getattr(self, "fine_text_mask_dilate", self.bubble_fill_text_dilate)),
+                        min_component_area=int(getattr(self, "ink_mask_min_component_area", 3)),
+                        component_anchor_overlap=float(getattr(self, "ink_mask_component_anchor_overlap", 0.03)),
+                        component_anchor_max_gap_ratio=float(getattr(self, "ink_mask_component_anchor_max_gap_ratio", 0.45)),
+                    ),
+                )
+                if cv2.countNonZero(refined) > 0:
+                    raw_mask = refined
+                    return raw_mask, "region_text_mask"
             return raw_mask, "region_text_mask"
 
         safe_mask = self._safe_bubble_mask(region.mask, shape, self.bubble_fill_edge_margin)
@@ -175,7 +197,28 @@ class CleanMaskStrategyMixin:
             return safe_mask, "bubble_safe_interior_opt_in"
 
         text_zone = self._bubble_text_zone(region, shape)
+        raw_text_mask = self._binary_mask(getattr(region, "text_mask", None), shape)
+        if cv2.countNonZero(raw_text_mask) > 0:
+            # La máscara de polígonos OCR es una zona más precisa que el bbox unido.
+            text_zone = cv2.bitwise_or(text_zone, raw_text_mask)
+
         clean_mask = self._text_ink_mask(imagen, text_zone, safe_mask, self.bubble_fill_text_dilate)
+        if getattr(self, "ink_mask_refinement", True):
+            clean_mask = TextInkMaskRefiner.refine(
+                imagen,
+                safe_mask,
+                text_zone,
+                raw_text_mask=raw_text_mask if cv2.countNonZero(raw_text_mask) > 0 else None,
+                initial_ink_mask=clean_mask,
+                options=TextMaskRefinementOptions(
+                    enabled=True,
+                    fine_text_detection=bool(getattr(self, "fine_text_detection", True)),
+                    fine_mask_dilate=int(getattr(self, "fine_text_mask_dilate", self.bubble_fill_text_dilate)),
+                    min_component_area=int(getattr(self, "ink_mask_min_component_area", 3)),
+                    component_anchor_overlap=float(getattr(self, "ink_mask_component_anchor_overlap", 0.03)),
+                    component_anchor_max_gap_ratio=float(getattr(self, "ink_mask_component_anchor_max_gap_ratio", 0.45)),
+                ),
+            )
         return clean_mask, "text_ink_inside_bubble" if cv2.countNonZero(clean_mask) > 0 else "empty_text_ink_inside_bubble"
 
     def _attach_clean_masks(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> List[TextRegion]:
@@ -194,6 +237,12 @@ class CleanMaskStrategyMixin:
                 metadata["clean_mask_role"] = "ink_or_text_pixels_to_remove"
                 metadata["clean_mask_source"] = source
                 metadata["clean_mask_pixels"] = int(cv2.countNonZero(region.clean_mask))
+                if getattr(self, "ink_mask_refinement", True):
+                    metadata["ink_mask_refinement"] = "connected_components_anchored_to_ocr"
+                    metadata["ink_mask_refined"] = True
+                if getattr(region, "text_mask", None) is not None and getattr(region.text_mask, "size", 0):
+                    metadata["text_mask_pixels"] = int(cv2.countNonZero(self._binary_mask(region.text_mask, imagen.shape)))
+                    metadata.setdefault("fine_text_mask_source", "ocr_polygons")
                 if self._is_bubble_region(region):
                     metadata["bubble_mask_pixels"] = int(cv2.countNonZero(self._binary_mask(region.mask, imagen.shape)))
                     metadata["bubble_clean_mask_separated"] = True

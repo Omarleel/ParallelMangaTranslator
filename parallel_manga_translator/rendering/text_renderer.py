@@ -29,12 +29,20 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         absolute_min_font_size: int = 7,
         max_font_size: int = 96,
         inner_margin_ratio: float = 0.09,
+        smart_typography: bool = True,
+        hyphenation: bool = True,
+        balance_lines: bool = True,
+        line_spacing_factor: float = 1.0,
     ) -> None:
         self.font_path = font_path
         self.min_font_size = max(1, int(min_font_size))
         self.absolute_min_font_size = max(5, min(int(absolute_min_font_size), self.min_font_size))
         self.max_font_size = max(self.min_font_size, int(max_font_size))
         self.inner_margin_ratio = max(0.02, min(0.20, float(inner_margin_ratio)))
+        self.smart_typography = bool(smart_typography)
+        self.hyphenation = bool(hyphenation)
+        self.balance_lines = bool(balance_lines)
+        self.line_spacing_factor = max(0.72, min(1.45, float(line_spacing_factor)))
 
 
 

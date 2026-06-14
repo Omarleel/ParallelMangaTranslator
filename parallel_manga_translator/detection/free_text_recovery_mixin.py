@@ -10,6 +10,7 @@ import numpy as np
 from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
+from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner
 
 logger = get_logger(__name__)
 BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
@@ -17,6 +18,31 @@ BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 class FreeTextRecoveryMixin:
     """Recuperación y ordenamiento de texto libre/SFX fuera de globos."""
+
+    def _fine_text_region_mask_from_group(self, image_shape, group: Sequence, kind: str) -> Tuple[np.ndarray, Box, float, str]:
+        if not getattr(self, "fine_text_detection", True):
+            boxes = [self._to_rect(det) for det in group]
+            text_box = boxes[0]
+            for box in boxes[1:]:
+                text_box = self._union(text_box, box)
+            return self._text_box_mask(image_shape, text_box, kind=kind)
+
+        mask = TextInkMaskRefiner.mask_from_detections(
+            image_shape,
+            group,
+            dilate_px=max(1, int(getattr(self, "fine_text_mask_dilate", 2))),
+            min_pad=1,
+        )
+        if cv2.countNonZero(mask) == 0:
+            boxes = [self._to_rect(det) for det in group]
+            text_box = boxes[0]
+            for box in boxes[1:]:
+                text_box = self._union(text_box, box)
+            return self._text_box_mask(image_shape, text_box, kind=kind)
+
+        padding = 8 if kind == "sfx" else 5
+        bbox = TextInkMaskRefiner.bounding_rect_from_mask(mask, image_shape, padding=padding)
+        return mask, bbox, 0.42, "ocr_text_polygon_mask"
 
     def _free_text_regions_from_detections(self, image: np.ndarray, detections: Sequence) -> List[TextRegion]:
         free_regions: List[TextRegion] = []
@@ -62,7 +88,7 @@ class FreeTextRecoveryMixin:
             else:
                 razon = "Texto OCR agrupado que quedó huérfano (no está dentro de ningún globo de la IA)"
 
-            mask, bbox, score, source = self._text_box_mask(image.shape, text_box, kind=kind)
+            mask, bbox, score, source = self._fine_text_region_mask_from_group(image.shape, group, kind=kind)
             metadata = {
                 "mask_source": source,
                 "detector": "ocr_free_text",
@@ -72,6 +98,9 @@ class FreeTextRecoveryMixin:
                 "free_text_confidence": round(float(conf), 4),
                 "free_text_original_kind": "free_text",
                 "free_text_sfx_reason": free_text_onomatopoeia_metadata.get("free_text_onomatopoeia_method", "") if free_text_onomatopoeia_metadata else ("shape_candidate" if looks_sfx else ""),
+                "text_line_boxes": [list(map(int, box)) for box in boxes],
+                "fine_text_mask_source": source,
+                "fine_text_mask_pixels": int(cv2.countNonZero(mask)),
             }
             if filter_reason == "cjk_vertical_bbox_retry_ocr":
                 metadata.update({
@@ -87,6 +116,8 @@ class FreeTextRecoveryMixin:
                 text_bbox=text_box,
                 mask=mask,
                 clean_mask=mask.copy(),
+                text_boxes=[tuple(map(int, box)) for box in boxes],
+                text_mask=mask.copy(),
                 kind=kind,
                 confidence=max(conf, score),
                 source_text_hint=text_hint,
@@ -163,11 +194,14 @@ class FreeTextRecoveryMixin:
         pad_y = max(5, min(18, int(round(mh * 0.08))))
         return self._clip_box_to_image((mx - pad_x, my - pad_y, mw + 2 * pad_x, mh + 2 * pad_y), img_w, img_h)
 
-    def _order_regions_for_reading(self, regions: Sequence[TextRegion]) -> List[TextRegion]:
+    def _order_regions_for_reading(self, regions: Sequence[TextRegion], image: np.ndarray | None = None) -> List[TextRegion]:
         try:
-            ordered = self.reading_order_resolver.sort_regions(list(regions))
+            if image is not None and hasattr(self, "panel_order_resolver"):
+                ordered = self.panel_order_resolver.sort_regions(image, list(regions))
+            else:
+                ordered = self.reading_order_resolver.sort_regions(list(regions))
         except Exception as exc:
-            logger.warning("No se pudo ordenar regiones por lectura; se mantiene orden de detección: %s", exc)
+            logger.warning("No se pudo ordenar regiones por lectura/panel; se mantiene orden de detección: %s", exc)
             ordered = list(regions)
         for index, region in enumerate(ordered):
             region.metadata["reading_order_index"] = index
@@ -275,7 +309,7 @@ class FreeTextRecoveryMixin:
         regions.extend(self._free_text_regions_from_detections(image, remaining))
         regions.extend(self._recover_free_text_gaps(image, regions))
         merged_regions = self._merge_region_masks(regions)
-        ordered_regions = self._order_regions_for_reading(merged_regions)
+        ordered_regions = self._order_regions_for_reading(merged_regions, image=image)
         self._annotate_bubble_visual_expressions(ordered_regions)
         self._save_merge_debug_artifacts(image, ordered_regions, debug_records)
         return ordered_regions

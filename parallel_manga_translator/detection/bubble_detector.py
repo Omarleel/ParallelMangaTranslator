@@ -12,6 +12,7 @@ from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
+from parallel_manga_translator.layout.panel_order_resolver import PanelAwareReadingOrderResolver, PanelOrderConfig
 from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate, YoloBubbleDetector
 from parallel_manga_translator.config.app_config import ProcessingConfig, QualityConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
@@ -52,6 +53,13 @@ class BubbleDetector(BubbleGeometryMixin, BubbleTextRulesMixin, BubbleRegionBuil
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
         self._apply_settings(BubbleDetectorSettings.from_config(quality_config, processing_config))
+        q = quality_config
+        self.fine_text_detection = bool(getattr(q, "fine_text_detection", True))
+        self.fine_text_mask_dilate = int(getattr(q, "fine_text_mask_dilate", 2))
+        self.panel_order_resolver = PanelAwareReadingOrderResolver(
+            self.reading_order_resolver,
+            PanelOrderConfig.from_quality_config(q),
+        )
         self._debug_page_index = 0
         if self.merge_debug:
             logger.info("Bubble split debug activo: %s", BUBBLE_SPLIT_DEBUG_VERSION)

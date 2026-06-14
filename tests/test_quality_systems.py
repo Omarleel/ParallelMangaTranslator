@@ -715,3 +715,78 @@ class CleanMaskSeparationTests(unittest.TestCase):
         self.assertEqual(cleaner.inpainter.calls, 0)
         self.assertEqual(prepared.metadata["bubble_fill_method"], "solid_color")
         self.assertGreater(prepared.metadata["background_variation_score"], 4.0)
+
+class MaturePrecisionAdaptationsTests(unittest.TestCase):
+    def test_fine_text_mask_uses_ocr_polygon_not_full_bbox(self):
+        from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner
+
+        detection = ([[10, 10], [42, 14], [38, 28], [8, 24]], "字", 0.9)
+        mask = TextInkMaskRefiner.mask_from_detections((60, 60, 3), [detection], dilate_px=0, min_pad=0)
+        polygon_pixels = int(np.count_nonzero(mask))
+        bbox_pixels = 34 * 19
+
+        self.assertGreater(polygon_pixels, 0)
+        self.assertLess(polygon_pixels, bbox_pixels)
+
+    def test_ink_refinement_keeps_text_anchor_and_rejects_far_noise(self):
+        from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner, TextMaskRefinementOptions
+
+        image = np.full((100, 100, 3), 255, dtype=np.uint8)
+        image[40:52, 40:60] = 0
+        image[75:78, 75:78] = 0
+        safe = np.zeros((100, 100), dtype=np.uint8)
+        safe[10:90, 10:90] = 255
+        raw = np.zeros((100, 100), dtype=np.uint8)
+        raw[38:54, 38:62] = 255
+        text_zone = np.zeros((100, 100), dtype=np.uint8)
+        text_zone[30:85, 30:85] = 255
+        initial = np.zeros((100, 100), dtype=np.uint8)
+        initial[40:52, 40:60] = 255
+        initial[75:78, 75:78] = 255
+
+        refined = TextInkMaskRefiner.refine(
+            image,
+            safe,
+            text_zone,
+            raw_text_mask=raw,
+            initial_ink_mask=initial,
+            options=TextMaskRefinementOptions(fine_mask_dilate=1, min_component_area=2),
+        )
+
+        self.assertGreater(int(np.count_nonzero(refined[42:50, 44:56])), 0)
+        self.assertEqual(int(np.count_nonzero(refined[75:78, 75:78])), 0)
+
+    def test_panel_aware_order_reads_right_panel_first_for_japanese(self):
+        import cv2
+        from parallel_manga_translator.layout.panel_order_resolver import PanelAwareReadingOrderResolver, PanelOrderConfig
+        from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
+
+        image = np.full((160, 260, 3), 255, dtype=np.uint8)
+        cv2.rectangle(image, (10, 10), (115, 145), (0, 0, 0), 3)
+        cv2.rectangle(image, (145, 10), (250, 145), (0, 0, 0), 3)
+        resolver = PanelAwareReadingOrderResolver(
+            ReadingOrderResolver("Japonés"),
+            PanelOrderConfig(enabled=True, min_area_ratio=0.03, gutter_px=7),
+        )
+        left = TextRegion((35, 40, 35, 35), (35, 40, 35, 35), np.ones((160, 260), dtype=np.uint8) * 255, metadata={})
+        right = TextRegion((180, 40, 35, 35), (180, 40, 35, 35), np.ones((160, 260), dtype=np.uint8) * 255, metadata={})
+
+        ordered = resolver.sort_regions(image, [left, right])
+
+        self.assertIs(ordered[0], right)
+        self.assertEqual(right.metadata["panel_index"], 0)
+        self.assertEqual(left.metadata["panel_index"], 1)
+        self.assertEqual(right.metadata["panel_order_source"], "opencv_panel_edges")
+
+    def test_typography_breaks_long_latin_token_with_soft_hyphen(self):
+        from parallel_manga_translator.rendering.text_renderer import TextRenderer
+
+        renderer = TextRenderer(smart_typography=True, hyphenation=True, balance_lines=True)
+        font = renderer._get_font(18)
+        token = "extraordinariamente"
+        max_width = max(20, renderer._text_width(token, font) // 2)
+
+        parts = renderer._break_long_token(token, font, max_width)
+
+        self.assertGreaterEqual(len(parts), 2)
+        self.assertTrue(any(part.endswith("-") for part in parts[:-1]))
