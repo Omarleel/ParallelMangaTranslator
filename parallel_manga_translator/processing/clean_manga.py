@@ -13,6 +13,7 @@ from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.config.app_config import OcrConfig, OnomatopoeiaConfig, ProcessingConfig, QualityConfig
 from parallel_manga_translator.config.runtime_config import get_active_config
+from parallel_manga_translator.quality.visual_inpaint_verifier import VisualInpaintVerifier
 from parallel_manga_translator.ocr.text_detection import TextDetectionFactory
 
 nest_asyncio.apply()
@@ -65,6 +66,13 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
         self.bubble_fill_strategy = str(quality_config.bubble_fill_strategy or "inpaint").strip().lower()
         self.bubble_fill_background_std_threshold = float(quality_config.bubble_fill_background_std_threshold)
         self.bubble_fill_inpaint_padding = int(quality_config.bubble_fill_inpaint_padding)
+        self.visual_inpaint_verifier_enabled = bool(quality_config.visual_inpaint_verifier)
+        self.visual_inpaint_retry = bool(quality_config.visual_inpaint_retry)
+        self.visual_inpaint_retry_models = str(quality_config.visual_inpaint_retry_models or "solid,opencv-tela,lama_mpe,aot")
+        self.visual_inpaint_max_retries = int(quality_config.visual_inpaint_max_retries)
+        self.visual_inpaint_debug = bool(quality_config.visual_inpaint_debug)
+        self.visual_inpaint_verifier = VisualInpaintVerifier(accept_score=float(quality_config.visual_inpaint_accept_score))
+        self._visual_retry_inpainters = {}
         self.fine_text_detection = bool(quality_config.fine_text_detection)
         self.fine_text_mask_dilate = int(quality_config.fine_text_mask_dilate)
         self.ink_mask_refinement = bool(quality_config.ink_mask_refinement)

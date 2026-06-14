@@ -54,6 +54,18 @@ quality:
   bubble_fill_background_std_threshold: 18.0
   # Contexto alrededor del globo/texto usado al inpaintar fondos complejos.
   bubble_fill_inpaint_padding: 18
+  # Verificador visual post-limpieza: detecta halos, restos de tinta, textura rota,
+  # parches planos y bordes de globo dañados. Si falla, prueba candidatos alternos.
+  visual_inpaint_verifier: true
+  visual_inpaint_retry: true
+  # Orden de reintentos; admite solid, opencv/opencv-tela, lama_mpe, lama_large_512px y aot.
+  visual_inpaint_retry_models: "solid,opencv-tela,lama_mpe,aot"
+  # Reintentos extra además del primer candidato elegido por bubble_fill_strategy.
+  visual_inpaint_max_retries: 4
+  # 1.0 = exige que todas las comprobaciones estén bajo su umbral interno.
+  visual_inpaint_accept_score: 1.0
+  # true guarda métricas e imágenes/crops por región en salida/debug_inpaint/.
+  visual_inpaint_debug: false
   bubble_detector: yolo11-seg
   require_yolo: true
   bubble_first: true

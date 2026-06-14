@@ -5,15 +5,18 @@ import types
 import unittest
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 sys.modules.setdefault("easyocr", types.SimpleNamespace(Reader=object))
 
 from parallel_manga_translator.translation.character_memory_manager import CharacterMemoryManager, validate_character_memory_response
 from parallel_manga_translator.quality.evaluation_manager import EvaluationManager, EvaluationConfig, box_iou, char_error_rate
+from parallel_manga_translator.quality.visual_inpaint_verifier import VisualInpaintVerifier
 from parallel_manga_translator.translation.translator_manager import validate_translation_response
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.processing.clean_manga import CleanManga
+from parallel_manga_translator.processing.clean_inpainting_pipeline_mixin import CleanInpaintingPipelineMixin
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
@@ -81,6 +84,98 @@ class EvaluationManagerTests(unittest.TestCase):
         self.assertEqual(report["summary"]["detection_f1"], 1.0)
         self.assertEqual(report["summary"]["mean_ocr_cer"], 0.0)
         self.assertEqual(report["summary"]["mean_translation_cer"], 0.0)
+
+
+class VisualInpaintVerifierTests(unittest.TestCase):
+    @staticmethod
+    def _bubble_fixture():
+        image = np.full((120, 160, 3), 255, dtype=np.uint8)
+        context = np.zeros((120, 160), dtype=np.uint8)
+        cv2.ellipse(context, (80, 60), (55, 35), 0, 0, 360, 255, -1)
+        mask = np.zeros((120, 160), dtype=np.uint8)
+        mask[45:76, 60:101] = 255
+        return image, mask, context
+
+    def test_accepts_clean_uniform_fill(self):
+        before, mask, context = self._bubble_fixture()
+        report = VisualInpaintVerifier().evaluate(before, before.copy(), mask, context_mask=context)
+
+        self.assertTrue(report.passed)
+        self.assertEqual(report.failed_checks, [])
+
+    def test_detects_halo_and_ink_residue(self):
+        before, mask, context = self._bubble_fixture()
+        after = before.copy()
+        halo = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)), iterations=1)
+        halo = cv2.bitwise_and(halo, cv2.bitwise_not(mask))
+        after[halo > 0] = 220
+        cv2.putText(after, "x", (68, 68), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (70, 70, 70), 2, cv2.LINE_AA)
+
+        report = VisualInpaintVerifier().evaluate(before, after, mask, context_mask=context)
+
+        self.assertFalse(report.passed)
+        self.assertIn("halo", report.failed_checks)
+        self.assertTrue(
+            "ink_residue" in report.failed_checks or "texture_mismatch" in report.failed_checks
+        )
+
+    def test_detects_flat_patch_on_screentone(self):
+        before, mask, context = self._bubble_fixture()
+        before[:] = 235
+        for x in range(0, before.shape[1], 6):
+            cv2.line(before, (x, 0), (x, before.shape[0] - 1), (210, 210, 210), 1)
+        after = before.copy()
+        after[mask > 0] = 235
+
+        report = VisualInpaintVerifier().evaluate(before, after, mask, context_mask=context)
+
+        self.assertFalse(report.passed)
+        self.assertIn("flat_patch", report.failed_checks)
+
+    def test_debug_artifacts_are_written_under_debug_inpaint(self):
+        class DummyDebugWriter(CleanInpaintingPipelineMixin):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            writer = DummyDebugWriter()
+            writer.visual_inpaint_debug = True
+            writer.set_visual_inpaint_debug_context(str(root), 0, "0001.jpg")
+
+            before, mask, context = self._bubble_fixture()
+            after = before.copy()
+            region = TextRegion(
+                bbox=(20, 20, 120, 80),
+                text_bbox=(60, 45, 41, 31),
+                mask=context,
+                kind="dialogue",
+                confidence=0.91,
+                clean_mask=mask,
+            )
+            report = VisualInpaintVerifier().evaluate(before, after, mask, context_mask=context)
+
+            metadata = writer._write_visual_inpaint_region_debug_summary(
+                region_index=0,
+                region=region,
+                before_image=before,
+                after_image=after,
+                clean_mask=mask,
+                safe_mask=context,
+                fill_color=(255, 255, 255),
+                fill_strategy="inpaint",
+                method="solid_color",
+                chosen_candidate="solid",
+                report=report,
+                attempts=[{"candidate": "solid", "accepted": True, "score": 0.0}],
+            )
+
+            page_dir = root / "debug_inpaint" / "0001"
+            self.assertTrue(page_dir.exists())
+            self.assertTrue((page_dir / "manifest.json").exists())
+            self.assertTrue((page_dir / "r000_report.json").exists())
+            self.assertIn("debug_inpaint/0001/manifest.json", metadata["visual_inpaint_debug_manifest"])
+            for relative in metadata["visual_inpaint_debug_files"].values():
+                self.assertTrue((root / relative).exists(), relative)
 
 
 class CharacterMemoryManagerTests(unittest.TestCase):

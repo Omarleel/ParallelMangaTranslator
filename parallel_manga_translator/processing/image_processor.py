@@ -197,6 +197,14 @@ class ImageProcessor:
             try:
                 t0 = time.perf_counter()
                 with processing_stage("limpieza", logger=logger, page_index=indice_imagen, filename=archivo):
+                    if bool(getattr(self.clean_manga, "visual_inpaint_debug", False)):
+                        self.clean_manga.set_visual_inpaint_debug_context(
+                            output_root=output_root,
+                            page_index=indice_imagen,
+                            filename=archivo,
+                        )
+                    else:
+                        self.clean_manga.clear_visual_inpaint_debug_context()
                     mascara_capa, imagen_limpia, regiones = self.clean_manga.limpiar_manga(imagen_actual)
                 metrics.timings["limpieza"] = round(time.perf_counter() - t0, 4)
                 metrics.detected_regions = len(regiones)

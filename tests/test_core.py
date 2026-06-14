@@ -5,6 +5,7 @@ import sys
 import tempfile
 import types
 import unittest
+import unittest.mock
 
 import cv2
 import numpy as np

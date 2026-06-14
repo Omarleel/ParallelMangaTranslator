@@ -80,6 +80,12 @@ class QualityConfig:
     bubble_fill_strategy: str = "inpaint"
     bubble_fill_background_std_threshold: float = 18.0
     bubble_fill_inpaint_padding: int = 18
+    visual_inpaint_verifier: bool = True
+    visual_inpaint_retry: bool = True
+    visual_inpaint_retry_models: str = "solid,opencv-tela,lama_mpe,aot"
+    visual_inpaint_max_retries: int = 4
+    visual_inpaint_accept_score: float = 1.0
+    visual_inpaint_debug: bool = False
     bubble_detector: str = "yolo11-seg"
     require_yolo: bool = True
     bubble_first: bool = True
