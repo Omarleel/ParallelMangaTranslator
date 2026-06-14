@@ -77,9 +77,8 @@ class CleanInpaintingPipelineMixin:
         # del globo; region.clean_mask es la tinta/texto original que se borra.
         imagen_base = imagen.copy()
         bubble_regions = [r for r in regiones if r.kind in {"dialogue", "narration", "unknown"} and self._region_matches_source_language(r)]
+        
         # Texto libre y onomatopeyas se limpian con inpainting, no con relleno plano de globo.
-        # Si el usuario eligió conservar onomatopeyas, las regiones SFX se dejan intactas
-        # para no borrar arte original ni reinsertarlo como fuente plana.
         sfx_regions = [
             r for r in regiones
             if r.kind not in {"dialogue", "narration", "unknown"} and self._region_matches_source_language(r) and self._should_clean_non_bubble_region(r, imagen)
@@ -91,11 +90,17 @@ class CleanInpaintingPipelineMixin:
         if self.inpaint_mode == "bubble_only":
             return imagen_base
 
+        # Resolvemos el modelo real si la configuración está en "auto"
+        actual_inpaint_model = getattr(self, "inpaint_model", "opencv-tela")
+        if actual_inpaint_model == "auto":
+            actual_inpaint_model = self._resolve_auto_inpaint_model(imagen)
+
         # Las onomatopeyas/fx fuera de globo se inpaintan con máscara propia. En modo quality
         # se usa el modelo seleccionado; en auto/fast se prefiere OpenCV por velocidad.
         sfx_mask = BubbleDetector.compose_clean_mask(sfx_regions, imagen.shape) if sfx_regions else np.zeros(mascara_capa.shape, dtype=np.uint8)
         if cv2.countNonZero(sfx_mask) > 0:
-            if self.inpaint_mode == "quality" and self.inpaint_model not in {"opencv-tela", "B/N"}:
+            # Aquí usamos actual_inpaint_model en lugar de self.inpaint_model
+            if self.inpaint_mode == "quality" and actual_inpaint_model not in {"opencv-tela", "B/N"}:
                 res_impainting = self._run_async_inpaint(imagen_base, sfx_mask)
                 imagen_base = self.convertir_a_imagen_limpia(res_impainting, imagen_base)
             else:
