@@ -550,3 +550,48 @@ class CleanMaskSeparationTests(unittest.TestCase):
         self.assertGreater(clean_pixels, 0)
         self.assertLess(clean_pixels, int(np.count_nonzero(prepared.mask)) * 0.30)
         self.assertEqual(prepared.metadata["clean_mask_source"], "text_ink_inside_bubble")
+
+    def test_dark_bubble_fill_uses_dark_background_not_white_ink(self):
+        image = np.full((100, 100, 3), 255, dtype=np.uint8)
+        image[15:85, 15:85] = 18
+        image[42:55, 38:64] = 245
+        box_mask = np.zeros((100, 100), dtype=np.uint8)
+        box_mask[15:85, 15:85] = 255
+        region = TextRegion(
+            bbox=(15, 15, 70, 70),
+            text_bbox=(38, 42, 26, 13),
+            mask=box_mask,
+            kind="narration",
+            detections_count=1,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+        filled = cleaner._fill_bubble_interiors(image, [prepared])
+
+        self.assertLess(float(np.mean(filled[45:52, 42:60])), 55.0)
+        self.assertLess(float(np.mean(prepared.metadata["fill_color_bgr"])), 55.0)
+        self.assertEqual(prepared.metadata["fill_color_source"], "safe_region_minus_clean_mask")
+
+    def test_light_bubble_fill_still_uses_light_background(self):
+        image = np.full((100, 100, 3), 30, dtype=np.uint8)
+        image[15:85, 15:85] = 242
+        image[42:55, 38:64] = 5
+        box_mask = np.zeros((100, 100), dtype=np.uint8)
+        box_mask[15:85, 15:85] = 255
+        region = TextRegion(
+            bbox=(15, 15, 70, 70),
+            text_bbox=(38, 42, 26, 13),
+            mask=box_mask,
+            kind="dialogue",
+            detections_count=1,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+        filled = cleaner._fill_bubble_interiors(image, [prepared])
+
+        self.assertGreater(float(np.mean(filled[45:52, 42:60])), 215.0)
+        self.assertGreater(float(np.mean(prepared.metadata["fill_color_bgr"])), 215.0)

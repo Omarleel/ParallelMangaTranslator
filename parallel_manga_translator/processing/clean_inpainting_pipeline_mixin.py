@@ -84,24 +84,45 @@ class CleanInpaintingPipelineMixin:
         return imagen_base
 
     @staticmethod
-    def _dominant_fill_color(region_img: np.ndarray, local_mask: np.ndarray):
+    def _dominant_fill_color(region_img: np.ndarray, local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None):
+        """Estima el color de fondo de una región segura.
+
+        ``local_mask`` representa la zona segura del globo/caja. Cuando existe
+        ``exclude_mask`` representa la tinta que se va a borrar y se excluye de
+        la muestra de fondo. Esto es importante para cajas negras con texto
+        blanco: si se muestrea el globo completo, la tinta blanca puede dominar
+        el color elegido y el borrado termina pintando blanco sobre fondo negro.
+        """
         if region_img.size == 0 or local_mask.size == 0:
             return (255, 255, 255)
-        pixels = region_img[local_mask > 0]
+
+        base_mask = (local_mask > 0).astype(np.uint8)
+        if cv2.countNonZero(base_mask) == 0:
+            return (255, 255, 255)
+
+        sample_mask = base_mask.copy()
+        if exclude_mask is not None and getattr(exclude_mask, "size", 0):
+            exclusion = (exclude_mask > 0).astype(np.uint8)
+            # Quita también antialias/borde alrededor de la tinta para no contaminar
+            # el color de fondo con trazos blancos/negros dilatados.
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            exclusion = cv2.dilate(exclusion, kernel, iterations=1)
+            sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not(exclusion))
+            # Si la tinta ocupa casi todo el área segura, usa una exclusión menos
+            # agresiva antes de caer al área completa.
+            if cv2.countNonZero(sample_mask) < max(16, int(cv2.countNonZero(base_mask) * 0.04)):
+                sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not((exclude_mask > 0).astype(np.uint8)))
+            if cv2.countNonZero(sample_mask) == 0:
+                sample_mask = base_mask
+
+        pixels = region_img[sample_mask > 0]
         if pixels.size == 0:
             return (255, 255, 255)
-        gray = cv2.cvtColor(region_img, cv2.COLOR_BGR2GRAY)
-        masked_gray = gray[local_mask > 0]
-        if masked_gray.size == 0:
-            return (255, 255, 255)
-        # Para globos de manga, preferimos el color claro dominante del interior.
-        bright = pixels[masked_gray >= max(150, int(np.percentile(masked_gray, 55)))]
-        sample = bright if bright.size else pixels
-        median = np.median(sample.reshape(-1, 3), axis=0)
-        if float(np.mean(median)) > 168:
-            return tuple(int(min(255, max(0, c))) for c in median.tolist())
-        # Globos oscuros/narración: usa mediana del área detectada.
-        return tuple(int(min(255, max(0, c))) for c in median.tolist())
+
+        # Mediana por canal: estable para fondos blancos, negros, grises y cajas
+        # con antialias. Al excluir clean_mask, ya no necesita forzar brillo.
+        median = np.median(pixels.reshape(-1, 3), axis=0)
+        return tuple(int(min(255, max(0, round(float(c))))) for c in median.tolist())
 
     @staticmethod
     def _apply_solid_fill(imagen: np.ndarray, mask: np.ndarray, fill_color, sigma: float = 0.9) -> np.ndarray:
@@ -122,8 +143,6 @@ class CleanInpaintingPipelineMixin:
             if cv2.countNonZero(safe_mask) == 0:
                 continue
 
-            fill_color = self._dominant_fill_color(salida, safe_mask)
-
             # Comportamiento antiguo, solo opt-in y solo si la máscara no parece una caja.
             # Esto evita que una segmentación rectangular pinte parches cuadrados sobre bordes.
             clean_mask = getattr(region, "clean_mask", None)
@@ -135,6 +154,12 @@ class CleanInpaintingPipelineMixin:
 
             if cv2.countNonZero(clean_mask) == 0:
                 continue
+
+            fill_color = self._dominant_fill_color(salida, safe_mask, clean_mask)
+            metadata = getattr(region, "metadata", None)
+            if isinstance(metadata, dict):
+                metadata["fill_color_source"] = "safe_region_minus_clean_mask"
+                metadata["fill_color_bgr"] = tuple(int(c) for c in fill_color)
 
             sigma = 1.0 if str((region.metadata or {}).get("clean_mask_source", "")).endswith("opt_in") else 0.65
             salida = self._apply_solid_fill(salida, clean_mask, fill_color, sigma=sigma)

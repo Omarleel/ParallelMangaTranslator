@@ -89,16 +89,24 @@ class CleanMaskStrategyMixin:
         if vals.size == 0:
             return np.zeros(imagen.shape[:2], dtype=np.uint8)
 
-        # Umbral de tinta separado del fondo. En globos claros busca texto oscuro;
-        # en cajas de narración oscuras busca texto claro para no capturar el fondo.
-        median_val = float(np.median(vals))
-        if median_val < 128:
-            percentile_cut = int(np.percentile(vals, 72))
-            threshold = max(145, min(245, percentile_cut - 8))
+        # Decide la polaridad desde el fondo de la región segura, no desde el
+        # bbox de texto. El bbox puede estar muy ajustado y quedar dominado por
+        # la tinta; en cajas negras con texto blanco eso hacía que se tomara el
+        # texto como fondo y se borrara la zona equivocada.
+        safe_vals = gray[safe_mask > 0]
+        background_median = float(np.median(safe_vals)) if safe_vals.size else float(np.median(vals))
+
+        if background_median < 128:
+            # Fondo oscuro: la tinta esperada es clara. Usa un umbral relativo al
+            # texto local para aceptar blanco/gris claro sin capturar el fondo.
+            percentile_cut = int(np.percentile(vals, 70))
+            threshold = max(80, min(245, percentile_cut - 10))
             ink = ((gray >= threshold) & (zone > 0)).astype(np.uint8) * 255
         else:
-            percentile_cut = int(np.percentile(vals, 38))
-            threshold = min(210, max(115, percentile_cut + 28))
+            # Fondo claro: la tinta esperada es oscura. El umbral alto cubre
+            # antialias gris, pero queda por debajo del fondo blanco del globo.
+            percentile_cut = int(np.percentile(vals, 30))
+            threshold = min(235, max(20, percentile_cut + 10))
             ink = ((gray <= threshold) & (zone > 0)).astype(np.uint8) * 255
 
         # Evita borrar tramas muy finas sueltas: conserva componentes que parecen trazos de letra.
