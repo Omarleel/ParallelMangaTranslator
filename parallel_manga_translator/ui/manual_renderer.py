@@ -29,6 +29,7 @@ class ManualRegion:
     deleted: bool = False
     auto_font_size: bool = True
     font_size: Optional[int] = None
+    ui_layout: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -118,6 +119,9 @@ def parse_manual_regions(payload: Iterable[Dict[str, Any]], image_width: int, im
         font_size = _optional_font_size(item.get("font_size"))
         if not auto_font_size and font_size is None:
             font_size = 24
+        ui_layout = item.get("ui_layout") or item.get("layout_ui") or item.get("Layout UI")
+        if not isinstance(ui_layout, dict):
+            ui_layout = None
         regions.append(
             ManualRegion(
                 index=int(item.get("index", fallback_index)),
@@ -133,6 +137,7 @@ def parse_manual_regions(payload: Iterable[Dict[str, Any]], image_width: int, im
                 deleted=deleted,
                 auto_font_size=auto_font_size,
                 font_size=font_size,
+                ui_layout=ui_layout,
             )
         )
     return regions
@@ -412,17 +417,60 @@ def render_manual_page(
     drawable = [r for r in modified_regions if (not r.deleted) and r.visible and str(r.text).strip()]
     if drawable:
         renderer = TextRenderer(max_font_size=160)
-        base = renderer.render(
+        base = renderer.render_with_layouts(
             base,
             [r.bbox for r in drawable],
             [r.text for r in drawable],
             text_styles=[r.style for r in drawable],
             font_sizes=[None if r.auto_font_size else r.font_size for r in drawable],
+            ui_layouts=[r.ui_layout for r in drawable],
         )
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(output_path), base)
+
+
+def render_manual_region_preview(
+    *,
+    clean_path: str | Path,
+    original_path: str | Path,
+    region: ManualRegion,
+) -> bytes:
+    """Devuelve un PNG de una sola región usando el mismo renderizador final.
+
+    La UI lo usa durante la edición directa para que el texto visible en el
+    navegador sea una vista rasterizada por el backend, no una aproximación CSS.
+    """
+    clean_image = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
+    original_image = cv2.imread(str(original_path), cv2.IMREAD_COLOR)
+    if clean_image is None:
+        raise ValueError(f"No se pudo leer la imagen limpia: {clean_path}")
+    if original_image is None:
+        raise ValueError(f"No se pudo leer la imagen original: {original_path}")
+    if original_image.shape[:2] != clean_image.shape[:2]:
+        original_image = cv2.resize(original_image, (clean_image.shape[1], clean_image.shape[0]))
+
+    height, width = clean_image.shape[:2]
+    x, y, w, h = _safe_box(region.bbox, width, height)
+    background = original_image if region.restore_original else clean_image
+    crop = background[y:y + h, x:x + w].copy()
+
+    if region.visible and not region.deleted and str(region.text).strip():
+        renderer = TextRenderer(max_font_size=160)
+        crop = renderer.render_with_layouts(
+            crop,
+            [(0, 0, w, h)],
+            [region.text],
+            text_styles=[region.style],
+            font_sizes=[None if region.auto_font_size else region.font_size],
+            ui_layouts=[region.ui_layout],
+        )
+
+    ok, encoded = cv2.imencode(".png", crop)
+    if not ok:
+        raise ValueError("No se pudo codificar la previsualización de región.")
+    return encoded.tobytes()
 
 
 def write_corrections(path: str | Path, regions: Sequence[ManualRegion], brush_strokes: Sequence[BrushStroke] | None = None) -> None:
@@ -444,6 +492,7 @@ def write_corrections(path: str | Path, regions: Sequence[ManualRegion], brush_s
                 "deleted": region.deleted,
                 "auto_font_size": region.auto_font_size,
                 "font_size": region.font_size,
+                "ui_layout": region.ui_layout,
             }
             for region in regions
             if region.modified or region.manual or region.deleted

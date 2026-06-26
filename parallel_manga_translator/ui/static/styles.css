@@ -379,6 +379,16 @@ button:disabled { opacity: .52; cursor: not-allowed; }
 }
 .region-text-preview.empty { color: rgba(8,10,19,.58); font-style: italic; }
 .region-box.live-preview { background: rgba(255,255,255,.36); backdrop-filter: blur(1px); }
+.region-text-hit {
+  position: absolute;
+  display: block;
+  border-radius: 6px;
+  background: transparent;
+  pointer-events: auto;
+  cursor: text;
+}
+.region-text-hit:hover { box-shadow: inset 0 0 0 2px rgba(124,92,255,.35); }
+.region-box.live-editing .region-text-editor { z-index: 3; }
 
 .overlay-layer.tool-brush .region-box,
 .overlay-layer.tool-region .region-box { pointer-events: none; }
@@ -630,6 +640,42 @@ textarea { min-height: 64px; }
 .region-box.live-editing .resize-handle { z-index: 4; }
 .region-box.live-editing .region-label { z-index: 5; cursor: move; }
 
+
+.region-raster-preview {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  display: block;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 6px;
+  image-rendering: auto;
+}
+.region-raster-preview.loading { opacity: .74; }
+.region-text-editor.raster-input {
+  z-index: 3;
+  color: transparent;
+  text-shadow: none;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+.region-text-editor.raster-input:focus {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px rgba(124,92,255,.42);
+}
+.region-text-editor.raster-input::selection {
+  color: transparent;
+  background: rgba(124,92,255,.28);
+}
+.region-text-editor.raster-input.empty::before {
+  color: rgba(7,9,17,.42);
+  text-shadow: none;
+}
+
 /* Cursor circular del pincel para saber el tamaño antes de pintar. */
 .brush-cursor {
   position: absolute;
@@ -653,3 +699,382 @@ textarea { min-height: 64px; }
 
 /* La lista de pinceles se reduce a acciones realmente necesarias. */
 .brush-controls .inline-field { min-width: 190px; }
+
+.region-text-preview.split-slot {
+  background: rgba(255,255,255,.26);
+  border-radius: 5px;
+}
+.region-slot-hint {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -32px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  background: rgba(8, 10, 19, .92);
+  border: 1px solid rgba(124, 92, 255, .45);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* UIX round 4: flujo tipo editor de imágenes, con dock, panel de capas y lienzo optimizado. */
+.work-view {
+  grid-template-columns: 58px 260px minmax(0, 1fr);
+}
+.tool-dock {
+  height: 100vh;
+  min-height: 0;
+  padding: 10px 7px;
+  border-right: 1px solid var(--line);
+  background: rgba(8, 10, 19, .92);
+  backdrop-filter: blur(16px);
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  z-index: 35;
+}
+.dock-tool {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: rgba(255,255,255,.035);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  position: relative;
+  transition: border-color .12s ease, background .12s ease, transform .12s ease;
+}
+.dock-tool:hover {
+  border-color: #586083;
+  background: rgba(255,255,255,.075);
+  transform: translateY(-1px);
+}
+.dock-tool.active,
+.dock-tool[aria-pressed="true"] {
+  border-color: rgba(124,92,255,.75);
+  background: rgba(124,92,255,.22);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.045);
+}
+.dock-tool.utility { color: var(--accent-2); }
+.tool-icon { font-size: 18px; line-height: 1; }
+.tool-label {
+  position: absolute;
+  left: 52px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: 0;
+  padding: 7px 9px;
+  border-radius: 10px;
+  white-space: nowrap;
+  background: #070913;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: var(--shadow);
+  transition: opacity .12s ease;
+  z-index: 60;
+}
+.dock-tool:hover .tool-label { opacity: 1; }
+.dock-separator {
+  display: block;
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--line);
+}
+.tool-switcher button.active,
+.view-switcher button.active {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+
+.canvas-card {
+  position: relative;
+  background-color: #070913;
+  background-image:
+    linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,.035) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,.035) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,.035) 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+}
+.canvas-hud {
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: min(720px, calc(100vw - 80px));
+  max-width: calc(100% - 12px);
+  z-index: 18;
+  margin: 0 0 8px 0;
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(42, 51, 85, .78);
+  border-radius: 14px;
+  background: rgba(8, 10, 19, .78);
+  color: var(--muted);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 28px rgba(0,0,0,.25);
+  font-size: 12px;
+}
+.canvas-hud strong {
+  color: var(--text);
+  white-space: nowrap;
+  font-size: 12px;
+}
+#canvasHint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.image-stage {
+  will-change: transform;
+}
+.canvas-card.panning,
+.canvas-card.panning * {
+  cursor: grabbing !important;
+}
+.overlay-layer.tool-pan,
+.work-view.space-pan .overlay-layer {
+  cursor: grab;
+}
+.overlay-layer.tool-pan:active,
+.work-view.space-pan .overlay-layer:active {
+  cursor: grabbing;
+}
+.overlay-layer.tool-pan .region-box,
+.work-view.space-pan .region-box {
+  pointer-events: none;
+}
+
+.layers-panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: rgba(8,10,19,.26);
+}
+.layer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.layer-head h3 {
+  margin: 0 0 3px;
+  font-size: 14px;
+}
+.layer-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+.region-list {
+  display: grid;
+  gap: 6px;
+  max-height: 210px;
+  overflow: auto;
+  padding-right: 2px;
+}
+.region-list.empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+}
+.layer-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 30px;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid rgba(42,51,85,.95);
+  border-radius: 12px;
+  padding: 6px;
+  background: #0c0f1d;
+  color: var(--text);
+  text-align: left;
+}
+.layer-item:hover { border-color: #586083; }
+.layer-item.active {
+  border-color: rgba(124,92,255,.82);
+  background: rgba(124,92,255,.16);
+}
+.layer-thumb {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(255,255,255,.055);
+  color: var(--accent-2);
+  font-size: 11px;
+  font-weight: 900;
+}
+.layer-main { min-width: 0; display: grid; gap: 2px; }
+.layer-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 900;
+}
+.layer-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10px;
+}
+.layer-eye {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: rgba(255,255,255,.045);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.layer-eye:hover { color: var(--text); border-color: #586083; }
+.layer-item.hidden-layer { opacity: .58; }
+.layer-item.hidden-layer .layer-title { text-decoration: line-through; }
+
+@media (max-width: 1320px) {
+  .work-view { grid-template-columns: 54px 230px minmax(0, 1fr); }
+}
+
+.work-view.focus-canvas { grid-template-columns: 58px minmax(0, 1fr); }
+.work-view.focus-canvas .work-sidebar { display: none; }
+
+@media (max-width: 980px) {
+  .work-view { grid-template-columns: 1fr; }
+  .tool-dock {
+    height: auto;
+    min-height: 0;
+    position: sticky;
+    top: 0;
+    grid-auto-flow: column;
+    grid-auto-columns: 44px;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .tool-label { display: none; }
+  .work-view.focus-canvas { grid-template-columns: 1fr; }
+  .canvas-hud { width: calc(100vw - 24px); }
+}
+
+/* UIX round 5: la selección de herramientas vive solo en la barra vertical. */
+.toolbar { gap: 0; }
+.brush-options-panel {
+  border: 1px solid var(--line);
+  background: rgba(12, 15, 29, .62);
+  border-radius: 18px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.side-brush-controls {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.side-brush-controls .inline-field { min-width: 0; }
+.side-brush-controls .brush-size {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  width: 100%;
+}
+.side-brush-controls .brush-size input { width: 100%; }
+.side-brush-controls .compact-heavy { width: 100%; }
+.tool-help p { line-height: 1.35; }
+
+/* Round 6: la caja visible de edición representa el área real de texto, no el globo completo. */
+.region-box.text-region {
+  background: transparent;
+  outline-offset: 0;
+}
+.region-box.text-region.live-preview,
+.region-box.text-region.live-editing {
+  background: transparent;
+  backdrop-filter: none;
+}
+.region-box.text-region.selected {
+  background: rgba(124, 92, 255, .08);
+}
+.region-box.text-region .region-text-editor.raster-input:focus {
+  box-shadow: none;
+}
+.region-box.text-region .region-raster-preview {
+  border-radius: 2px;
+}
+.region-box.text-region .region-label {
+  font-size: 11px;
+  top: -23px;
+  opacity: .86;
+}
+.region-box.text-region:hover .region-label,
+.region-box.text-region.selected .region-label {
+  opacity: 1;
+}
+
+/* Round 7: editor directo visible. El texto que selecciona/clickea el usuario
+   es el mismo elemento editable, no una imagen raster transparente debajo. */
+.region-text-editor.ui-live-input {
+  display: block;
+  box-sizing: border-box;
+  resize: none;
+  border: 0;
+  margin: 0;
+  outline: none;
+  z-index: 4;
+  color: #060813;
+  background: rgba(255, 255, 255, .88);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(8, 10, 19, .10), 0 0 0 2px rgba(124, 92, 255, .16);
+  text-align: center;
+  font-weight: 900;
+  font-family: "New Wild Words", "Comic Sans MS", "Trebuchet MS", Arial, sans-serif;
+  letter-spacing: .01em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  overflow: hidden;
+  scrollbar-width: thin;
+  caret-color: var(--accent);
+  text-shadow: 0 1px 0 rgba(255,255,255,.55);
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.region-text-editor.ui-live-input:focus {
+  background: rgba(255, 255, 255, .94);
+  box-shadow: inset 0 0 0 2px rgba(124,92,255,.60), 0 0 0 3px rgba(124,92,255,.16);
+}
+.region-text-editor.ui-live-input::selection {
+  color: #050713;
+  background: rgba(124,92,255,.30);
+}
+.region-text-editor.ui-live-input.empty::placeholder,
+.region-text-editor.ui-live-input.empty {
+  color: rgba(7,9,17,.56);
+}
+.region-box.live-editing .region-text-editor.ui-live-input {
+  cursor: text;
+}

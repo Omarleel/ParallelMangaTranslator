@@ -19,7 +19,7 @@ from parallel_manga_translator.cli import build_default_config, build_image_proc
 from parallel_manga_translator.config.app_config import LlmConfig, OcrConfig
 from parallel_manga_translator.config.runtime_config import set_active_config
 from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
-from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, restore_mask_erased_pixels, write_corrections
+from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, render_manual_region_preview, restore_mask_erased_pixels, write_corrections
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
 
 logger = get_logger(__name__)
@@ -492,6 +492,7 @@ class JobManager:
                     "deleted": region.deleted,
                     "auto_font_size": region.auto_font_size,
                     "font_size": region.font_size,
+                    "ui_layout": region.ui_layout or previous_by_index.get(region.index, {}).get("ui_layout"),
                 }
                 for region in regions
             ]
@@ -503,6 +504,30 @@ class JobManager:
             job.updated_at = page.updated_at
             self._save_manifest(job)
         return page_to_public(page, job_id)
+
+
+    def render_region_preview(self, job_id: str, page_index: int, region_payload: Dict[str, Any]) -> bytes:
+        """Rasteriza una región con la misma ruta usada por el guardado final."""
+        job = self.get_job(job_id)
+        page = self._page(job, page_index)
+        if page.status != "ready":
+            raise ValueError("La página todavía no está lista para edición.")
+        clean_path = Path(page.clean_path)
+        original_path = Path(page.original_path)
+        if not clean_path.exists() or not original_path.exists():
+            raise ValueError("Faltan imágenes base para previsualizar la región.")
+        image = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("No se pudo leer la imagen limpia.")
+        h, w = image.shape[:2]
+        regions = parse_manual_regions([region_payload], w, h)
+        if not regions:
+            raise ValueError("La región de previsualización no es válida.")
+        return render_manual_region_preview(
+            clean_path=clean_path,
+            original_path=original_path,
+            region=regions[0],
+        )
 
     def reset_manual_render(self, job_id: str, page_index: int) -> Dict[str, Any]:
         job = self.get_job(job_id)
@@ -703,6 +728,7 @@ class JobManager:
                     "deleted": False,
                     "auto_font_size": True,
                     "font_size": None,
+                    "ui_layout": item.get("Layout UI") or item.get("ui_layout"),
                 }
             )
         for item in translations:
@@ -724,6 +750,7 @@ class JobManager:
                     "deleted": by_index[idx].get("deleted", False),
                     "auto_font_size": by_index[idx].get("auto_font_size", True),
                     "font_size": by_index[idx].get("font_size"),
+                    "ui_layout": item.get("Layout UI") or item.get("ui_layout") or by_index[idx].get("ui_layout"),
                 }
             )
         return [by_index[idx] for idx in sorted(by_index)]
@@ -751,6 +778,7 @@ class JobManager:
                     "deleted": bool(correction.get("deleted", False)),
                     "auto_font_size": bool(correction.get("auto_font_size", True)),
                     "font_size": correction.get("font_size"),
+                    "ui_layout": correction.get("ui_layout") or region.get("ui_layout"),
                 }
             else:
                 region = {
@@ -759,6 +787,7 @@ class JobManager:
                     "modified": bool(region.get("modified", False)),
                     "auto_font_size": region.get("auto_font_size", True),
                     "font_size": region.get("font_size"),
+                    "ui_layout": region.get("ui_layout"),
                 }
             seen.add(region_index)
             merged.append(region)
@@ -783,6 +812,7 @@ class JobManager:
                 "deleted": bool(correction.get("deleted", False)),
                 "auto_font_size": bool(correction.get("auto_font_size", True)),
                 "font_size": correction.get("font_size"),
+                "ui_layout": correction.get("ui_layout"),
             })
         return merged
 

@@ -97,6 +97,22 @@ class TextFittingMixin:
                 break
         return balanced
 
+    def _unbreakable_tokens(self, texto: str) -> List[str]:
+        """Devuelve palabras que deben caber completas en modo automático.
+
+        El ajuste automático debe reducir la fuente antes de cortar una palabra.
+        Solo en el último recurso se permite partir tokens extremos.
+        """
+        texto = self._normalize_text(texto)
+        tokens: List[str] = []
+        for parrafo in texto.split("\n"):
+            tokens.extend(parrafo.split())
+        return tokens or [" "]
+
+    def _all_words_fit(self, texto: str, fuente, max_width: int) -> bool:
+        max_width = max(1, int(max_width))
+        return all(self._text_width(token, fuente) <= max_width for token in self._unbreakable_tokens(texto))
+
     def _split_lines(self, texto: str, fuente, max_width: int) -> List[str]:
         max_width = max(1, int(max_width))
         texto = self._normalize_text(texto)
@@ -182,19 +198,35 @@ class TextFittingMixin:
         else:
             start_size = min(self.max_font_size, max(self.absolute_min_font_size, int(box_height * 0.70)))
 
-        # Intento principal: fuente más grande que quepa.
+        # Intento principal: fuente más grande que quepa sin cortar palabras.
+        # La comprobación reserva espacio para el borde del texto, porque PIL puede
+        # pintar algunos píxeles fuera del bbox tipográfico cuando hay stroke.
         for tamanio in range(start_size, self.absolute_min_font_size - 1, -1):
             fuente = self._get_font(tamanio)
+            stroke_width = int(self._stroke_width_for_style(fuente, style)) if hasattr(self, "_stroke_width_for_style") else 0
+            safe_width = max(1, box_width - stroke_width * 2)
+            safe_height = max(1, box_height - stroke_width * 2)
+            if not self._all_words_fit(texto, fuente, safe_width):
+                continue
             espacio = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
-            lineas = self._split_lines(texto, fuente, box_width)
-            if self._fits(lineas, fuente, espacio, box_width, box_height):
+            lineas = self._split_lines(texto, fuente, safe_width)
+            if self._fits(lineas, fuente, espacio, safe_width, safe_height):
                 return fuente, lineas, espacio
 
-        # Último recurso: fuente mínima absoluta + recorte seguro.
+        # Último recurso: fuente mínima absoluta. Antes de partir tokens extremos,
+        # vuelve a intentar una composición por palabras completas para evitar
+        # que textos normales se vean entrecortados.
         fuente = self._get_font(self.absolute_min_font_size)
+        stroke_width = int(self._stroke_width_for_style(fuente, style)) if hasattr(self, "_stroke_width_for_style") else 0
+        safe_width = max(1, box_width - stroke_width * 2)
+        safe_height = max(1, box_height - stroke_width * 2)
         espacio = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
-        lineas = self._split_lines(texto, fuente, box_width)
-        lineas = self._truncate_to_fit(lineas, fuente, box_width, box_height, espacio)
+        if self._all_words_fit(texto, fuente, safe_width):
+            lineas = self._split_lines(texto, fuente, safe_width)
+            if self._fits(lineas, fuente, espacio, safe_width, safe_height):
+                return fuente, lineas, espacio
+        lineas = self._split_lines(texto, fuente, safe_width)
+        lineas = self._truncate_to_fit(lineas, fuente, safe_width, safe_height, espacio)
         return fuente, lineas, espacio
 
     @staticmethod

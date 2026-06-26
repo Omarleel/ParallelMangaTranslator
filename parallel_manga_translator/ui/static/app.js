@@ -26,6 +26,16 @@ const state = {
   overlayRaf: null,
   deferredOverlayRender: false,
   inlineEditingIndex: null,
+  spacePan: false,
+  panning: null,
+  previewCache: new Map(),
+  previewInFlightKeys: new Set(),
+  lastPointerImagePoint: null,
+  undoStack: [],
+  redoStack: [],
+  historyLimit: 80,
+  lastHistoryPush: null,
+  applyingHistory: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -88,6 +98,12 @@ const toast = $('toast');
 const selectTool = $('selectTool');
 const newRegionTool = $('newRegionTool');
 const brushTool = $('brushTool');
+const panTool = $('panTool');
+const dockSelectTool = $('dockSelectTool');
+const dockRegionTool = $('dockRegionTool');
+const dockBrushTool = $('dockBrushTool');
+const dockPanTool = $('dockPanTool');
+const dockFitBtn = $('dockFitBtn');
 const brushMode = $('brushMode');
 const brushSize = $('brushSize');
 const brushSizeValue = $('brushSizeValue');
@@ -107,6 +123,9 @@ const toolHelpText = $('toolHelpText');
 const ocrRegionBtn = $('ocrRegionBtn');
 const copyRegionBtn = $('copyRegionBtn');
 const deleteRegionBtn = $('deleteRegionBtn');
+const regionList = $('regionList');
+const canvasHint = $('canvasHint');
+const canvasReadout = $('canvasReadout');
 
 function showToast(message) {
   toast.textContent = message;
@@ -137,6 +156,27 @@ function isMaskEraserMode(mode) {
   return ['mask_eraser', 'erase_mask', 'eraser'].includes(String(mode || '').toLowerCase());
 }
 
+function activeTool() {
+  return state.spacePan ? 'pan' : state.tool;
+}
+
+function isPanMode() {
+  return activeTool() === 'pan';
+}
+
+function setCanvasPanning(active) {
+  canvasCard?.classList.toggle('panning', Boolean(active));
+  workView?.classList.toggle('space-pan', Boolean(state.spacePan));
+}
+
+function nudgeBrushSize(delta) {
+  if (!brushSize) return;
+  const next = Math.max(Number(brushSize.min || 4), Math.min(Number(brushSize.max || 90), Number(brushSize.value || 22) + delta));
+  brushSize.value = String(next);
+  updateBrushSizeLabel();
+  requestOverlayRender();
+}
+
 function clampFontSize(value, fallback = null) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -144,11 +184,15 @@ function clampFontSize(value, fallback = null) {
 }
 
 const MANGA_FONT_FAMILY = '"New Wild Words", "Comic Sans MS", "Trebuchet MS", Arial, sans-serif';
-const TEXT_RENDERER_MAX_FONT_SIZE = 160;
+const TEXT_RENDERER_MAX_FONT_SIZE = 96;
 const TEXT_RENDERER_ABSOLUTE_MIN_FONT_SIZE = 7;
 const TEXT_RENDERER_INNER_MARGIN_RATIO = 0.09;
 const TEXT_RENDERER_LINE_SPACING = 0.22;
 let textMeasureCanvas = null;
+const inlinePreviewTimers = new Map();
+const inlinePreviewControllers = new Map();
+let inlinePreviewSerial = 0;
+const RASTER_PREVIEW_CACHE_LIMIT = 72;
 
 function regionStyle(region) {
   return String(region?.style || 'dialogo').toLowerCase();
@@ -233,36 +277,205 @@ function splitPreviewLines(text, fontSize, maxWidth) {
 }
 
 function fitsPreviewText(text, fontSize, width, height) {
-  const lines = splitPreviewLines(text, fontSize, width);
+  const strokePad = Math.max(2, Math.ceil(fontSize * 0.14));
+  const safeWidth = Math.max(1, width - strokePad * 2);
+  const safeHeight = Math.max(1, height - strokePad * 2);
+  const lines = splitPreviewLines(text, fontSize, safeWidth);
   const maxLineWidth = Math.max(...lines.map((line) => measureMangaText(line, fontSize)), 0);
   const paragraphHeight = lines.length * fontSize + Math.max(0, lines.length - 1) * fontSize * TEXT_RENDERER_LINE_SPACING;
-  return maxLineWidth <= width && paragraphHeight <= height;
+  return maxLineWidth <= safeWidth && paragraphHeight <= safeHeight;
 }
 
-function rendererLikeAutoFontSize(region) {
-  const text = preparedRendererText(region, region?.translated_text || region?.original_text || 'Texto');
-  const area = textRenderArea(region);
+function cloneUiLayout(layout) {
+  if (!layout || typeof layout !== 'object') return null;
+  try { return JSON.parse(JSON.stringify(layout)); } catch (_) { return null; }
+}
+
+function boxValues(raw, fallback = [0, 0, 1, 1]) {
+  const values = Array.isArray(raw) ? raw.slice(0, 4).map((value) => Number(value)) : [];
+  while (values.length < 4) values.push(fallback[values.length] ?? (values.length < 2 ? 0 : 1));
+  return values.map((value, index) => Math.round(Number.isFinite(value) ? value : fallback[index] ?? (index < 2 ? 0 : 1)));
+}
+
+function layoutBlocksForRegion(region) {
+  const layout = region?.ui_layout;
+  const blocks = Array.isArray(layout?.blocks) ? layout.blocks : [];
+  if (!blocks.length) {
+    const area = textRenderArea(region);
+    return [{
+      x: area.x,
+      y: area.y,
+      width: area.width,
+      height: area.height,
+      text: region?.translated_text || region?.original_text || '',
+      fontSize: null,
+      lines: null,
+      source: 'fallback',
+    }];
+  }
+  const [, , regionW, regionH] = boxValues(region?.bbox, [0, 0, 1, 1]);
+  const [, , layoutW, layoutH] = boxValues(layout.bbox, [0, 0, regionW || 1, regionH || 1]);
+  const scaleX = Math.max(1, regionW) / Math.max(1, layoutW);
+  const scaleY = Math.max(1, regionH) / Math.max(1, layoutH);
+  return blocks.map((block) => {
+    const [x, y, w, h] = boxValues(block.area || block.slot, [0, 0, regionW || 1, regionH || 1]);
+    return {
+      x: Math.round(x * scaleX),
+      y: Math.round(y * scaleY),
+      width: Math.max(1, Math.round(w * scaleX)),
+      height: Math.max(1, Math.round(h * scaleY)),
+      text: String(block.text || ''),
+      fontSize: clampFontSize(block.font_size, null),
+      lines: Array.isArray(block.lines) ? block.lines.map((line) => String(line)) : null,
+      source: 'ui_layout',
+    };
+  });
+}
+
+function sentenceUnits(text) {
+  const normalized = String(text || ' ').replace(/\s+/g, ' ').trim() || ' ';
+  const matches = normalized.match(/.+?(?:[.!?。！？…]+|$)(?:\s+|$)/gs) || [normalized];
+  return matches.map((unit) => unit.replace(/\s+/g, ' ').trim()).filter(Boolean);
+}
+
+function splitTextForLayout(text, slotCount) {
+  const count = Math.max(1, Number(slotCount) || 1);
+  const normalized = normalizeRendererText(text);
+  if (count === 1) return [normalized];
+  const units = sentenceUnits(normalized);
+  if (units.length >= count) {
+    const chunks = [];
+    const remaining = [...units];
+    for (let slotIdx = 0; slotIdx < count; slotIdx += 1) {
+      const remainingSlots = count - slotIdx;
+      if (remainingSlots === 1) {
+        chunks.push(remaining.join(' ').trim() || ' ');
+        break;
+      }
+      const remainingChars = remaining.reduce((sum, unit) => sum + unit.length, 0);
+      const target = Math.max(1, remainingChars / remainingSlots);
+      const current = [];
+      let currentLen = 0;
+      while (remaining.length && remaining.length > remainingSlots - 1) {
+        const next = remaining[0];
+        if (current.length && currentLen + next.length > target * 1.18) break;
+        current.push(remaining.shift());
+        currentLen += next.length;
+        if (currentLen >= target * 0.82) break;
+      }
+      chunks.push(current.join(' ').trim() || ' ');
+    }
+    return chunks.slice(0, count);
+  }
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length < count * 2) {
+    const chunks = [];
+    let start = 0;
+    for (let slotIdx = 0; slotIdx < count; slotIdx += 1) {
+      const end = slotIdx === count - 1 ? normalized.length : Math.round(normalized.length * (slotIdx + 1) / count);
+      chunks.push(normalized.slice(start, end).trim() || ' ');
+      start = end;
+    }
+    return chunks;
+  }
+  const chunks = [];
+  let start = 0;
+  for (let slotIdx = 0; slotIdx < count; slotIdx += 1) {
+    const remainingSlots = count - slotIdx;
+    if (remainingSlots === 1) {
+      chunks.push(words.slice(start).join(' ').trim() || ' ');
+      break;
+    }
+    const remainingWords = words.length - start;
+    const take = Math.max(1, Math.round(remainingWords / remainingSlots));
+    chunks.push(words.slice(start, start + take).join(' ').trim() || ' ');
+    start += take;
+  }
+  return chunks;
+}
+
+function rendererLikeAutoFontSizeForArea(region, text, area) {
+  const prepared = preparedRendererText(region, text);
   const style = regionStyle(region);
   let startFactor = 0.70;
   if (style.startsWith('onomatopeya')) startFactor = style === 'onomatopeya_subtitle' ? 0.82 : 0.92;
   else if (style === 'narracion') startFactor = 0.58;
   const start = Math.min(TEXT_RENDERER_MAX_FONT_SIZE, Math.max(TEXT_RENDERER_ABSOLUTE_MIN_FONT_SIZE, Math.floor(area.height * startFactor)));
   for (let size = start; size >= TEXT_RENDERER_ABSOLUTE_MIN_FONT_SIZE; size -= 1) {
-    if (fitsPreviewText(text, size, area.width, area.height)) return size;
+    if (fitsPreviewText(prepared, size, area.width, area.height)) return size;
   }
   return TEXT_RENDERER_ABSOLUTE_MIN_FONT_SIZE;
 }
 
-function applyRendererTextLayout(element, region) {
+function sameRendererText(a, b) {
+  return normalizeRendererText(a) === normalizeRendererText(b);
+}
+
+function rendererLikeAutoFontSize(region) {
+  const text = preparedRendererText(region, region?.translated_text || region?.original_text || 'Texto');
+  const [firstBlock] = layoutBlocksForRegion(region);
+  if (firstBlock?.fontSize && sameRendererText(text, firstBlock.text)) return firstBlock.fontSize;
+  return rendererLikeAutoFontSizeForArea(region, text, firstBlock || textRenderArea(region));
+}
+
+function previewFontSizeForBlock(region, block, text) {
+  if (!usesAutoFontSize(region)) return effectiveManualFontSize(region);
+  const prepared = preparedRendererText(region, text || 'Texto');
+  if (block?.fontSize && sameRendererText(prepared, block.text)) return block.fontSize;
+  return rendererLikeAutoFontSizeForArea(region, prepared, block || textRenderArea(region));
+}
+
+function previewLinesForBlock(region, block, text, fontSize) {
+  const prepared = preparedRendererText(region, text || 'Texto');
+  if (block?.lines?.length && sameRendererText(prepared, block.text)) return block.lines.join('\n');
+  return splitPreviewLines(prepared, fontSize, Math.max(1, block?.width || 1)).join('\n');
+}
+
+function applyRendererTextLayout(element, region, block = null, blockText = null) {
   if (!element || !region) return;
   const { scaleX, scaleY } = getScale();
-  const area = textRenderArea(region);
+  const area = block || textRenderArea(region);
+  const size = previewFontSizeForBlock(region, area, blockText ?? region?.translated_text ?? region?.original_text ?? 'Texto');
   element.style.left = `${area.x * scaleX}px`;
   element.style.top = `${area.y * scaleY}px`;
   element.style.width = `${area.width * scaleX}px`;
   element.style.height = `${area.height * scaleY}px`;
-  element.style.fontSize = `${previewFontSize(region)}px`;
+  element.style.fontSize = `${Math.max(4, Math.min(240, Math.round(size * ((scaleX + scaleY) / 2))))}px`;
   element.style.lineHeight = regionStyle(region).startsWith('onomatopeya') ? '1' : '1.05';
+}
+
+
+function applyInlineEditorLayout(element, region, block = null, blockText = null) {
+  if (!element || !region) return;
+  const { scaleX, scaleY } = getScale();
+  const area = block || textRenderArea(region);
+  const text = blockText ?? region?.translated_text ?? region?.original_text ?? 'Texto';
+  const baseSize = previewFontSizeForBlock(region, area, text);
+  const fontPx = Math.max(4, Math.min(240, Math.round(baseSize * ((scaleX + scaleY) / 2))));
+  const lineFactor = regionStyle(region).startsWith('onomatopeya') ? 1.0 : 1.05;
+  const lineHeightPx = Math.max(5, Math.round(fontPx * lineFactor));
+  const widthPx = Math.max(1, area.width * scaleX);
+  const heightPx = Math.max(1, area.height * scaleY);
+  const prepared = preparedRendererText(region, text || 'Texto');
+  const lineCount = Math.max(1, splitPreviewLines(prepared, Math.max(1, baseSize), Math.max(1, area.width)).length);
+  const padY = Math.max(0, Math.floor((heightPx - lineCount * lineHeightPx) / 2));
+  const padX = Math.max(1, Math.round(Math.max(scaleX, scaleY) * 1.5));
+
+  element.style.left = `${area.x * scaleX}px`;
+  element.style.top = `${area.y * scaleY}px`;
+  element.style.width = `${widthPx}px`;
+  element.style.height = `${heightPx}px`;
+  element.style.fontSize = `${fontPx}px`;
+  element.style.lineHeight = `${lineHeightPx}px`;
+  element.style.padding = `${padY}px ${padX}px`;
+}
+
+function refreshInlineEditorLayout(element) {
+  const idx = Number(element?.dataset?.index);
+  const region = state.regions[idx];
+  if (!isSelectableRegion(region)) return;
+  const block = layoutBlocksForRegion(region)[0] || textRenderArea(region);
+  applyInlineEditorLayout(element, region, block, textFromEditable(element) || region.translated_text || region.original_text || 'Texto');
 }
 
 function usesAutoFontSize(region) {
@@ -432,9 +645,12 @@ function resetEditorState() {
   state.dirty = false;
   state.pageStamp = '';
   state.deletedStack = [];
+  clearHistory();
   state.zoom = 1;
   state.fitZoom = 1;
   clearTimeout(state.autosaveTimer);
+  cleanupInlinePreviewResources();
+  clearRasterPreviewCache();
   state.deferredOverlayRender = false;
   state.inlineEditingIndex = null;
   setAutosaveStatus('saved', 'Cambios guardados automáticamente.');
@@ -500,7 +716,10 @@ function renderPageList(pages) {
     `;
     button.addEventListener('click', () => {
       const inlineEditor = activeInlineTextEditor();
-      if (inlineEditor) syncInlineTextToRegion(inlineEditor, { autosave: false });
+      if (inlineEditor) {
+        syncInlineTextToRegion(inlineEditor, { autosave: false, preview: false });
+        inlineEditor.blur();
+      }
       if (state.dirty) saveCurrentPage({ silent: true, force: true, reason: 'cambio de página' }).catch(console.warn);
       state.pageIndex = page.index;
       state.selectedRegion = null;
@@ -509,6 +728,10 @@ function renderPageList(pages) {
       state.drawingStroke = null;
       state.deletedStack = [];
       clearTimeout(state.autosaveTimer);
+      cleanupInlinePreviewResources();
+      clearRasterPreviewCache();
+      state.deferredOverlayRender = false;
+      state.inlineEditingIndex = null;
       setAutosaveStatus('saved', 'Cambios guardados automáticamente.');
       renderJob(state.job);
     });
@@ -518,6 +741,67 @@ function renderPageList(pages) {
 
 function currentPage() {
   return state.job?.pages?.[state.pageIndex] || null;
+}
+
+function selectedRegion() {
+  return state.selectedRegion == null ? null : state.regions[state.selectedRegion];
+}
+
+function useCleanBaseForUiText() {
+  // Round 7: no cambiamos toda la hoja a la imagen limpia al seleccionar una
+  // región. Mantener la página actual como base evita que las demás regiones se
+  // re-rastericen con previews temporales y elimina el parpadeo por clics.
+  return false;
+}
+
+function activePageImageVariant() {
+  return useCleanBaseForUiText() ? 'clean' : state.variant;
+}
+
+function isTextInteractiveTarget(target) {
+  return Boolean(target?.closest?.('.region-text-editor, .region-text-preview, .region-text-hit, .region-label, .resize-handle'));
+}
+
+function isNearBoxEdge(event, box, tolerance = 9) {
+  const rect = box.getBoundingClientRect();
+  const left = event.clientX - rect.left;
+  const top = event.clientY - rect.top;
+  const right = rect.width - left;
+  const bottom = rect.height - top;
+  return Math.min(left, top, right, bottom) <= tolerance;
+}
+
+function setPageImageSource(page = currentPage()) {
+  if (!page || page.status !== 'ready' || !pageImage) return;
+  const imageVariant = activePageImageVariant();
+  const url = page.images[imageVariant] || page.images[state.variant] || page.images.current;
+  const bustedUrl = `${url}?t=${encodeURIComponent(`${page.updated_at || Date.now()}:${imageVariant}`)}`;
+  const absoluteUrl = new URL(bustedUrl, location.href).href;
+  pageImage.onload = () => {
+    state.naturalWidth = pageImage.naturalWidth || 1;
+    state.naturalHeight = pageImage.naturalHeight || 1;
+    setFitZoomIfNeeded();
+    applyZoom();
+    renderOverlay();
+  };
+  if (pageImage.src !== absoluteUrl) {
+    pageImage.src = bustedUrl;
+    return;
+  }
+  if (pageImage.complete) {
+    state.naturalWidth = pageImage.naturalWidth || 1;
+    state.naturalHeight = pageImage.naturalHeight || 1;
+    setFitZoomIfNeeded();
+    applyZoom();
+    renderOverlay();
+  }
+}
+
+function deselectRegion(options = {}) {
+  if (activeInlineTextEditor()) activeInlineTextEditor().blur();
+  state.selectedRegion = null;
+  showNoRegion();
+  if (options.render !== false) setPageImageSource();
 }
 
 function renderCurrentPage() {
@@ -537,6 +821,7 @@ function renderCurrentPage() {
     state.regions = [];
     state.brushStrokes = [];
     showNoRegion();
+    renderRegionList();
     return;
   }
 
@@ -544,34 +829,21 @@ function renderCurrentPage() {
   imageStage.classList.remove('hidden');
   const pageStamp = `${state.job.job_id}:${page.index}:${page.updated_at || ''}`;
   if (!state.dirty && state.pageStamp !== pageStamp) {
+    clearRasterPreviewCache();
     state.regions = cloneRegions(page.regions || []);
     state.brushStrokes = cloneBrushStrokes(page.brush_strokes || []);
     state.pageStamp = pageStamp;
+    clearHistory();
     if (state.selectedRegion != null && !isSelectableRegion(state.regions[state.selectedRegion])) state.selectedRegion = null;
   }
-  const url = page.images[state.variant] || page.images.current;
-  const bustedUrl = `${url}?t=${encodeURIComponent(page.updated_at || Date.now())}`;
-  if (pageImage.src !== new URL(bustedUrl, location.href).href) pageImage.src = bustedUrl;
-  pageImage.onload = () => {
-    state.naturalWidth = pageImage.naturalWidth || 1;
-    state.naturalHeight = pageImage.naturalHeight || 1;
-    setFitZoomIfNeeded();
-    applyZoom();
-    renderOverlay();
-  };
-  if (pageImage.complete) {
-    state.naturalWidth = pageImage.naturalWidth || 1;
-    state.naturalHeight = pageImage.naturalHeight || 1;
-    setFitZoomIfNeeded();
-    applyZoom();
-    renderOverlay();
-  }
+  setPageImageSource(page);
   if (state.selectedRegion == null && state.tool === 'select') {
     const first = state.regions.findIndex(isSelectableRegion);
     if (first >= 0) selectRegion(first, false);
   }
   if (!state.regions.some(isSelectableRegion)) showNoRegion();
   regionCount.textContent = `${state.regions.filter(isSelectableRegion).length} regiones`;
+  renderRegionList();
   updateHeavyActions();
 }
 
@@ -580,30 +852,192 @@ function countActiveRegions(regions) {
   return regions.filter((region) => !region.deleted).length;
 }
 
+function shortRegionText(region) {
+  const text = String(region?.translated_text || region?.original_text || '').replace(/\s+/g, ' ').trim();
+  return text || (region?.manual ? 'Región manual sin texto' : 'Sin texto');
+}
+
+function renderRegionList() {
+  if (!regionList) return;
+  const selectable = state.regions
+    .map((region, idx) => ({ region, idx }))
+    .filter(({ region }) => isSelectableRegion(region));
+  regionList.innerHTML = '';
+  regionList.classList.toggle('empty', !selectable.length);
+  if (!selectable.length) {
+    regionList.textContent = 'No hay regiones en esta página.';
+    return;
+  }
+  for (const { region, idx } of selectable) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `layer-item ${idx === state.selectedRegion ? 'active' : ''} ${region.visible === false ? 'hidden-layer' : ''}`;
+    const [x, y, w, h] = region.bbox || [0, 0, 0, 0];
+    item.innerHTML = `
+      <span class="layer-thumb">${idx + 1}</span>
+      <span class="layer-main">
+        <span class="layer-title">${escapeHtml(shortRegionText(region))}</span>
+        <span class="layer-sub">${escapeHtml(region.manual ? 'Manual' : 'Detectada')} · ${Math.round(w)}×${Math.round(h)} · ${Math.round(x)},${Math.round(y)}</span>
+      </span>
+      <span class="layer-eye" title="Mostrar/ocultar texto">${region.visible === false ? '○' : '●'}</span>
+    `;
+    item.addEventListener('click', (event) => {
+      const inlineEditor = activeInlineTextEditor();
+      if (inlineEditor) {
+        syncInlineTextToRegion(inlineEditor, { autosave: false, preview: false });
+        inlineEditor.blur();
+      }
+      const eye = event.target.closest?.('.layer-eye');
+      if (eye) {
+        pushUndoSnapshot('visibilidad de región');
+        region.visible = region.visible === false;
+        region.modified = true;
+        markDirty({ autosave: true, reason: 'visibilidad de región' });
+        renderRegionList();
+        renderOverlay({ force: true });
+        return;
+      }
+      setTool('select');
+      selectRegion(idx);
+      scrollSelectedRegionIntoView(region);
+    });
+    regionList.appendChild(item);
+  }
+}
+
+function scrollSelectedRegionIntoView(region = selectedRegion()) {
+  if (!region || !canvasCard || !pageImage) return;
+  const [x, y, w, h] = region.bbox;
+  const targetX = (x + w / 2) * state.zoom - canvasCard.clientWidth / 2;
+  const targetY = (y + h / 2) * state.zoom - canvasCard.clientHeight / 2;
+  canvasCard.scrollTo({ left: Math.max(0, targetX), top: Math.max(0, targetY), behavior: 'smooth' });
+}
+
 function isSelectableRegion(region) {
   return Boolean(region && !region.deleted);
 }
 
+function unionBoxes(boxes) {
+  const valid = (boxes || []).filter((box) => Array.isArray(box) && box.length >= 4 && Number(box[2]) > 0 && Number(box[3]) > 0);
+  if (!valid.length) return null;
+  const x1 = Math.min(...valid.map((box) => Number(box[0]) || 0));
+  const y1 = Math.min(...valid.map((box) => Number(box[1]) || 0));
+  const x2 = Math.max(...valid.map((box) => (Number(box[0]) || 0) + Math.max(1, Number(box[2]) || 1)));
+  const y2 = Math.max(...valid.map((box) => (Number(box[1]) || 0) + Math.max(1, Number(box[3]) || 1)));
+  return [Math.round(x1), Math.round(y1), Math.max(1, Math.round(x2 - x1)), Math.max(1, Math.round(y2 - y1))];
+}
+
+function clampLocalBox(rawBox, maxWidth, maxHeight) {
+  let [x, y, w, h] = boxValues(rawBox, [0, 0, Math.max(1, maxWidth || 1), Math.max(1, maxHeight || 1)]);
+  const width = Math.max(1, Math.round(maxWidth || 1));
+  const height = Math.max(1, Math.round(maxHeight || 1));
+  x = Math.max(0, Math.min(width - 1, x));
+  y = Math.max(0, Math.min(height - 1, y));
+  w = Math.max(1, Math.min(w, width - x));
+  h = Math.max(1, Math.min(h, height - y));
+  return [x, y, w, h];
+}
+function createFullBoxUiLayout(bbox, style = 'dialogo') {
+  const [, , w, h] = normalizeBox(bbox || [0, 0, 1, 1]);
+  return {
+    version: 1,
+    bbox: [0, 0, Math.max(1, w), Math.max(1, h)],
+    style: style || 'dialogo',
+    block_count: 1,
+    blocks: [{
+      slot: [0, 0, Math.max(1, w), Math.max(1, h)],
+      area: [0, 0, Math.max(1, w), Math.max(1, h)],
+      text: '',
+      lines: null,
+      font_size: null,
+      line_spacing: null,
+      stroke_width: null,
+    }],
+    uses_clip_mask: false,
+    ui_text_region: true,
+  };
+}
+
+
+function adaptLayoutToTextRegion(layout, bbox) {
+  const cloned = cloneUiLayout(layout);
+  const blocks = Array.isArray(cloned?.blocks) ? cloned.blocks : [];
+  if (!cloned || !blocks.length || cloned.ui_text_region === true) return { bbox, layout: cloned, source_bbox: bbox, adapted: false };
+
+  const [, , boxW, boxH] = bbox;
+  const [, , layoutW, layoutH] = boxValues(cloned.bbox, [0, 0, Math.max(1, boxW), Math.max(1, boxH)]);
+  const scaleX = Math.max(1, boxW) / Math.max(1, layoutW);
+  const scaleY = Math.max(1, boxH) / Math.max(1, layoutH);
+  const scaledBlocks = blocks.map((block) => {
+    const area = boxValues(block.area || block.slot, [0, 0, layoutW, layoutH]);
+    const slot = boxValues(block.slot || block.area, area);
+    const scaleBox = (raw) => [
+      Math.round(raw[0] * scaleX),
+      Math.round(raw[1] * scaleY),
+      Math.max(1, Math.round(raw[2] * scaleX)),
+      Math.max(1, Math.round(raw[3] * scaleY)),
+    ];
+    return { block, area: scaleBox(area), slot: scaleBox(slot) };
+  });
+  const textUnion = unionBoxes(scaledBlocks.map((item) => item.area));
+  if (!textUnion) return { bbox, layout: cloned, source_bbox: bbox, adapted: false };
+
+  const [unionX, unionY, unionW, unionH] = clampLocalBox(textUnion, boxW, boxH);
+  const adaptedBlocks = scaledBlocks.map(({ block, area, slot }) => {
+    const shiftedArea = clampLocalBox([area[0] - unionX, area[1] - unionY, area[2], area[3]], unionW, unionH);
+    const shiftedSlot = clampLocalBox([slot[0] - unionX, slot[1] - unionY, slot[2], slot[3]], unionW, unionH);
+    return {
+      ...block,
+      area: shiftedArea,
+      slot: shiftedSlot,
+    };
+  });
+
+  return {
+    bbox: [bbox[0] + unionX, bbox[1] + unionY, unionW, unionH],
+    source_bbox: [...bbox],
+    layout: {
+      ...cloned,
+      bbox: [0, 0, unionW, unionH],
+      blocks: adaptedBlocks,
+      block_count: adaptedBlocks.length,
+      ui_text_region: true,
+      original_region_bbox: [...bbox],
+    },
+    adapted: true,
+  };
+}
+
 function cloneRegions(regions) {
   return regions.map((region, idx) => {
-    const bbox = normalizeBox(region.bbox || [0, 0, 1, 1]);
-    const sourceBox = normalizeBox(region.source_bbox || region.original_bbox || bbox);
+    const rawBBox = normalizeBox(region.bbox || [0, 0, 1, 1]);
+    const rawLayout = cloneUiLayout(region.ui_layout || region.layout_ui || region['Layout UI'] || null);
+    const manual = Boolean(region.manual || region.created_manually);
+    const style = region.style || 'dialogo';
+    const layoutResult = manual
+      ? { bbox: rawBBox, layout: rawLayout || createFullBoxUiLayout(rawBBox, style), source_bbox: rawBBox, adapted: false }
+      : adaptLayoutToTextRegion(rawLayout, rawBBox);
+    if (!layoutResult.layout && manual) layoutResult.layout = createFullBoxUiLayout(rawBBox, style);
+    const bbox = normalizeBox(layoutResult.bbox || rawBBox);
+    const sourceBox = normalizeBox(region.source_bbox || region.original_bbox || layoutResult.source_bbox || rawBBox);
     return {
       index: Number(region.index ?? idx),
       bbox,
       source_bbox: sourceBox,
       original_text: region.original_text || '',
       translated_text: region.translated_text ?? region.text ?? '',
-      style: region.style || 'dialogo',
+      style,
       type: region.type || '',
       confidence: region.confidence || 0,
       restore_original: Boolean(region.restore_original),
       visible: region.visible !== false,
       modified: Boolean(region.modified || region.corrected),
-      manual: Boolean(region.manual || region.created_manually),
+      manual,
       deleted: Boolean(region.deleted),
       auto_font_size: region.auto_font_size !== false,
-      font_size: clampFontSize(region.font_size, null),
+      font_size: region.auto_font_size === false ? clampFontSize(region.font_size, null) : null,
+      ui_layout: layoutResult.layout,
+      ui_text_region: Boolean(layoutResult.layout?.ui_text_region),
     };
   });
 }
@@ -641,7 +1075,7 @@ function imagePointFromEvent(event) {
 }
 
 function updateBrushCursorFromEvent(event, immediate = false) {
-  if (state.tool !== 'brush' || !pageImage || imageStage.classList.contains('hidden')) {
+  if (!pageImage || imageStage.classList.contains('hidden')) {
     if (state.brushCursor.visible) {
       state.brushCursor.visible = false;
       requestOverlayRender();
@@ -658,6 +1092,14 @@ function updateBrushCursorFromEvent(event, immediate = false) {
     return;
   }
   const [x, y] = imagePointFromEvent(event);
+  updateCanvasReadout([x, y]);
+  if (activeTool() !== 'brush') {
+    if (state.brushCursor.visible) {
+      state.brushCursor.visible = false;
+      requestOverlayRender();
+    }
+    return;
+  }
   state.brushCursor = { x, y, visible: true };
   if (immediate) renderOverlay();
   else requestOverlayRender();
@@ -693,6 +1135,7 @@ function applyZoom() {
   imageStage.style.height = `${Math.max(1, Math.round(state.naturalHeight * state.zoom))}px`;
   if (zoomSlider) zoomSlider.value = String(Math.round(state.zoom * 100));
   if (zoomValue) zoomValue.textContent = `${Math.round(state.zoom * 100)}%`;
+  updateCanvasReadout();
   requestAnimationFrame(renderOverlay);
 }
 
@@ -722,6 +1165,29 @@ function zoomTo(nextZoom, anchorEvent = null) {
 function getScale() {
   const rect = pageImage.getBoundingClientRect();
   return { scaleX: rect.width / state.naturalWidth, scaleY: rect.height / state.naturalHeight, width: rect.width, height: rect.height };
+}
+
+function toolLabel(tool = activeTool()) {
+  return {
+    select: 'Seleccionar',
+    region: 'Nueva región',
+    brush: `Pincel ${brushSize?.value || 22}px`,
+    pan: 'Mano',
+  }[tool] || tool;
+}
+
+function updateCanvasReadout(point = state.lastPointerImagePoint) {
+  const page = currentPage();
+  if (!canvasReadout) return;
+  if (!page || page.status !== 'ready') {
+    canvasReadout.textContent = 'Sin página';
+    return;
+  }
+  if (Array.isArray(point)) state.lastPointerImagePoint = point;
+  const selected = state.selectedRegion == null ? 'sin región' : `R${state.selectedRegion + 1}`;
+  const dirty = state.dirty ? ' · sin guardar' : '';
+  const coords = Array.isArray(state.lastPointerImagePoint) ? ` · ${state.lastPointerImagePoint[0]}, ${state.lastPointerImagePoint[1]}` : '';
+  canvasReadout.textContent = `P${page.index + 1}/${state.job?.pages?.length || 1} · ${Math.round(state.zoom * 100)}% · ${toolLabel()} · ${selected}${coords}${dirty}`;
 }
 
 function requestOverlayRender() {
@@ -763,6 +1229,198 @@ function activeInlineTextEditor() {
   const active = document.activeElement;
   return active?.classList?.contains('region-text-editor') ? active : null;
 }
+function focusInlineEditorForRegion(idx, options = {}) {
+  let attempts = 0;
+  const tryFocus = () => {
+    const editor = overlayLayer?.querySelector?.(`.region-text-editor[data-index="${idx}"]`);
+    if (!editor) {
+      if (attempts < 8) {
+        attempts += 1;
+        setTimeout(tryFocus, 55);
+      }
+      return;
+    }
+    editor.focus({ preventScroll: true });
+    if (options.selectAll) {
+      if (typeof editor.select === 'function') {
+        editor.select();
+      } else {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+    }
+  };
+  requestAnimationFrame(tryFocus);
+}
+
+
+function rememberRasterPreview(key, url) {
+  const previous = state.previewCache.get(key);
+  if (previous?.url === url) return;
+  if (previous?.url) URL.revokeObjectURL(previous.url);
+  state.previewCache.set(key, { url, touched: Date.now() });
+  while (state.previewCache.size > RASTER_PREVIEW_CACHE_LIMIT) {
+    let oldestKey = null;
+    let oldestTime = Infinity;
+    state.previewCache.forEach((entry, entryKey) => {
+      if (entry.touched < oldestTime) {
+        oldestTime = entry.touched;
+        oldestKey = entryKey;
+      }
+    });
+    if (!oldestKey) break;
+    const evicted = state.previewCache.get(oldestKey);
+    if (evicted?.url) URL.revokeObjectURL(evicted.url);
+    state.previewCache.delete(oldestKey);
+  }
+}
+
+function cachedRasterPreview(key) {
+  const entry = state.previewCache.get(key);
+  if (!entry) return null;
+  entry.touched = Date.now();
+  return entry.url;
+}
+
+function clearRasterPreviewCache() {
+  state.previewCache.forEach((entry) => {
+    if (entry?.url) URL.revokeObjectURL(entry.url);
+  });
+  state.previewCache.clear();
+  state.previewInFlightKeys.clear();
+}
+
+function currentHistoryPageKey() {
+  const page = currentPage();
+  if (!state.job || !page) return '';
+  return `${state.job.job_id}:${page.index}`;
+}
+
+function clearHistory() {
+  state.undoStack = [];
+  state.redoStack = [];
+  state.lastHistoryPush = null;
+}
+
+function createHistorySnapshot(label = 'cambio') {
+  return {
+    label,
+    pageKey: currentHistoryPageKey(),
+    regions: cloneRegions(state.regions || []),
+    brushStrokes: cloneBrushStrokes(state.brushStrokes || []),
+    selectedRegion: state.selectedRegion,
+    dirty: Boolean(state.dirty),
+    timestamp: Date.now(),
+  };
+}
+
+function snapshotsAreEquivalent(a, b) {
+  if (!a || !b) return false;
+  try {
+    return JSON.stringify({ regions: a.regions, brushStrokes: a.brushStrokes, selectedRegion: a.selectedRegion }) ===
+      JSON.stringify({ regions: b.regions, brushStrokes: b.brushStrokes, selectedRegion: b.selectedRegion });
+  } catch (_) {
+    return false;
+  }
+}
+
+function pushUndoSnapshot(label = 'cambio', options = {}) {
+  if (state.applyingHistory) return;
+  const pageKey = currentHistoryPageKey();
+  if (!pageKey) return;
+  const now = Date.now();
+  const coalesceKey = options.coalesceKey || null;
+  const coalesceMs = Number(options.coalesceMs ?? 850);
+  if (coalesceKey && state.lastHistoryPush?.key === coalesceKey && state.lastHistoryPush?.pageKey === pageKey && now - state.lastHistoryPush.time < coalesceMs) {
+    return;
+  }
+  const snapshot = createHistorySnapshot(label);
+  const previous = state.undoStack[state.undoStack.length - 1];
+  if (snapshotsAreEquivalent(previous, snapshot)) return;
+  state.undoStack.push(snapshot);
+  while (state.undoStack.length > state.historyLimit) state.undoStack.shift();
+  state.redoStack = [];
+  state.lastHistoryPush = { key: coalesceKey || `single:${now}`, pageKey, time: now };
+  updateCanvasReadout();
+}
+
+function restoreHistorySnapshot(snapshot, reason = 'historial') {
+  if (!snapshot || snapshot.pageKey !== currentHistoryPageKey()) {
+    showToast('El historial de esta página ya no está disponible.');
+    return false;
+  }
+  state.applyingHistory = true;
+  try {
+    cleanupInlinePreviewResources();
+    clearRasterPreviewCache();
+    state.regions = cloneRegions(snapshot.regions || []);
+    state.brushStrokes = cloneBrushStrokes(snapshot.brushStrokes || []);
+    state.selectedRegion = Number.isInteger(snapshot.selectedRegion) && isSelectableRegion(state.regions[snapshot.selectedRegion]) ? snapshot.selectedRegion : null;
+    state.deletedStack = [];
+    state.drawingRegion = null;
+    state.drawingStroke = null;
+    state.dragging = null;
+    state.dirty = true;
+    if (state.selectedRegion == null) showNoRegion();
+    else {
+      noRegion.classList.add('hidden');
+      regionEditor.classList.remove('hidden');
+      updateEditorFromRegion();
+    }
+    renderRegionList();
+    regionCount.textContent = `${state.regions.filter(isSelectableRegion).length} regiones`;
+    setPageImageSource();
+    renderOverlay({ force: true });
+    markDirty({ autosave: true, reason });
+    return true;
+  } finally {
+    state.applyingHistory = false;
+    state.lastHistoryPush = null;
+    updateCanvasReadout();
+  }
+}
+
+function undoChange() {
+  if (!state.undoStack.length) {
+    showToast('No hay cambios para deshacer.');
+    return;
+  }
+  const snapshot = state.undoStack.pop();
+  if (snapshot.pageKey !== currentHistoryPageKey()) {
+    clearHistory();
+    showToast('El historial pertenece a otra página.');
+    return;
+  }
+  state.redoStack.push(createHistorySnapshot('rehacer'));
+  restoreHistorySnapshot(snapshot, 'deshacer');
+  showToast(`Deshecho: ${snapshot.label || 'cambio'}.`);
+}
+
+function redoChange() {
+  if (!state.redoStack.length) {
+    showToast('No hay cambios para rehacer.');
+    return;
+  }
+  const snapshot = state.redoStack.pop();
+  if (snapshot.pageKey !== currentHistoryPageKey()) {
+    clearHistory();
+    showToast('El historial pertenece a otra página.');
+    return;
+  }
+  state.undoStack.push(createHistorySnapshot('deshacer rehacer'));
+  restoreHistorySnapshot(snapshot, 'rehacer');
+  showToast('Cambio rehecho.');
+}
+
+function cleanupInlinePreviewResources() {
+  inlinePreviewTimers.forEach((timer) => clearTimeout(timer));
+  inlinePreviewTimers.clear();
+  inlinePreviewControllers.forEach((controller) => controller.abort());
+  inlinePreviewControllers.clear();
+}
 
 function shouldDeferOverlayRender() {
   return Boolean(activeInlineTextEditor() && !state.dragging && !state.drawingRegion && !state.drawingStroke);
@@ -781,12 +1439,13 @@ function renderOverlay(options = {}) {
   }
   state.deferredOverlayRender = false;
   if (!pageImage || !overlayLayer || workView.classList.contains('hidden')) return;
+  cleanupInlinePreviewResources();
   overlayLayer.innerHTML = '';
   const { scaleX, scaleY, width, height } = getScale();
   if (!Number.isFinite(width) || width <= 0) return;
   overlayLayer.style.width = `${width}px`;
   overlayLayer.style.height = `${height}px`;
-  overlayLayer.className = `overlay-layer tool-${state.tool}`;
+  overlayLayer.className = `overlay-layer tool-${activeTool()}`;
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'stroke-layer');
@@ -813,7 +1472,7 @@ function renderOverlay(options = {}) {
     const [x, y, w, h] = region.bbox;
     const box = document.createElement('div');
     const isSelected = idx === state.selectedRegion;
-    box.className = `region-box ${isSelected ? 'selected' : ''} ${region.restore_original ? 'restore' : ''} ${region.manual ? 'manual' : ''} ${region.visible === false ? 'hidden-region' : ''}`;
+    box.className = `region-box ${region.ui_text_region ? 'text-region' : ''} ${isSelected ? 'selected' : ''} ${region.restore_original ? 'restore' : ''} ${region.manual ? 'manual' : ''} ${region.visible === false ? 'hidden-region' : ''}`;
     box.style.left = `${x * scaleX}px`;
     box.style.top = `${y * scaleY}px`;
     box.style.width = `${w * scaleX}px`;
@@ -827,18 +1486,25 @@ function renderOverlay(options = {}) {
     box.appendChild(label);
 
     const previewText = region.translated_text || region.original_text || '';
-    const showInlineEditor = isSelected && state.tool === 'select' && region.visible !== false;
-    const showPreview = !showInlineEditor && shouldShowLiveText(region, idx);
+    const layoutBlocks = layoutBlocksForRegion(region);
+    const blockTexts = splitTextForLayout(previewText || 'Texto', layoutBlocks.length);
+    const hasMultipleSlots = layoutBlocks.length > 1;
+    const cleanUiBase = useCleanBaseForUiText();
+    const showInlineEditor = isSelected && state.tool === 'select' && region.visible !== false && !hasMultipleSlots;
+    const showPreview = (!showInlineEditor && shouldShowLiveText(region, idx))
+      || (isSelected && hasMultipleSlots && region.visible !== false)
+      || (cleanUiBase && region.visible !== false);
     if (showInlineEditor) {
       box.classList.add('live-editing');
-      const editor = document.createElement('div');
-      editor.className = `region-text-editor ${previewText.trim() ? '' : 'empty'}`;
-      editor.contentEditable = 'plaintext-only';
+      const editor = document.createElement('textarea');
+      const block = layoutBlocks[0] || textRenderArea(region);
+      editor.className = `region-text-editor ui-live-input ${previewText.trim() ? '' : 'empty'}`;
       editor.spellcheck = false;
       editor.dataset.index = String(idx);
-      applyRendererTextLayout(editor, region);
-      editor.textContent = previewText;
-      editor.title = 'Escribe la traducción directamente aquí';
+      editor.value = previewText;
+      editor.placeholder = 'Escribe aquí';
+      editor.title = 'Edita directamente el texto visible. La previsualización final se actualiza al salir o guardar.';
+      applyInlineEditorLayout(editor, region, block, previewText);
       editor.addEventListener('pointerdown', (event) => {
         event.stopPropagation();
       });
@@ -854,11 +1520,44 @@ function renderOverlay(options = {}) {
       box.appendChild(editor);
     } else if (showPreview) {
       box.classList.add('live-preview');
-      const preview = document.createElement('span');
-      preview.className = `region-text-preview ${previewText.trim() ? '' : 'empty'}`;
-      applyRendererTextLayout(preview, region);
-      preview.textContent = previewText || 'Texto';
-      box.appendChild(preview);
+      const useExactRasterPreview = region.visible !== false && (cleanUiBase || isSelected);
+      if (useExactRasterPreview) {
+        box.classList.add('live-raster-preview');
+        const raster = document.createElement('img');
+        raster.className = 'region-raster-preview';
+        raster.dataset.index = String(idx);
+        raster.alt = '';
+        raster.decoding = 'async';
+        raster.draggable = false;
+        box.appendChild(raster);
+        queueInlineRasterPreview(idx, isSelected ? 0 : 35);
+        if (isSelected && hasMultipleSlots) {
+          const slotHint = document.createElement('span');
+          slotHint.className = 'region-slot-hint';
+          slotHint.textContent = 'Edita este diálogo en el panel derecho; esta vista usa el mismo render final.';
+          box.appendChild(slotHint);
+        }
+      } else {
+        layoutBlocks.forEach((block, blockIndex) => {
+          const blockText = blockTexts[blockIndex] || 'Texto';
+          const font = previewFontSizeForBlock(region, block, blockText);
+          const preview = document.createElement('span');
+          preview.className = `region-text-preview ${previewText.trim() ? '' : 'empty'} ${hasMultipleSlots ? 'split-slot' : ''}`;
+          applyRendererTextLayout(preview, region, block, blockText);
+          preview.textContent = previewText.trim() ? previewLinesForBlock(region, block, blockText, font) : 'Texto';
+          box.appendChild(preview);
+        });
+      }
+    }
+
+    if (!showInlineEditor && !showPreview && region.visible !== false) {
+      layoutBlocks.forEach((block) => {
+        const hit = document.createElement('span');
+        hit.className = 'region-text-hit';
+        applyRendererTextLayout(hit, region, block, previewText || 'Texto');
+        hit.title = 'Seleccionar texto';
+        box.appendChild(hit);
+      });
     }
 
     const handle = document.createElement('span');
@@ -869,7 +1568,15 @@ function renderOverlay(options = {}) {
     box.addEventListener('pointerdown', onBoxPointerDown);
     box.addEventListener('click', (event) => {
       event.stopPropagation();
-      if (state.tool === 'select') selectRegion(idx);
+      if (activeTool() !== 'select') return;
+      if (event.target.closest?.('.region-text-editor')) return;
+      selectRegion(idx);
+    });
+    box.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      if (activeTool() !== 'select') return;
+      selectRegion(idx);
+      focusInlineEditorForRegion(idx, { selectAll: true });
     });
     overlayLayer.appendChild(box);
   });
@@ -886,7 +1593,7 @@ function renderOverlay(options = {}) {
     overlayLayer.appendChild(temp);
   }
 
-  if (state.tool === 'brush' && state.brushCursor.visible) {
+  if (activeTool() === 'brush' && state.brushCursor.visible) {
     const radius = Number(brushSize?.value || 22);
     const scale = (scaleX + scaleY) / 2;
     const visualRadius = Math.max(2, radius * scale);
@@ -900,10 +1607,12 @@ function renderOverlay(options = {}) {
     cursor.title = `Pincel de ${brushModeLabel(mode)} · ${radius}px`;
     overlayLayer.appendChild(cursor);
   }
+  updateCanvasReadout();
 }
 
 function textFromEditable(element) {
-  return String(element?.innerText || '').replace(/\r/g, '').replace(/\u00a0/g, ' ');
+  const raw = element && 'value' in element ? element.value : element?.innerText;
+  return String(raw || '').replace(/\r/g, '').replace(/\u00a0/g, ' ');
 }
 
 function syncInlineTextToRegion(element, options = {}) {
@@ -912,22 +1621,33 @@ function syncInlineTextToRegion(element, options = {}) {
   if (!isSelectableRegion(region)) return;
   const nextText = textFromEditable(element);
   element.classList.toggle('empty', !nextText.trim());
-  if (region.translated_text === nextText) return;
+  if (region.translated_text === nextText) {
+    if (element.classList.contains('ui-live-input')) refreshInlineEditorLayout(element);
+    if (options.preview !== false && overlayLayer?.querySelector?.(`.region-raster-preview[data-index="${idx}"]`)) queueInlineRasterPreview(idx, 220);
+    return;
+  }
+  if (options.history !== false) pushUndoSnapshot('edición de texto directa', { coalesceKey: `inline:${idx}`, coalesceMs: 1200 });
   region.translated_text = nextText;
   region.modified = true;
   if (idx === state.selectedRegion && translatedText) translatedText.value = nextText;
+  renderRegionList();
   markDirty();
+  if (element.classList.contains('ui-live-input')) refreshInlineEditorLayout(element);
+  if (options.preview !== false && overlayLayer?.querySelector?.(`.region-raster-preview[data-index="${idx}"]`)) queueInlineRasterPreview(idx, 220);
   if (options.autosave) scheduleAutoSave(options.reason || 'edición de texto directa');
 }
 
 function onInlineTextFocus(event) {
   state.inlineEditingIndex = Number(event.currentTarget?.dataset?.index);
+  if (Number.isInteger(state.inlineEditingIndex)) {
+    pushUndoSnapshot('edición de texto directa', { coalesceKey: `inline:${state.inlineEditingIndex}`, coalesceMs: 1200 });
+  }
   clearTimeout(state.autosaveTimer);
   setAutosaveStatus('pending', 'Editando texto… se guardará al salir del cuadro.');
 }
 
 function onInlineTextBlur(event) {
-  syncInlineTextToRegion(event.currentTarget, { autosave: false });
+  syncInlineTextToRegion(event.currentTarget, { autosave: false, preview: false });
   state.inlineEditingIndex = null;
   if (state.dirty) scheduleAutoSave('salir de edición directa', 180);
   flushDeferredOverlayRender();
@@ -942,11 +1662,26 @@ function onInlineTextInput(event) {
 function onInlineTextPaste(event) {
   event.preventDefault();
   const text = event.clipboardData?.getData('text/plain') || '';
+  const target = event.currentTarget;
+  if (target && 'setRangeText' in target) {
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? target.value.length;
+    target.setRangeText(text, start, end, 'end');
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
   document.execCommand('insertText', false, text);
 }
 
 function onInlineTextKeyDown(event) {
-  // Dentro de la caja, Enter permite saltos de línea; Escape devuelve el foco al lienzo.
+  // Dentro de la caja, Enter permite saltos de línea; Ctrl+Enter confirma y Escape devuelve el foco al lienzo.
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    syncInlineTextToRegion(event.currentTarget, { autosave: false, preview: false });
+    event.currentTarget.blur();
+    saveCurrentPage({ silent: true, force: true, reason: 'confirmar edición directa' }).catch(() => {});
+    return;
+  }
   if (event.key === 'Escape') {
     event.preventDefault();
     event.currentTarget.blur();
@@ -955,18 +1690,28 @@ function onInlineTextKeyDown(event) {
 }
 
 function onBoxPointerDown(event) {
-  if (state.tool !== 'select') return;
-  event.preventDefault();
+  if (activeTool() !== 'select') return;
   event.stopPropagation();
   const box = event.currentTarget;
   const idx = Number(box.dataset.index);
   if (!isSelectableRegion(state.regions[idx])) return;
+
+  const targetIsResize = event.target.classList.contains('resize-handle');
+  const targetIsEditor = Boolean(event.target.closest?.('.region-text-editor'));
+  const edgeDrag = isNearBoxEdge(event, box);
+
+  if (targetIsEditor) return;
+
+  event.preventDefault();
   selectRegion(idx);
-  const isResize = event.target.classList.contains('resize-handle');
+
+  if (!targetIsResize && !edgeDrag && !event.target.closest?.('.region-label')) return;
+
   const region = state.regions[idx];
+  pushUndoSnapshot(targetIsResize ? 'redimensionar región' : 'mover región', { coalesceKey: `drag:${idx}`, coalesceMs: 500 });
   state.dragging = {
     idx,
-    isResize,
+    isResize: targetIsResize,
     startX: event.clientX,
     startY: event.clientY,
     startBox: [...region.bbox],
@@ -974,12 +1719,34 @@ function onBoxPointerDown(event) {
   box.setPointerCapture(event.pointerId);
 }
 
+
+document.addEventListener('pointerdown', (event) => {
+  const editor = activeInlineTextEditor();
+  if (!editor) return;
+  if (event.target.closest?.('.region-text-editor')) return;
+  syncInlineTextToRegion(editor, { autosave: false, preview: false });
+  editor.blur();
+}, true);
+
 overlayLayer.addEventListener('pointerdown', (event) => {
   const page = currentPage();
   if (!page || page.status !== 'ready') return;
-  if (event.target.closest?.('.region-box') && state.tool === 'select') return;
+  if (event.target.closest?.('.region-box') && activeTool() === 'select') return;
   event.preventDefault();
   const [x, y] = imagePointFromEvent(event);
+
+  if (isPanMode()) {
+    state.panning = {
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: canvasCard?.scrollLeft || 0,
+      scrollTop: canvasCard?.scrollTop || 0,
+    };
+    setCanvasPanning(true);
+    overlayLayer.setPointerCapture(event.pointerId);
+    updateCanvasReadout([x, y]);
+    return;
+  }
 
   if (state.tool === 'region') {
     state.selectedRegion = null;
@@ -990,8 +1757,9 @@ overlayLayer.addEventListener('pointerdown', (event) => {
     return;
   }
 
-  if (state.tool === 'brush') {
+  if (activeTool() === 'brush') {
     state.brushCursor = { x, y, visible: true };
+    pushUndoSnapshot('pincel', { coalesceKey: 'brush-stroke', coalesceMs: 250 });
     state.drawingStroke = { points: [[x, y]], radius: Number(brushSize.value || 22), mode: brushMode.value || 'restore_clean', applied: false };
     overlayLayer.setPointerCapture(event.pointerId);
     markDirty();
@@ -999,9 +1767,7 @@ overlayLayer.addEventListener('pointerdown', (event) => {
     return;
   }
 
-  state.selectedRegion = null;
-  showNoRegion();
-  renderOverlay();
+  deselectRegion();
 });
 
 overlayLayer.addEventListener('pointermove', (event) => updateBrushCursorFromEvent(event));
@@ -1009,6 +1775,19 @@ overlayLayer.addEventListener('pointerenter', (event) => updateBrushCursorFromEv
 overlayLayer.addEventListener('pointerleave', hideBrushCursor);
 
 document.addEventListener('pointermove', (event) => {
+  if (state.panning) {
+    const pan = state.panning;
+    if (canvasCard) {
+      canvasCard.scrollLeft = pan.scrollLeft - (event.clientX - pan.startX);
+      canvasCard.scrollTop = pan.scrollTop - (event.clientY - pan.startY);
+    }
+    const rect = pageImage?.getBoundingClientRect?.();
+    if (rect && event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) {
+      updateCanvasReadout(imagePointFromEvent(event));
+    }
+    return;
+  }
+
   if (state.dragging) {
     const drag = state.dragging;
     const region = state.regions[drag.idx];
@@ -1058,6 +1837,11 @@ document.addEventListener('pointermove', (event) => {
 });
 
 document.addEventListener('pointerup', () => {
+  if (state.panning) {
+    state.panning = null;
+    setCanvasPanning(false);
+  }
+
   if (state.dragging) scheduleAutoSave(state.dragging.isResize ? 'redimensionar región' : 'mover región');
   state.dragging = null;
 
@@ -1081,8 +1865,11 @@ document.addEventListener('pointerup', () => {
         manual: true,
         deleted: false,
         auto_font_size: true,
-        font_size: 24,
+        font_size: null,
+        ui_layout: createFullBoxUiLayout(bbox, 'dialogo'),
+        ui_text_region: true,
       };
+      pushUndoSnapshot('nueva región');
       state.regions.push(region);
       state.selectedRegion = state.regions.length - 1;
       markDirty({ autosave: true, reason: 'nueva región' });
@@ -1148,39 +1935,51 @@ canvasCard?.addEventListener('wheel', (event) => {
 }, { passive: false });
 
 function setTool(tool) {
-  state.tool = tool;
-  [selectTool, newRegionTool, brushTool].forEach((button) => button.classList.toggle('active', button.dataset.tool === tool));
+  state.tool = ['select', 'region', 'brush', 'pan'].includes(tool) ? tool : 'select';
+  const allToolButtons = [selectTool, newRegionTool, brushTool, panTool, dockSelectTool, dockRegionTool, dockBrushTool, dockPanTool].filter(Boolean);
+  allToolButtons.forEach((button) => {
+    const active = button.dataset.tool === state.tool;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
   const help = {
-    select: ['Herramienta activa: seleccionar', 'Haz clic en una región para editarla, muévela o redimensiónala. Atajos: Supr, Ctrl+C, Ctrl+X y Ctrl+V.'],
-    region: ['Herramienta activa: nueva región', 'Arrastra sobre la página para crear una caja. Luego usa OCR + traducir región o escribe el texto manualmente.'],
-    brush: ['Herramienta activa: pincel', 'Usa Limpiar texto para borrado rápido, Inpaint para reconstrucciones pesadas y Restaurar original/borrar inpaint para devolver la zona pintada al manga original. El círculo del cursor muestra el tamaño real.'],
-  }[tool];
+    select: ['Herramienta activa: seleccionar', 'Haz clic en una región para editarla, muévela o redimensiónala. Atajos: V, Supr, Ctrl+C, Ctrl+X y Ctrl+V.'],
+    region: ['Herramienta activa: nueva región', 'Arrastra sobre la página para crear una caja. Luego usa OCR + traducir región o escribe el texto manualmente. Atajo: R.'],
+    brush: ['Herramienta activa: pincel', 'Usa Limpiar texto, Inpaint o Restaurar original. Ajusta tamaño con [ y ]. Atajo: B.'],
+    pan: ['Herramienta activa: mano', 'Arrastra el lienzo para desplazarte como en un editor de imágenes. También puedes mantener Espacio con cualquier herramienta. Atajo: H.'],
+  }[state.tool];
   toolHelpTitle.textContent = help[0];
   toolHelpText.textContent = help[1];
-  renderOverlay();
+  hideBrushCursor();
+  setPageImageSource();
+  updateCanvasReadout();
 }
 
-[selectTool, newRegionTool, brushTool].forEach((button) => {
-  button.addEventListener('click', () => setTool(button.dataset.tool));
-});
-brushSize.addEventListener('input', () => {
+[selectTool, newRegionTool, brushTool, panTool, dockSelectTool, dockRegionTool, dockBrushTool, dockPanTool]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener('click', () => setTool(button.dataset.tool));
+  });
+dockFitBtn?.addEventListener('click', () => { setFitZoomIfNeeded(true); applyZoom(); });
+brushSize?.addEventListener('input', () => {
   updateBrushSizeLabel();
   setTool('brush');
   requestOverlayRender();
 });
-brushMode.addEventListener('change', () => {
+brushMode?.addEventListener('change', () => {
   setTool('brush');
   requestOverlayRender();
 });
 updateBrushSizeLabel();
-undoBrushBtn.addEventListener('click', () => {
+undoBrushBtn?.addEventListener('click', () => {
   if (!state.brushStrokes.length) return showToast('No hay pinceladas para deshacer.');
+  pushUndoSnapshot('deshacer pincel');
   state.brushStrokes.pop();
   markDirty({ autosave: true, reason: 'deshacer pincel' });
   renderOverlay();
   showToast('Última pincelada eliminada.');
 });
-undoDeleteBtn.addEventListener('click', undoLastDelete);
+undoDeleteBtn?.addEventListener('click', undoLastDelete);
 
 function selectRegion(idx, rerender = true) {
   if (!isSelectableRegion(state.regions[idx])) return showNoRegion();
@@ -1188,13 +1987,17 @@ function selectRegion(idx, rerender = true) {
   noRegion.classList.add('hidden');
   regionEditor.classList.remove('hidden');
   updateEditorFromRegion();
-  if (rerender) renderOverlay();
+  renderRegionList();
+  updateCanvasReadout();
+  if (rerender) setPageImageSource();
 }
 
 function showNoRegion() {
   state.selectedRegion = null;
   noRegion.classList.remove('hidden');
   regionEditor.classList.add('hidden');
+  renderRegionList();
+  updateCanvasReadout();
 }
 
 function updateEditorFromRegion() {
@@ -1221,8 +2024,9 @@ function updateRegionFromEditor(options = {}) {
   const nextRestore = restoreOriginal.checked;
   const nextVisible = visibleText.checked;
   const nextAutoFont = autoFontSize ? autoFontSize.checked : true;
-  const nextFontSize = clampFontSize(fontSizeNumber?.value || fontSize?.value, effectiveManualFontSize(region));
-  const currentFontSize = clampFontSize(region.font_size, null);
+  const manualFontSize = clampFontSize(fontSizeNumber?.value || fontSize?.value, effectiveManualFontSize(region));
+  const nextFontSize = nextAutoFont ? null : manualFontSize;
+  const currentFontSize = usesAutoFontSize(region) ? null : clampFontSize(region.font_size, null);
   const changed =
     region.original_text !== nextOriginalText ||
     region.translated_text !== nextText ||
@@ -1231,6 +2035,10 @@ function updateRegionFromEditor(options = {}) {
     usesAutoFontSize(region) !== nextAutoFont ||
     currentFontSize !== nextFontSize ||
     region.bbox.some((value, index) => value !== nextBox[index]);
+
+  if (changed && options.history !== false) {
+    pushUndoSnapshot('edición de región', { coalesceKey: `panel:${state.selectedRegion}`, coalesceMs: 900 });
+  }
 
   region.original_text = nextOriginalText;
   region.translated_text = nextText;
@@ -1242,6 +2050,7 @@ function updateRegionFromEditor(options = {}) {
   updateFontControlsDisabled();
   if (changed) {
     markRegionModified(region);
+    renderRegionList();
     if (options.autosave !== false) scheduleAutoSave('edición de región');
   }
   if (options.render !== false) renderOverlay();
@@ -1255,6 +2064,25 @@ function clampBox(rawBox) {
   y = Math.max(0, Math.min(state.naturalHeight - h, y));
   return [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
 }
+function nudgeSelectedRegion(dx, dy, options = {}) {
+  const idx = state.selectedRegion;
+  const region = state.regions[idx];
+  if (!isSelectableRegion(region)) return false;
+  const [x, y, w, h] = region.bbox;
+  const resize = Boolean(options.resize);
+  const nextBox = resize
+    ? clampBox([x, y, w + dx, h + dy])
+    : clampBox([x + dx, y + dy, w, h]);
+  if (region.bbox.every((value, index) => value === nextBox[index])) return true;
+  pushUndoSnapshot(resize ? 'redimensionar con teclado' : 'mover con teclado', { coalesceKey: `nudge:${idx}:${resize ? 'resize' : 'move'}`, coalesceMs: 700 });
+  region.bbox = nextBox;
+  markRegionModified(region);
+  updateEditorFromRegion();
+  renderOverlay({ force: true });
+  scheduleAutoSave(resize ? 'redimensionar con teclado' : 'mover con teclado', 650);
+  return true;
+}
+
 
 function nextRegionIndex() {
   return state.regions.reduce((max, region) => Math.max(max, Number(region.index || 0)), -1) + 1;
@@ -1295,6 +2123,7 @@ ocrRegionBtn.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bbox: region.bbox, translate: true }),
     });
+    pushUndoSnapshot('OCR de región');
     region.original_text = result.original_text || '';
     if (result.translated_text) region.translated_text = result.translated_text;
     region.bbox = result.bbox || region.bbox;
@@ -1349,6 +2178,7 @@ function pasteRegion() {
     modified: true,
     deleted: false,
   };
+  pushUndoSnapshot('pegar región');
   state.regions.push(pasted);
   state.selectedRegion = state.regions.length - 1;
   markDirty({ autosave: true, reason: 'pegar región' });
@@ -1366,6 +2196,7 @@ function deleteSelectedRegion(message = 'Región eliminada. Guarda para aplicar 
 function deleteRegionAt(idx, message) {
   const region = state.regions[idx];
   if (!isSelectableRegion(region)) return;
+  pushUndoSnapshot('eliminar región');
   state.deletedStack.push({ idx, snapshot: cloneRegionForClipboard(region) });
   region.deleted = true;
   region.visible = false;
@@ -1382,6 +2213,7 @@ function deleteRegionAt(idx, message) {
 function undoLastDelete() {
   const item = state.deletedStack.pop();
   if (!item) return showToast('No hay borrados para deshacer.');
+  pushUndoSnapshot('deshacer borrado');
   const current = state.regions[item.idx];
   if (current) {
     state.regions[item.idx] = { ...item.snapshot, deleted: false, visible: item.snapshot.visible !== false, modified: true };
@@ -1403,12 +2235,87 @@ function isTypingTarget(target) {
 }
 
 document.addEventListener('keydown', (event) => {
-  if (isTypingTarget(event.target)) return;
-  const page = currentPage();
-  if (!page || page.status !== 'ready' || workView.classList.contains('hidden')) return;
+  if (workView.classList.contains('hidden')) return;
 
   const key = event.key.toLowerCase();
   const ctrl = event.ctrlKey || event.metaKey;
+
+  if (ctrl && key === 'z' && !isTypingTarget(event.target)) {
+    event.preventDefault();
+    if (event.shiftKey) redoChange();
+    else undoChange();
+    return;
+  }
+  if (ctrl && key === 'y' && !isTypingTarget(event.target)) {
+    event.preventDefault();
+    redoChange();
+    return;
+  }
+
+  if (isTypingTarget(event.target)) return;
+
+  if (event.code === 'Space') {
+    event.preventDefault();
+    if (!state.spacePan) {
+      state.spacePan = true;
+      setCanvasPanning(false);
+      requestOverlayRender();
+      updateCanvasReadout();
+    }
+    return;
+  }
+
+  const page = currentPage();
+
+  if (ctrl && key === 's') {
+    event.preventDefault();
+    saveCurrentPage({ silent: false, force: true, reason: 'atajo guardar' }).catch(() => {});
+    return;
+  }
+  if (ctrl && (key === '0' || event.code === 'Digit0')) {
+    event.preventDefault();
+    setFitZoomIfNeeded(true);
+    applyZoom();
+    return;
+  }
+  if (ctrl && ['+', '='].includes(key)) {
+    event.preventDefault();
+    zoomTo(state.zoom * 1.15);
+    return;
+  }
+  if (ctrl && key === '-') {
+    event.preventDefault();
+    zoomTo(state.zoom / 1.15);
+    return;
+  }
+
+  if (key.startsWith('arrow') && state.selectedRegion != null && page?.status === 'ready') {
+    const step = event.shiftKey ? 10 : 1;
+    const vector = {
+      arrowleft: [-step, 0],
+      arrowright: [step, 0],
+      arrowup: [0, -step],
+      arrowdown: [0, step],
+    }[key];
+    if (vector && nudgeSelectedRegion(vector[0], vector[1], { resize: ctrl })) {
+      event.preventDefault();
+      return;
+    }
+  }
+
+  if (!ctrl) {
+    if (key === 'v') { event.preventDefault(); setTool('select'); return; }
+    if (key === 'b') { event.preventDefault(); setTool('brush'); return; }
+    if (key === 'r') { event.preventDefault(); setTool('region'); return; }
+    if (key === 'h') { event.preventDefault(); setTool('pan'); return; }
+    if (key === '[') { event.preventDefault(); nudgeBrushSize(-2); return; }
+    if (key === ']') { event.preventDefault(); nudgeBrushSize(2); return; }
+    if (key === 'arrowleft' && state.job && state.pageIndex > 0) { event.preventDefault(); prevBtn.click(); return; }
+    if (key === 'arrowright' && state.job && state.pageIndex < (state.job.pages?.length || 1) - 1) { event.preventDefault(); nextBtn.click(); return; }
+  }
+
+  if (!page || page.status !== 'ready') return;
+
   if (key === 'delete' || key === 'backspace') {
     event.preventDefault();
     deleteSelectedRegion();
@@ -1425,6 +2332,15 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     pasteRegion();
   }
+});
+
+document.addEventListener('keyup', (event) => {
+  if (event.code !== 'Space' || !state.spacePan) return;
+  state.spacePan = false;
+  if (state.panning) state.panning = null;
+  setCanvasPanning(false);
+  requestOverlayRender();
+  updateCanvasReadout();
 });
 
 exportBtn.addEventListener('click', async () => {
@@ -1457,24 +2373,116 @@ exportBtn.addEventListener('click', async () => {
   }
 });
 
+function regionToRenderPatch(region, idx) {
+  return {
+    index: region.index ?? idx,
+    bbox: region.bbox,
+    text: region.translated_text || '',
+    original_text: region.original_text || '',
+    style: region.style || 'dialogo',
+    restore_original: Boolean(region.restore_original),
+    visible: region.visible !== false,
+    modified: Boolean(region.modified || region.manual || region.deleted),
+    manual: Boolean(region.manual),
+    deleted: Boolean(region.deleted),
+    source_bbox: region.source_bbox || region.bbox,
+    auto_font_size: region.auto_font_size !== false,
+    font_size: region.auto_font_size === false ? clampFontSize(region.font_size, null) : null,
+    ui_layout: region.ui_layout || null,
+    ui_text_region: Boolean(region.ui_text_region || region.ui_layout?.ui_text_region),
+  };
+}
+
+function inlinePreviewCacheKey(region, idx) {
+  return JSON.stringify(regionToRenderPatch(region, idx));
+}
+
+function queueInlineRasterPreview(idxOrElement, delay = 120) {
+  const idx = typeof idxOrElement === 'number' ? idxOrElement : Number(idxOrElement?.dataset?.index);
+  if (!Number.isInteger(idx) || !isSelectableRegion(state.regions[idx])) return;
+  // Mientras el usuario escribe usamos un editor HTML visible. Pedir previews
+  // rasterizadas en cada tecla/clic provoca parpadeos y no aporta precisión al caret.
+  if (state.inlineEditingIndex === idx) return;
+  const page = currentPage();
+  const img = overlayLayer?.querySelector?.(`.region-raster-preview[data-index="${idx}"]`);
+  if (!page || !img) return;
+  const key = `${state.job?.job_id || ''}:${page.index}:${inlinePreviewCacheKey(state.regions[idx], idx)}`;
+  if (img.dataset.previewKey === key && img.src) return;
+  const cachedUrl = cachedRasterPreview(key);
+  if (cachedUrl) {
+    img.dataset.previewKey = key;
+    img.classList.remove('loading');
+    img.src = cachedUrl;
+    return;
+  }
+  if (state.previewInFlightKeys.has(key)) return;
+  clearTimeout(inlinePreviewTimers.get(idx));
+  inlinePreviewTimers.set(idx, setTimeout(() => updateInlineRasterPreview(idx).catch((error) => {
+    if (error?.name !== 'AbortError') console.warn('No se pudo generar la previsualización exacta:', error);
+  }), Math.max(0, delay)));
+}
+
+async function updateInlineRasterPreview(idx) {
+  const page = currentPage();
+  const region = state.regions[idx];
+  if (!page || page.status !== 'ready' || !state.job?.job_id || !isSelectableRegion(region)) return;
+  const img = overlayLayer?.querySelector?.(`.region-raster-preview[data-index="${idx}"]`);
+  if (!img) return;
+
+  const key = `${state.job.job_id}:${page.index}:${inlinePreviewCacheKey(region, idx)}`;
+  if (img.dataset.previewKey === key && img.src) return;
+  const cachedUrl = cachedRasterPreview(key);
+  if (cachedUrl) {
+    img.dataset.previewKey = key;
+    img.classList.remove('loading');
+    img.src = cachedUrl;
+    return;
+  }
+  if (state.previewInFlightKeys.has(key)) return;
+  state.previewInFlightKeys.add(key);
+
+  inlinePreviewControllers.get(idx)?.abort();
+  const controller = new AbortController();
+  inlinePreviewControllers.set(idx, controller);
+  const serial = String(++inlinePreviewSerial);
+  img.dataset.serial = serial;
+  img.classList.add('loading');
+
+  try {
+    const response = await fetch(`/api/jobs/${state.job.job_id}/pages/${page.index}/region-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ region: regionToRenderPatch(region, idx) }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      let payload = null;
+      try { payload = await response.json(); } catch (_) {}
+      throw new Error(payload?.detail || response.statusText || 'No se pudo previsualizar la región.');
+    }
+    const blob = await response.blob();
+    if (controller.signal.aborted) return;
+    const currentImg = overlayLayer?.querySelector?.(`.region-raster-preview[data-index="${idx}"]`);
+    if (!currentImg || currentImg.dataset.serial !== serial) return;
+    const url = URL.createObjectURL(blob);
+    rememberRasterPreview(key, url);
+    currentImg.onload = () => {
+      currentImg.classList.remove('loading');
+    };
+    currentImg.onerror = () => {
+      currentImg.classList.remove('loading');
+    };
+    currentImg.dataset.previewKey = key;
+    currentImg.src = url;
+  } finally {
+    state.previewInFlightKeys.delete(key);
+  }
+}
+
 function buildRenderPayload(operation = 'render') {
   return {
     operation,
-    regions: state.regions.map((region, idx) => ({
-      index: region.index ?? idx,
-      bbox: region.bbox,
-      text: region.translated_text || '',
-      original_text: region.original_text || '',
-      style: region.style || 'dialogo',
-      restore_original: Boolean(region.restore_original),
-      visible: region.visible !== false,
-      modified: Boolean(region.modified || region.manual || region.deleted),
-      manual: Boolean(region.manual),
-      deleted: Boolean(region.deleted),
-      source_bbox: region.source_bbox || region.bbox,
-      auto_font_size: region.auto_font_size !== false,
-      font_size: clampFontSize(region.font_size, null),
-    })),
+    regions: state.regions.map((region, idx) => regionToRenderPatch(region, idx)),
     brush_strokes: state.brushStrokes.map((stroke) => ({
       points: stroke.points,
       radius: Number(stroke.radius || 18),
@@ -1491,7 +2499,7 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
     return null;
   }
   const inlineEditor = activeInlineTextEditor();
-  if (inlineEditor) syncInlineTextToRegion(inlineEditor, { autosave: false });
+  if (inlineEditor) syncInlineTextToRegion(inlineEditor, { autosave: false, preview: false });
   else if (state.selectedRegion != null) updateRegionFromEditor({ render: false, autosave: false });
   if (!markInpaintApplied && operation !== 'mask_eraser' && hasPendingInpaintStroke()) {
     setAutosaveStatus('pending', 'Hay una máscara de inpaint pendiente. Pulsa “Aplicar inpaint”.');
@@ -1557,6 +2565,8 @@ resetBtn.addEventListener('click', async () => {
     state.selectedRegion = null;
     state.brushStrokes = [];
     state.deletedStack = [];
+    cleanupInlinePreviewResources();
+    clearRasterPreviewCache();
     markActiveVariant();
     setAutosaveStatus('saved', 'Cambios guardados automáticamente.');
     updateHeavyActions();
@@ -1576,6 +2586,8 @@ prevBtn.addEventListener('click', () => {
   state.dirty = false;
   state.deletedStack = [];
   clearTimeout(state.autosaveTimer);
+  cleanupInlinePreviewResources();
+  clearRasterPreviewCache();
   state.deferredOverlayRender = false;
   state.inlineEditingIndex = null;
   setAutosaveStatus('saved', 'Cambios guardados automáticamente.');
@@ -1588,6 +2600,8 @@ nextBtn.addEventListener('click', () => {
   state.dirty = false;
   state.deletedStack = [];
   clearTimeout(state.autosaveTimer);
+  cleanupInlinePreviewResources();
+  clearRasterPreviewCache();
   state.deferredOverlayRender = false;
   state.inlineEditingIndex = null;
   setAutosaveStatus('saved', 'Cambios guardados automáticamente.');

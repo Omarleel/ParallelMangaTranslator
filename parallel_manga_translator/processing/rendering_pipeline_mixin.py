@@ -62,9 +62,10 @@ class RenderingPipelineMixin:
                 }
             })
 
-    def _push_translated_texts_to_queue(self, cuadros_delimitadores, textos_traducidos):
+    def _push_translated_texts_to_queue(self, cuadros_delimitadores, textos_traducidos, textos_para_render=None):
         if self.traduccion_queue is None:
             return
+        textos_para_render = textos_para_render or textos_traducidos
         for idx, ((x, y, w, h), texto_traducido) in enumerate(zip(cuadros_delimitadores, textos_traducidos)):
             if idx < len(getattr(self, "ultimos_source_language_flags", [])) and not self.ultimos_source_language_flags[idx]:
                 continue
@@ -82,6 +83,18 @@ class RenderingPipelineMixin:
                     "Confianza": round(float(region.confidence), 4),
                     "Fuente máscara": region.metadata.get("mask_source", ""),
                 })
+                try:
+                    texto_layout = textos_para_render[idx] if idx < len(textos_para_render) else texto_traducido
+                    elemento["Layout UI"] = self.text_renderer.build_layout(
+                        (x, y, w, h),
+                        texto_layout,
+                        estilo,
+                        clip_mask=region.local_mask(),
+                        image_shape=getattr(region.mask, "shape", None),
+                        reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,
+                    )
+                except Exception as exc:
+                    logger.debug("No se pudo calcular layout UI para región %s: %s", idx, exc)
             if idx < len(self.ultimas_asignaciones_hablante):
                 speaker = self.ultimas_asignaciones_hablante[idx]
                 elemento.update({
@@ -103,12 +116,12 @@ class RenderingPipelineMixin:
         textos_traducidos = self.traducir_textos(textos_limpios)
         self.ultimos_textos_traducidos = textos_traducidos
         self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
-        self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos)
         textos_para_render = [
             "" if (idx < len(self.ultimos_source_language_flags) and not self.ultimos_source_language_flags[idx])
             else ("" if self._should_keep_original_onomatopoeia(idx, original) else traducido)
             for idx, (original, traducido) in enumerate(zip(textos_limpios, textos_traducidos))
         ]
+        self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos, textos_para_render)
         clip_masks = [region.local_mask() for region in self.ultimas_regiones] if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores) else None
         return self.text_renderer.render(
             imagen_limpia,

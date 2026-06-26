@@ -131,6 +131,25 @@
   </section>
 
   <section id="workView" class="work-view hidden">
+    <nav id="toolDock" class="tool-dock" aria-label="Barra de herramientas rápida">
+      <button id="dockSelectTool" class="dock-tool active" type="button" data-tool="select" title="Seleccionar / mover texto (V)">
+        <span class="tool-icon">↖</span><span class="tool-label">Seleccionar</span>
+      </button>
+      <button id="dockRegionTool" class="dock-tool" type="button" data-tool="region" title="Nueva región de texto (R)">
+        <span class="tool-icon">▭</span><span class="tool-label">Región</span>
+      </button>
+      <button id="dockBrushTool" class="dock-tool" type="button" data-tool="brush" title="Pincel / máscaras (B)">
+        <span class="tool-icon">●</span><span class="tool-label">Pincel</span>
+      </button>
+      <button id="dockPanTool" class="dock-tool" type="button" data-tool="pan" title="Mano / desplazar lienzo (H o mantener Espacio)">
+        <span class="tool-icon">✋</span><span class="tool-label">Mano</span>
+      </button>
+      <span class="dock-separator"></span>
+      <button id="dockFitBtn" class="dock-tool utility" type="button" title="Ajustar al lienzo (Ctrl+0)">
+        <span class="tool-icon">⛶</span><span class="tool-label">Ajustar</span>
+      </button>
+    </nav>
+
     <aside class="work-sidebar">
       <div class="sidebar-head">
         <div class="brand-mark small-mark">PMT</div>
@@ -185,31 +204,14 @@
           </div>
         </div>
 
-        <div class="toolbar-row tools-row">
-          <div class="tool-switcher" role="group" aria-label="Herramientas de corrección">
-            <button id="selectTool" class="active" type="button" data-tool="select">Seleccionar</button>
-            <button id="newRegionTool" type="button" data-tool="region">Nueva región</button>
-            <button id="brushTool" type="button" data-tool="brush">Pincel</button>
-            <button id="undoBrushBtn" type="button">Deshacer pincel</button>
-            <button id="undoDeleteBtn" type="button">Deshacer borrado</button>
-          </div>
-          <div class="brush-controls">
-            <label class="field inline-field">
-              <span>Modo pincel</span>
-              <select id="brushMode">
-                <option value="restore_clean" selected>Limpiar texto</option>
-                <option value="inpaint">Inpaint</option>
-                <option value="mask_eraser">Restaurar manga original / borrar inpaint</option>
-              </select>
-            </label>
-            <label class="brush-size">Tamaño <input id="brushSize" type="range" min="4" max="90" value="22" /><strong id="brushSizeValue">22 px</strong></label>
-            <button id="applyInpaintBtn" class="primary compact-heavy" type="button" disabled>Aplicar inpaint</button>
-          </div>
-        </div>
       </header>
 
       <section class="review-layout" id="reviewLayout">
         <div class="canvas-card">
+          <div class="canvas-hud" aria-live="polite">
+            <span id="canvasHint">V Seleccionar · B Pincel · R Región · H Mano · Espacio desplaza</span>
+            <strong id="canvasReadout">Sin página</strong>
+          </div>
           <div id="waitState" class="wait-state hidden">
             <h2>Página aún en procesamiento</h2>
             <p>Esta página todavía no está lista. Puedes avanzar con las páginas ya procesadas.</p>
@@ -231,11 +233,44 @@
 
           <div class="tool-help">
             <strong id="toolHelpTitle">Herramienta activa: seleccionar</strong>
-            <p id="toolHelpText">Haz clic en una región para editarla. Atajos: Supr borra, Ctrl+C copia, Ctrl+X corta y Ctrl+V pega.</p>
+            <p id="toolHelpText">Haz clic en una región para editarla. Doble clic selecciona el texto. Flechas mueven 1 px, Shift+flechas 10 px y Ctrl+flechas redimensionan. Ctrl+Z deshace y Ctrl+Shift+Z rehace.</p>
           </div>
 
+          <section class="brush-options-panel" aria-label="Opciones de pincel">
+            <div class="layer-head">
+              <div>
+                <h3>Pincel</h3>
+                <p>Opciones de limpieza e inpaint. Activa la herramienta desde la barra izquierda.</p>
+              </div>
+              <span class="kbd">B</span>
+            </div>
+            <div class="brush-controls side-brush-controls">
+              <label class="field inline-field">
+                <span>Modo pincel</span>
+                <select id="brushMode">
+                  <option value="restore_clean" selected>Limpiar texto</option>
+                  <option value="inpaint">Inpaint</option>
+                  <option value="mask_eraser">Restaurar manga original / borrar inpaint</option>
+                </select>
+              </label>
+              <label class="brush-size">Tamaño <input id="brushSize" type="range" min="4" max="90" value="22" /><strong id="brushSizeValue">22 px</strong></label>
+              <button id="applyInpaintBtn" class="primary compact-heavy" type="button" disabled>Aplicar inpaint</button>
+            </div>
+          </section>
+
+          <section class="layers-panel" aria-label="Lista de regiones de texto">
+            <div class="layer-head">
+              <div>
+                <h3>Regiones</h3>
+                <p>Como capas: selecciona, enfoca u oculta texto.</p>
+              </div>
+              <span class="kbd">V</span>
+            </div>
+            <div id="regionList" class="region-list"></div>
+          </section>
+
           <div id="noRegion" class="no-region">
-            Selecciona una caja y escribe directamente dentro de ella. Mueve/redimensiona desde el borde o el tirador; los cambios ligeros se guardan automáticamente.
+            Selecciona una caja de texto y escribe directamente dentro de ella. Doble clic selecciona el texto; mueve/redimensiona desde el borde, el tirador o con flechas.
           </div>
 
           <div id="regionEditor" class="region-editor hidden">
@@ -243,6 +278,7 @@
               <span id="regionTypeBadge" class="badge soft">Región</span>
               <span class="kbd">Supr</span>
               <span class="kbd">Ctrl+C/X/V</span>
+              <span class="kbd">Flechas</span>
             </div>
 
             <label class="field">

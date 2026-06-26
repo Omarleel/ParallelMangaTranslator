@@ -3,11 +3,11 @@ from __future__ import annotations
 import mimetypes
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -45,6 +45,7 @@ class RegionPatch(BaseModel):
     source_bbox: Optional[List[float]] = Field(default=None, min_length=4, max_length=4)
     auto_font_size: bool = True
     font_size: Optional[int] = None
+    ui_layout: Optional[Dict[str, Any]] = None
 
 
 class BrushStrokePatch(BaseModel):
@@ -58,6 +59,10 @@ class RenderRequest(BaseModel):
     regions: List[RegionPatch]
     brush_strokes: List[BrushStrokePatch] = Field(default_factory=list)
     operation: str = "render"
+
+
+class RegionPreviewRequest(BaseModel):
+    region: RegionPatch
 
 
 class OcrRegionRequest(BaseModel):
@@ -164,6 +169,19 @@ def render_page(job_id: str, page_index: int, request: RenderRequest):
 def ocr_manual_region(job_id: str, page_index: int, request: OcrRegionRequest):
     try:
         return manager.transcribe_manual_region(job_id, page_index, request.bbox, translate=request.translate)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/pages/{page_index}/region-preview")
+def render_region_preview(job_id: str, page_index: int, request: RegionPreviewRequest):
+    try:
+        content = manager.render_region_preview(
+            job_id,
+            page_index,
+            request.region.model_dump() if hasattr(request.region, "model_dump") else request.region.dict(),
+        )
+        return Response(content=content, media_type="image/png")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
