@@ -19,6 +19,7 @@ from parallel_manga_translator.cli import build_default_config, build_image_proc
 from parallel_manga_translator.config.app_config import LlmConfig, OcrConfig
 from parallel_manga_translator.config.runtime_config import set_active_config
 from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
+from parallel_manga_translator.io.image_naming import normalized_page_output_name
 from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, render_manual_region_preview, restore_mask_erased_pixels, write_corrections
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
 
@@ -94,15 +95,8 @@ class JobState:
         return round(((self.processed_count + self.failed_count) / total) * 100, 2)
 
 
-def normalized_output_name(filename: str) -> str:
-    name = Path(filename).name
-    stem, ext = os.path.splitext(name)
-    if ext.lower() == ".webp":
-        ext = ".jpg"
-    match = re.search(r"(\d+)", stem)
-    if match:
-        return f"{int(match.group(1)):04d}{ext}"
-    return f"{stem}{ext}"
+def normalized_output_name(filename: str, page_index: int) -> str:
+    return normalized_page_output_name(filename, page_index)
 
 
 def natural_sort_key(filename: str) -> List[Any]:
@@ -207,7 +201,7 @@ class JobManager:
 
         pages = []
         for idx, filename in enumerate(image_files):
-            output_name = normalized_output_name(filename)
+            output_name = normalized_output_name(filename, idx)
             pages.append(
                 PageState(
                     index=idx,

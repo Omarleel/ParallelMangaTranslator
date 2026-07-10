@@ -18,6 +18,8 @@ class CapturingJsonQueue:
     def __init__(self, output_path: str | Path | None = None) -> None:
         self.json_generator = JsonGenerator()
         self.output_path = Path(output_path) if output_path else None
+        if self.output_path:
+            self.json_generator.cargar_desde_archivo(str(self.output_path))
         self._lock = Lock()
 
     @property
@@ -38,6 +40,9 @@ class CapturingJsonQueue:
             elif metodo == "agregar_elemento_a_lista":
                 for clave, elemento in payload.items():
                     self.json_generator.agregar_elemento_a_lista(clave=clave, elemento=elemento)
+            elif metodo == "establecer_elemento_en_lista":
+                for clave, elemento in payload.items():
+                    self.json_generator.establecer_elemento_en_lista(clave=clave, elemento=elemento)
             elif metodo == "agregar_a_sublista":
                 self.json_generator.agregar_a_sublista(
                     clave_lista=payload["clave_lista"],

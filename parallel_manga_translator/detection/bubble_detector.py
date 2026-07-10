@@ -60,7 +60,12 @@ class BubbleDetector(BubbleGeometryMixin, BubbleTextRulesMixin, BubbleRegionBuil
             self.reading_order_resolver,
             PanelOrderConfig.from_quality_config(q),
         )
+        # Contador de respaldo para usos aislados del detector. En el flujo normal,
+        # ImageProcessor establece el índice global real de la página antes de detectar.
         self._debug_page_index = 0
+        self._debug_page_number: Optional[int] = None
+        self._debug_source_filename: Optional[str] = None
+        self._debug_output_filename: Optional[str] = None
         if self.merge_debug:
             logger.info("Bubble split debug activo: %s", BUBBLE_SPLIT_DEBUG_VERSION)
         if not self.enabled:
@@ -69,6 +74,27 @@ class BubbleDetector(BubbleGeometryMixin, BubbleTextRulesMixin, BubbleRegionBuil
                 "debe hacerse con un modelo preentrenado."
             )
         self.yolo_detector = YoloBubbleDetector(quality_config=quality_config)
+
+    def set_debug_page_context(
+        self,
+        page_index: int,
+        *,
+        source_filename: str | None = None,
+        output_filename: str | None = None,
+    ) -> None:
+        """Asocia los artefactos debug con el índice global de la página.
+
+        ``page_index`` es base cero, como el resto del pipeline. Los nombres de
+        archivos debug son base uno (pagina_0001, pagina_0002, ...).
+        """
+        self._debug_page_number = max(1, int(page_index) + 1)
+        self._debug_source_filename = source_filename
+        self._debug_output_filename = output_filename
+
+    def clear_debug_page_context(self) -> None:
+        self._debug_page_number = None
+        self._debug_source_filename = None
+        self._debug_output_filename = None
 
     def _apply_settings(self, settings: BubbleDetectorSettings) -> None:
         """Aplica la configuración del detector de globos."""

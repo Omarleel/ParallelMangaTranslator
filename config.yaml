@@ -1,5 +1,5 @@
 translation:
-  source_language: Japonés
+  source_language: Inglés
   target_language: Español
   method: Tradicional          # LLM | Tradicional
   traditional_provider: auto  # auto | google | deepl
@@ -10,9 +10,11 @@ translation:
 processing:
   input_dir: dataset
   batch_size: 8
-  parallel: false
+  parallel: true
   cache: true
   cache_dir: .cache
+  cpu_gpu_pipeline: true
+  pipeline_prefetch: 2
   # null = autocalcular según CPU/GPU; entero = límite explícito de procesos paralelos.
   max_workers: null
 
@@ -77,7 +79,7 @@ quality:
   bubble_model_file: best.pt
   bubble_model_path: ""
   # Usa 0/cuda/cuda:0/gpu para GPU, cpu para CPU, o vacío/auto para que Ultralytics decida.
-  bubble_device: "cpu"
+  bubble_device: "gpu"
   bubble_confidence: 0.45
   bubble_img_size: 1024
   # Máscaras de alta resolución de Ultralytics; mejora bordes al limpiar.

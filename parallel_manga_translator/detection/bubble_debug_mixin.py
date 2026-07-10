@@ -28,8 +28,14 @@ class BubbleDebugMixin:
             return
         try:
             self.merge_debug_dir.mkdir(parents=True, exist_ok=True)
-            self._debug_page_index += 1
-            stem = f"pagina_{self._debug_page_index:04d}"
+            explicit_page_number = getattr(self, "_debug_page_number", None)
+            if explicit_page_number is None:
+                # Compatibilidad para llamadas directas al detector fuera de ImageProcessor.
+                self._debug_page_index += 1
+                page_number = self._debug_page_index
+            else:
+                page_number = max(1, int(explicit_page_number))
+            stem = f"pagina_{page_number:04d}"
             canvas = image.copy()
 
             # Primero dibuja datos técnicos de la decisión: detecciones OCR crudas y
@@ -100,7 +106,10 @@ class BubbleDebugMixin:
             cv2.imwrite(str(png_path), canvas)
             payload = {
                 "bubble_split_debug_version": BUBBLE_SPLIT_DEBUG_VERSION,
-                "page_index": self._debug_page_index,
+                "page_index": page_number,
+                "page_index_zero_based": page_number - 1,
+                "source_filename": getattr(self, "_debug_source_filename", None),
+                "output_filename": getattr(self, "_debug_output_filename", None),
                 "legend": {
                     "orange_box": "región final conservada por el detector",
                     "green_box": "subregión final creada al dividir un globo fusionado",

@@ -7,6 +7,7 @@ from PIL import Image
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.ocr.engines.base import OcrEngineBase, OcrEngineSettings
 from parallel_manga_translator.ocr.engines.easyocr_engine import EasyOcrEngine
+from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 
 logger = get_logger(__name__)
 
@@ -25,9 +26,11 @@ class MangaOcrEngine(OcrEngineBase):
 
     def _manga_ocr_instance(self):
         if self._manga_ocr is None:
-            from manga_ocr import MangaOcr  # type: ignore
+            with gpu_slot("mangaocr.load", enabled=self.settings.gpu):
+                if self._manga_ocr is None:
+                    from manga_ocr import MangaOcr  # type: ignore
 
-            self._manga_ocr = MangaOcr()
+                    self._manga_ocr = MangaOcr()
         return self._manga_ocr
 
     def extract_text(self, image: np.ndarray) -> str:
@@ -36,7 +39,8 @@ class MangaOcrEngine(OcrEngineBase):
         image = self.upscale_if_needed(image)
         area_interes_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         try:
-            texto = self._manga_ocr_instance()(area_interes_pil)
+            with gpu_slot("mangaocr.inference", enabled=self.settings.gpu):
+                texto = self._manga_ocr_instance()(area_interes_pil)
             texto = self.normalize_text(texto)
             if texto:
                 return texto

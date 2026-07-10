@@ -167,6 +167,8 @@ class ConfigManager:
             ruta_carpeta_entrada=str(processing_section.get("input_dir", "dataset")),
             batch_size=int_value(processing_section.get("batch_size", 8), 8),
             usar_paralelismo=bool_value(processing_section.get("parallel", default_parallel), default_parallel),
+            cpu_gpu_pipeline=bool_value(processing_section.get("cpu_gpu_pipeline", True), True),
+            pipeline_prefetch=max(1, min(4, int_value(processing_section.get("pipeline_prefetch", 2), 2))),
             cache=bool_value(processing_section.get("cache", True), True),
             cache_dir=str(processing_section.get("cache_dir", ".cache")),
             max_workers=max_workers,

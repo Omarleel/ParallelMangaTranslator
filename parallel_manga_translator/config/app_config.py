@@ -51,6 +51,10 @@ class ProcessingConfig:
     ruta_carpeta_entrada: str = "dataset"
     batch_size: int = 8
     usar_paralelismo: bool = True
+    # Solapa la preparación GPU de la página N+1 con OCR/traducción/render de N.
+    # No crea otra copia de los modelos CUDA y, por tanto, es segura para GPUs de 16 GB.
+    cpu_gpu_pipeline: bool = True
+    pipeline_prefetch: int = 2
     cache: bool = True
     cache_dir: str = ".cache"
     max_workers: Optional[int] = None

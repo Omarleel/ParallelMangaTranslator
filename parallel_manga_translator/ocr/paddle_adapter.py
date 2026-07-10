@@ -9,6 +9,7 @@ from PIL import Image
 from parallel_manga_translator.ocr.paddle_ocr_subprocess import PaddleOcrSubprocess
 from parallel_manga_translator.ocr.paddle_result import PaddleLine, normalize_paddle_result
 from parallel_manga_translator.ocr.settings import OcrSettings
+from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 
 PaddleMode = Literal["direct", "subprocess"]
 
@@ -64,7 +65,8 @@ class PaddleOcrAdapter:
 
     def _run_direct(self, image: np.ndarray):
         rgb_image = np.array(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
-        try:
-            return self._paddle_ocr_instance().ocr(img=rgb_image, cls=True)
-        except TypeError:
-            return self._paddle_ocr_instance().ocr(rgb_image)
+        with gpu_slot("paddleocr.inference", enabled=self.settings.gpu):
+            try:
+                return self._paddle_ocr_instance().ocr(img=rgb_image, cls=True)
+            except TypeError:
+                return self._paddle_ocr_instance().ocr(rgb_image)

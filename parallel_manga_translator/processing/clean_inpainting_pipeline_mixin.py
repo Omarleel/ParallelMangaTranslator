@@ -12,6 +12,7 @@ from PIL import Image
 
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.infrastructure.logging_config import get_logger
+from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.ocr.ocr_manager import OcrManager
@@ -733,20 +734,26 @@ class CleanInpaintingPipelineMixin:
                 inpainter_instance = self._build_inpainter(model_name)
 
         async def _do_inpaint():
-            # Soporte para inpainters de red neuronal que requieren carga asíncrona
-            if hasattr(inpainter_instance, "_load"):
-                await inpainter_instance._load()
-            
-            # Verificamos si usa _inpaint (Modelos neurales) o inpaint clásico
-            if hasattr(inpainter_instance, "_inpaint"):
-                return await inpainter_instance._inpaint(imagen, mascara_capa)
-            elif hasattr(inpainter_instance, "inpaint"):
-                res = inpainter_instance.inpaint(imagen, mascara_capa)
-                if asyncio.iscoroutine(res):
-                    return await res
-                return res
-            else:
-                raise AttributeError(f"El modelo {type(inpainter_instance).__name__} no tiene métodos de inpainting válidos")
+            # Los modelos neurales comparten GPU con YOLO/OCR. La compuerta FIFO
+            # serializa solo este tramo y deja libre el resto del procesamiento CPU.
+            neural_inpainter = hasattr(inpainter_instance, "_load")
+            with gpu_slot("inpainting.inference", enabled=neural_inpainter):
+                if hasattr(inpainter_instance, "_load"):
+                    await inpainter_instance._load()
+
+                if hasattr(inpainter_instance, "_inpaint"):
+                    result = inpainter_instance._inpaint(imagen, mascara_capa)
+                    if asyncio.iscoroutine(result):
+                        return await result
+                    return result
+                if hasattr(inpainter_instance, "inpaint"):
+                    result = inpainter_instance.inpaint(imagen, mascara_capa)
+                    if asyncio.iscoroutine(result):
+                        return await result
+                    return result
+                raise AttributeError(
+                    f"El modelo {type(inpainter_instance).__name__} no tiene métodos de inpainting válidos"
+                )
 
         loop = asyncio.new_event_loop()
         try:

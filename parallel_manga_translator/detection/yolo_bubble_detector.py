@@ -6,10 +6,12 @@ from typing import List, Optional
 
 import cv2
 import numpy as np
+import torch
 
 from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 from parallel_manga_translator.models.processing_models import Box
 from parallel_manga_translator.infrastructure.logging_config import get_logger
+from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 from parallel_manga_translator.config.app_config import QualityConfig
 from parallel_manga_translator.config.runtime_config import get_active_config
 
@@ -284,7 +286,9 @@ class YoloBubbleDetector:
                 kwargs["classes"] = self.class_ids
             if self.device:
                 kwargs["device"] = self.device
-            results = model.predict(image, **kwargs)
+            use_gpu = torch.cuda.is_available() and str(self.device or "auto").lower() != "cpu"
+            with gpu_slot("yolo.predict", enabled=use_gpu):
+                results = model.predict(image, **kwargs)
         except Exception as exc:  # pragma: no cover - depende de ultralytics/runtime
             raise RuntimeError(f"Falló la inferencia del detector YOLO11-seg de globos: {exc}") from exc
 

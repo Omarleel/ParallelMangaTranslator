@@ -13,6 +13,8 @@ processing:
   parallel: false
   cache: true
   cache_dir: .cache
+  cpu_gpu_pipeline: true
+  pipeline_prefetch: 2
   # null = autocalcular según CPU/GPU; entero = límite explícito de procesos paralelos.
   max_workers: null
 

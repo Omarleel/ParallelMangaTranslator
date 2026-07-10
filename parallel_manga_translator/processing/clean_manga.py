@@ -93,3 +93,19 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
             self.inpainter = None
         self.text_detector = TextDetectionFactory.create(idioma_entrada, ocr_config)
         self.last_regions: List[TextRegion] = []
+    def set_debug_page_context(
+        self,
+        page_index: int,
+        *,
+        source_filename: str | None = None,
+        output_filename: str | None = None,
+    ) -> None:
+        """Propaga al detector el índice global de la página que se está procesando."""
+        self.bubble_detector.set_debug_page_context(
+            page_index,
+            source_filename=source_filename,
+            output_filename=output_filename,
+        )
+
+    def clear_debug_page_context(self) -> None:
+        self.bubble_detector.clear_debug_page_context()

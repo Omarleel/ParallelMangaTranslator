@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import torch
 import torch.multiprocessing as mp
 from dataclasses import dataclass
@@ -106,6 +107,31 @@ class ParallelProcessor:
             parallel_enabled=parallel and num_processes > 1,
         )
 
+
+    @staticmethod
+    def _ocr_uses_external_gpu_process(active_config) -> bool:
+        """Detecta PaddleOCR GPU aislado, que no comparte el bloqueo del proceso principal."""
+        if not bool(active_config.ocr.gpu):
+            return False
+
+        engines = {
+            str(active_config.ocr.detection_engine or "auto").strip().lower(),
+            str(active_config.ocr.transcription_engine or "auto").strip().lower(),
+        }
+        subprocess_aliases = {
+            "paddle_subprocess",
+            "paddle-worker",
+            "paddle_worker",
+        }
+        if engines & subprocess_aliases:
+            return True
+
+        paddle_aliases = {"paddle", "paddleocr", "paddle_ocr"}
+        paddle_requested = bool(engines & paddle_aliases)
+        mode = str(active_config.ocr.paddle_subprocess or "auto").strip().lower()
+        subprocess_enabled = mode not in {"0", "false", "no", "off", "never"}
+        return paddle_requested and subprocess_enabled
+
     def _compilar_a_pdf(self, ruta_traduccion: str, titulo_manga: str):
         ExportManager.export_pdf(ruta_traduccion, titulo_manga)
 
@@ -140,6 +166,14 @@ class ParallelProcessor:
         traduccion_queue.close()
 
     def procesar(self, ruta_carpeta_entrada, ruta_carpeta_salida, process_func, batch_size=8, parallel=True):
+        execution_started_at = time.time()
+        execution_started_perf = time.perf_counter()
+        processing_started_at = None
+        processing_started_perf = None
+        processing_finished_at = None
+        processing_finished_perf = None
+        execution_mode = "desconocido"
+        cantidad_archivos = 0
         try:
             lista_imagenes = self._list_images(ruta_carpeta_entrada)
             cantidad_archivos = len(lista_imagenes)
@@ -149,8 +183,45 @@ class ParallelProcessor:
 
             plan = self._build_execution_plan(cantidad_archivos, batch_size, parallel)
             hardware_usado = "GPU" if torch.cuda.is_available() else "CPU"
-            logger.info("Plan de ejecución | hardware=%s | imágenes=%s | batch=%s | procesos=%s",
-                        hardware_usado, cantidad_archivos, plan.batch_size, plan.num_processes)
+            active_config = get_active_config()
+            process_owner = getattr(process_func, "__self__", None)
+            pipeline_callable = getattr(process_owner, "procesar_pipeline", None)
+            external_gpu_ocr = self._ocr_uses_external_gpu_process(active_config)
+            pipeline_enabled = bool(
+                parallel
+                and active_config.processing.cpu_gpu_pipeline
+                and torch.cuda.is_available()
+                and plan.num_processes == 1
+                and callable(pipeline_callable)
+                and not external_gpu_ocr
+            )
+            execution_mode = "pipeline_cpu_gpu" if pipeline_enabled else (
+                "multiproceso" if plan.parallel_enabled else "secuencial"
+            )
+            logger.info(
+                "Plan de ejecución | hardware=%s | imágenes=%s | batch=%s | procesos=%s | modo=%s",
+                hardware_usado,
+                cantidad_archivos,
+                plan.batch_size,
+                plan.num_processes,
+                execution_mode,
+            )
+            if pipeline_enabled and active_config.ocr.gpu:
+                logger.info(
+                    "Pipeline híbrida activa con OCR GPU | planificador FIFO serializa "
+                    "YOLO/OCR/inpainting; las secciones CPU permanecen solapadas"
+                )
+            elif (
+                parallel
+                and active_config.processing.cpu_gpu_pipeline
+                and torch.cuda.is_available()
+                and external_gpu_ocr
+            ):
+                logger.warning(
+                    "Pipeline desactivada: PaddleOCR GPU se ejecuta en un subproceso externo "
+                    "y no puede compartir el planificador CUDA del proceso principal. "
+                    "Usa EasyOCR/MangaOCR o configura ocr.paddle_subprocess=false."
+                )
 
             lotes_imagenes = [lista_imagenes[i:i + plan.batch_size] for i in range(0, cantidad_archivos, plan.batch_size)]
             lotes_imagenes = self.utilities.convertir_a_diccionarios(lotes_imagenes)
@@ -166,29 +237,81 @@ class ParallelProcessor:
             try:
                 self._seed_json_metadata(transcripcion_queue, os.path.basename(ruta_carpeta_entrada), cantidad_archivos)
                 self._seed_json_metadata(traduccion_queue, os.path.basename(ruta_carpeta_entrada), cantidad_archivos)
+                processing_started_at = time.time()
+                processing_started_perf = time.perf_counter()
 
-                if plan.parallel_enabled:
+                if pipeline_enabled:
+                    paginas_ordenadas = {
+                        indice: archivo
+                        for lote in lotes_imagenes
+                        for indice, archivo in lote.items()
+                    }
+                    logger.info(
+                        "Pipeline CPU/GPU activa | prefetch=%s | una copia de modelos CUDA | "
+                        "gpu_scheduler=%s",
+                        active_config.processing.pipeline_prefetch,
+                        "fifo" if active_config.ocr.gpu else "no_requerido",
+                    )
+                    pipeline_callable(
+                        ruta_carpeta_entrada,
+                        ruta_limpieza_salida,
+                        ruta_traduccion_salida,
+                        paginas_ordenadas,
+                        transcripcion_queue,
+                        traduccion_queue,
+                        prefetch=active_config.processing.pipeline_prefetch,
+                    )
+                elif plan.parallel_enabled:
                     processes = []
                     for lote in lotes_imagenes:
                         p = mp.Process(target=process_func, args=(ruta_carpeta_entrada, ruta_limpieza_salida, 
                                        ruta_traduccion_salida, lote, transcripcion_queue, traduccion_queue))
                         p.start()
                         processes.append(p)
-                    for p in processes: p.join()
+                    for p in processes:
+                        p.join()
                 else:
                     for lote in lotes_imagenes:
                         process_func(ruta_carpeta_entrada, ruta_limpieza_salida, 
                                      ruta_traduccion_salida, lote, transcripcion_queue, traduccion_queue)
+                processing_finished_at = time.time()
+                processing_finished_perf = time.perf_counter()
             finally:
+                if processing_started_at is not None and processing_finished_at is None:
+                    processing_finished_at = time.time()
+                    processing_finished_perf = time.perf_counter()
                 self._finalize_json_writers(ruta_limpieza_salida, ruta_traduccion_salida, transcripcion_queue, 
                                             traduccion_queue, transcripcion_process, traduccion_process)
                 
                 titulo_manga = os.path.basename(ruta_carpeta_entrada)
                 self._compilar_a_pdf(ruta_traduccion_salida, titulo_manga)
                 self._compilar_a_cbz(ruta_traduccion_salida, titulo_manga)
-                reporte_metricas = MetricsWriter.aggregate(ruta_carpeta_salida)
+                execution_finished_at = time.time()
+                execution_finished_perf = time.perf_counter()
+                execution_duration_seconds = execution_finished_perf - execution_started_perf
+                processing_duration_seconds = (
+                    processing_finished_perf - processing_started_perf
+                    if processing_started_perf is not None and processing_finished_perf is not None
+                    else 0.0
+                )
+                reporte_metricas = MetricsWriter.aggregate(
+                    ruta_carpeta_salida,
+                    execution_started_at=execution_started_at,
+                    execution_finished_at=execution_finished_at,
+                    processing_started_at=processing_started_at,
+                    processing_finished_at=processing_finished_at,
+                    execution_duration_seconds=execution_duration_seconds,
+                    processing_duration_seconds=processing_duration_seconds,
+                    total_input_pages=cantidad_archivos,
+                    execution_mode=execution_mode,
+                )
                 if reporte_metricas:
-                    logger.info("Reporte de métricas generado: %s", reporte_metricas)
+                    logger.info(
+                        "Reporte de métricas generado: %s | tiempo_real=%.2fs | procesamiento=%.2fs",
+                        reporte_metricas,
+                        execution_duration_seconds,
+                        processing_duration_seconds,
+                    )
 
             return True
         except Exception as exc:
