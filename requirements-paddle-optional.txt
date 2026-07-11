@@ -5,6 +5,14 @@ paddleocr
 # Para GPU instala la rueda que corresponda a tu CUDA desde la documentación oficial de Paddle.
 # Ejemplos Windows/Linux:
 #   CUDA 11.8: python -m pip install paddlepaddle-gpu==3.2.2 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
-#   CUDA 12.6: python -m pip install paddlepaddle-gpu==3.2.2 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+
+#   CUDA 12.9: python -m pip install paddlepaddle-gpu==3.2.2 -i https://www.paddlepaddle.org.cn/packages/stable/cu129/
+#   python -m pip uninstall -y paddleocr paddlex modelscope
+#   python -m pip install --no-cache-dir paddleocr==2.10.0
+#   python -m pip uninstall -y albumentations albucore
+#   python -m pip install --no-cache-dir `
+#     "albumentations==1.4.24" `
+#     "albucore==0.0.23"
+
 # Después instala paddleocr si no quedó instalado:
 #   pip install paddleocr

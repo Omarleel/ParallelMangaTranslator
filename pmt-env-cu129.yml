@@ -1,0 +1,53 @@
+name: ParallelMangaTranslator-gpu
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10.10
+  - pip>=23
+  - setuptools
+  - wheel
+  - git
+
+  - pip:
+      # Índices adicionales para las compilaciones GPU CUDA 12.9.
+      # PyPI continúa siendo el índice principal para el resto de paquetes.
+      - --extra-index-url https://download.pytorch.org/whl/cu129
+      - --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+
+      # PyTorch GPU CUDA 12.9.
+      - torch==2.8.0+cu129
+      - torchvision==0.23.0+cu129
+      - transformers>=4.30,<4.46
+
+      # PaddleOCR GPU CUDA 12.9.
+      # Estas versiones mantienen PaddleOCR aislado de Torch en el subproceso.
+      - paddlepaddle-gpu==3.2.2
+      - paddleocr==2.10.0
+      - albumentations==1.4.24
+      - albucore==0.0.23
+
+      # Dependencias principales del proyecto.
+      - easyocr
+      - manga-ocr
+      - deep-translator
+      - Pillow>=10.0
+      - wget
+      - colorama
+      - nest-asyncio
+      - python-dotenv
+      - pydrive2
+      - groq
+      - loguru
+      - numpy==1.26.4
+      - PyYAML>=6.0
+      - ultralytics>=8.3.0
+      - huggingface-hub>=0.23.0
+
+      # Importado como cv2 en el código.
+      - opencv-python-headless>=4.8
+
+      # Utilidad para probar/importar el proyecto.
+      - pytest

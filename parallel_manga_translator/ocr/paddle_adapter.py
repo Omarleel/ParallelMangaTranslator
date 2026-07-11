@@ -49,24 +49,39 @@ class PaddleOcrAdapter:
 
     def _paddle_ocr_instance(self):
         if self._paddle_ocr is None:
+            import re
+            import paddleocr  # type: ignore
             from paddleocr import PaddleOCR  # type: ignore
 
-            try:
+            version = str(getattr(paddleocr, "__version__", "0"))
+            match = re.match(r"\s*(\d+)", version)
+            major = int(match.group(1)) if match else 0
+            if major >= 3:
+                self._paddle_ocr = PaddleOCR(
+                    lang=self.settings.paddle_lang,
+                    device="gpu:0" if self.settings.gpu else "cpu",
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
+                    use_textline_orientation=False,
+                )
+                self._paddle_api_mode = "3.x"
+            else:
                 self._paddle_ocr = PaddleOCR(
                     use_angle_cls=True,
                     lang=self.settings.paddle_lang,
                     use_gpu=self.settings.gpu,
                     show_log=False,
                 )
-            except TypeError:
-                # PaddleOCR 3.x cambió varios argumentos públicos.
-                self._paddle_ocr = PaddleOCR(lang=self.settings.paddle_lang)
+                self._paddle_api_mode = "2.x"
         return self._paddle_ocr
 
     def _run_direct(self, image: np.ndarray):
         rgb_image = np.array(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
         with gpu_slot("paddleocr.inference", enabled=self.settings.gpu):
+            ocr = self._paddle_ocr_instance()
+            if getattr(self, "_paddle_api_mode", "2.x") == "3.x":
+                return ocr.predict(rgb_image)
             try:
-                return self._paddle_ocr_instance().ocr(img=rgb_image, cls=True)
+                return ocr.ocr(img=rgb_image, cls=True)
             except TypeError:
-                return self._paddle_ocr_instance().ocr(rgb_image)
+                return ocr.ocr(rgb_image)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List
 
 import numpy as np
@@ -26,17 +27,70 @@ def _normalize_box(box: Any) -> list[list[float]]:
         points = np.array(box, dtype=np.float32)
         if points.size == 0:
             return []
+        # PaddleOCR 3.x también puede devolver cajas [x1, y1, x2, y2].
+        if points.ndim == 1 and points.size == 4:
+            x1, y1, x2, y2 = [float(value) for value in points.tolist()]
+            return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
         points = points.reshape((-1, 2))
         return [[float(x), float(y)] for x, y in points[:4]]
     except Exception:
         return []
 
 
+def _unwrap_result_object(value: Any) -> Any:
+    """Convierte objetos Result de PaddleOCR/PaddleX 3.x a estructuras Python.
+
+    Las versiones 3.x suelen devolver objetos con una propiedad ``json`` o un
+    método ``to_dict`` en lugar de diccionarios simples. Esta función evita
+    depender de una versión concreta de PaddleX.
+    """
+    if value is None or isinstance(value, (dict, list, tuple, str, int, float, bool, np.ndarray)):
+        return value
+
+    for attribute in ("json", "to_dict", "dict"):
+        try:
+            candidate = getattr(value, attribute)
+        except Exception:
+            continue
+        try:
+            candidate = candidate() if callable(candidate) else candidate
+        except Exception:
+            continue
+        if isinstance(candidate, str):
+            try:
+                candidate = json.loads(candidate)
+            except Exception:
+                pass
+        if candidate is not None and candidate is not value:
+            return candidate
+
+    try:
+        candidate = vars(value)
+    except Exception:
+        candidate = None
+    return candidate if candidate else value
+
+
 def _from_dict(result: dict[str, Any]) -> List[PaddleLine]:
-    # PaddleOCR 3.x suele exponer textos, scores y polígonos en diccionarios.
+    # Los objetos Result de PaddleOCR 3.x suelen envolver los datos en ``res``.
+    nested = result.get("res")
+    if isinstance(nested, dict):
+        return _from_dict(nested)
+
     texts = _to_plain_sequence(_first_present(result, "rec_texts", "texts", "text", default=[]))
     scores = _to_plain_sequence(_first_present(result, "rec_scores", "scores", "confidence", default=[]))
-    boxes = _to_plain_sequence(_first_present(result, "dt_polys", "boxes", "box", "points", default=[]))
+    boxes = _to_plain_sequence(
+        _first_present(
+            result,
+            "rec_polys",
+            "dt_polys",
+            "rec_boxes",
+            "boxes",
+            "box",
+            "points",
+            default=[],
+        )
+    )
 
     if isinstance(texts, str):
         texts = [texts]
@@ -77,15 +131,15 @@ def _from_v2_line(line: Any) -> PaddleLine:
 def normalize_paddle_result(result: Any) -> List[PaddleLine]:
     """Convierte salidas de PaddleOCR 2.x/3.x a una lista uniforme.
 
-    Formato de salida canónico:
-    `[{"box": [[x, y], ...], "text": "...", "confidence": 0.98}, ...]`
+    Formato canónico:
+    ``[{"box": [[x, y], ...], "text": "...", "confidence": 0.98}, ...]``
     """
+    result = _unwrap_result_object(result)
 
     if result is None:
         return []
 
     if isinstance(result, dict):
-        # Algunos wrappers ya devuelven una línea normalizada.
         if "text" in result and ("box" in result or "points" in result):
             confidence = _first_present(result, "confidence", "score", default=0.0)
             box = _first_present(result, "box", "points", default=[])
@@ -110,9 +164,6 @@ def normalize_paddle_result(result: Any) -> List[PaddleLine]:
     if all(_is_paddle_v2_line(item) for item in result):
         return [_from_v2_line(item) for item in result]
 
-    # PaddleOCR 2.x normalmente envuelve las líneas de una imagen dentro de otra lista:
-    # [ [ [box, (text, conf)], ... ] ]. Para batch o formatos híbridos, aplanamos
-    # recursivamente sin asumir una versión específica.
     lines: List[PaddleLine] = []
     for item in result:
         lines.extend(normalize_paddle_result(item))

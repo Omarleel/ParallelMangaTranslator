@@ -15,6 +15,7 @@ class PaddleSubprocessOcrEngine(OcrEngineBase):
     def __init__(self, settings: OcrEngineSettings) -> None:
         super().__init__(settings)
         self._paddle = PaddleOcrAdapter.subprocess(settings)
+        self._failure_reported = False
 
     @property
     def engine_id(self) -> str:
@@ -27,6 +28,10 @@ class PaddleSubprocessOcrEngine(OcrEngineBase):
         try:
             lines = self._paddle.read_lines(image)
         except Exception as exc:
-            logger.warning("PaddleOCR subproceso falló: %s", exc)
+            if not self._failure_reported:
+                logger.error("PaddleOCR subproceso no está disponible: %s", exc)
+                self._failure_reported = True
+            else:
+                logger.debug("PaddleOCR subproceso continúa deshabilitado: %s", exc)
             return ""
         return self.join_ocr_lines(lines)
