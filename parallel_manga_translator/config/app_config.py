@@ -4,8 +4,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from parallel_manga_translator.infrastructure.execution_control import ExternalUsageLimits
-
 
 @dataclass(frozen=True)
 class OcrConfig:
@@ -46,7 +44,6 @@ class TranslationConfig:
     traditional_provider: str = "auto"
     llm: LlmConfig = field(default_factory=LlmConfig)
     project_dir: Optional[str] = None
-    external_limits: ExternalUsageLimits = field(default_factory=ExternalUsageLimits)
 
 
 @dataclass(frozen=True)

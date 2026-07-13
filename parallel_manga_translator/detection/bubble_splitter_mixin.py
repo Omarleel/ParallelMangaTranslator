@@ -10,6 +10,7 @@ import numpy as np
 from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
+from parallel_manga_translator.geometry.text_orientation import text_rotation_metadata
 
 logger = get_logger(__name__)
 BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
@@ -358,6 +359,7 @@ class BubbleSplitterMixin:
                     "split_cluster_min_gap_px": self.split_cluster_min_gap_px,
                     "ocr_group_text": text_hint,
                 })
+                metadata.update(text_rotation_metadata(group, source="split_cluster_ocr_polygons"))
                 created_regions.append(TextRegion(
                     bbox=bbox,
                     text_bbox=text_box,

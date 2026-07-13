@@ -13,8 +13,6 @@ import numpy as np
 import install_pmt
 from parallel_manga_translator.infrastructure.execution_control import (
     ExecutionControl,
-    ExternalUsageLimitError,
-    ExternalUsageLimits,
     JobCancelledError,
     JobPausedError,
     execution_checkpoint,
@@ -56,25 +54,20 @@ class ExecutionControlTests(unittest.TestCase):
         with self.assertRaises(JobCancelledError):
             control.checkpoint()
 
-    def test_external_call_budget_is_enforced_before_call(self):
-        control = ExecutionControl(
-            limits=ExternalUsageLimits(
-                max_total_calls=1,
-                max_cost_usd=0.01,
-                llm_input_cost_per_million_tokens=10.0,
-            )
-        )
+    def test_external_call_checkpoint_respects_pause_and_cancel(self):
+        control = ExecutionControl()
         reservation = control.reserve_external_call(
             kind="llm",
             provider="test",
             estimated_input_tokens=500,
         )
+        self.assertEqual(reservation.kind, "llm")
+        self.assertEqual(reservation.provider, "test")
         control.commit_external_call(reservation, actual_input_tokens=400)
-        snapshot = control.usage_snapshot()
-        self.assertEqual(snapshot["total_calls"], 1)
-        self.assertEqual(snapshot["input_tokens"], 400)
-        with self.assertRaises(ExternalUsageLimitError):
-            control.reserve_external_call(kind="llm", provider="test", estimated_input_tokens=1)
+
+        control.request_pause()
+        with self.assertRaises(JobPausedError):
+            control.reserve_external_call(kind="llm", provider="test")
 
 
 class JobRecoveryAndRetryTests(unittest.TestCase):
@@ -93,6 +86,17 @@ class JobRecoveryAndRetryTests(unittest.TestCase):
             root_dir=job_root,
             options=JobOptions(page_max_retries=retries, retry_backoff_seconds=0),
         )
+
+    def test_job_inpaint_model_overrides_yaml_configuration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            jobs_root = Path(tmp)
+            manager = JobManager(jobs_root=jobs_root, start_worker=False)
+            job = self._new_job(manager, jobs_root, job_id="job-inpaint")
+            job.options.inpaint_model = "aot"
+
+            config = manager._build_config_for_job(job)
+
+            self.assertEqual(config.translation.modelo_inpaint, "aot")
 
     def test_processing_job_is_requeued_after_restart(self):
         with tempfile.TemporaryDirectory() as tmp:

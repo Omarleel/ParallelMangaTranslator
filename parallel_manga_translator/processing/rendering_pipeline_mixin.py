@@ -45,6 +45,8 @@ class RenderingPipelineMixin:
                     "Confianza": round(float(region.confidence), 4),
                     "Coordenadas texto original": [[region.text_bbox[0], region.text_bbox[1]], [region.text_bbox[0] + region.text_bbox[2], region.text_bbox[1] + region.text_bbox[3]]],
                     "Fuente máscara": region.metadata.get("mask_source", ""),
+                    "Ángulo de texto": float(region.metadata.get("text_rotation_angle", 0.0) or 0.0),
+                    "Confianza de inclinación": float(region.metadata.get("text_rotation_confidence", 0.0) or 0.0),
                 })
             if idx < len(self.ultimas_asignaciones_hablante):
                 speaker = self.ultimas_asignaciones_hablante[idx]
@@ -82,6 +84,8 @@ class RenderingPipelineMixin:
                     "Tipo": region.kind,
                     "Confianza": round(float(region.confidence), 4),
                     "Fuente máscara": region.metadata.get("mask_source", ""),
+                    "Ángulo de texto": float(region.metadata.get("text_rotation_angle", 0.0) or 0.0),
+                    "Confianza de inclinación": float(region.metadata.get("text_rotation_confidence", 0.0) or 0.0),
                 })
                 try:
                     texto_layout = textos_para_render[idx] if idx < len(textos_para_render) else texto_traducido
@@ -90,6 +94,7 @@ class RenderingPipelineMixin:
                         texto_layout,
                         estilo,
                         clip_mask=region.local_mask(),
+                        rotation_angle=float(region.metadata.get("text_rotation_angle", 0.0) or 0.0),
                         image_shape=getattr(region.mask, "shape", None),
                         reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,
                     )
@@ -129,5 +134,8 @@ class RenderingPipelineMixin:
             textos_para_render,
             text_styles=self.ultimo_estilos_texto,
             clip_masks=clip_masks,
+            rotation_angles=[float(region.metadata.get("text_rotation_angle", 0.0) or 0.0) for region in self.ultimas_regiones]
+            if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores)
+            else None,
             reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,
         )

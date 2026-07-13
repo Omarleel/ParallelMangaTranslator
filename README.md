@@ -71,7 +71,7 @@ siguen seleccionando automáticamente el dispositivo disponible.
 
 ## UI local de revisión humana
 
-Además de la CLI, el proyecto incluye una interfaz web local para revisar páginas a medida que se procesan. Permite cargar una carpeta desde el navegador o un archivo `.zip`, ver la salida automática de traducción y limpieza, alternar entre original/limpieza/traducción/corregida, editar traducciones manualmente, mover o redimensionar regiones de texto y revertir la limpieza por región antes de guardar una nueva imagen corregida.
+Además de la CLI, el proyecto incluye una interfaz web local para revisar páginas a medida que se procesan. Permite cargar una carpeta desde el navegador o un archivo `.zip`, ver la salida automática de traducción y limpieza, alternar entre original/limpieza/traducción/corregida, editar traducciones manualmente, mover o redimensionar regiones de texto y revertir la limpieza por región antes de guardar una nueva imagen corregida. El espacio de revisión sigue un flujo familiar de editor gráfico: herramientas a la izquierda, documento y comandos arriba, lienzo en el centro, propiedades/capas/retoque a la derecha y una barra de estado inferior. En móvil, los paneles se convierten en cajones y las herramientas quedan fijas en la parte inferior.
 
 Instala las dependencias y lanza la UI:
 
@@ -108,10 +108,9 @@ Una llamada API o una operación GPU que ya comenzó puede terminar antes de det
 La página interrumpida se reinicia desde el principio al reanudar y una pausa no consume
 un intento de página. El worker queda libre para procesar el siguiente trabajo de la cola.
 
-Los reintentos por página usan espera exponencial y se configuran desde la UI. Los
-límites de llamadas, tokens, caracteres y coste estimado también son por trabajo. Para
-que el límite monetario funcione, configura las tarifas reales del proveedor/modelo en
-la UI o en `external_limits` de `config.yaml`; `0` significa sin límite.
+Los reintentos por página usan espera exponencial y se configuran desde la UI. El
+modelo de inpainting también se selecciona por trabajo desde la pantalla inicial; la
+opción automática elige LaMa MPE para páginas a color y B/N para manga monocromo.
 
 ## Contribuciones
 

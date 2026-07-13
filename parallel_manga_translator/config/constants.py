@@ -15,6 +15,36 @@ RUTA_REMOTA = "ParallelMangaTranslator"
 IDIOMAS_ENTRADA_DISPONIBLES = ["Chino", "Coreano", "Inglés", "Japonés"]
 IDIOMAS_SALIDA_DISPONIBLES = ["Español", "Inglés", "Portugués", "Francés", "Italiano"]
 MODELOS_INPAINT = ["opencv-tela", "lama_mpe", "lama_large_512px", "aot", "B/N"]
+MODELOS_INPAINT_UI = ["auto", *MODELOS_INPAINT]
+
+
+def normalizar_modelo_inpaint(value, default: str = "auto") -> str:
+    """Normaliza aliases de UI/config y conserva el identificador especial ``B/N``."""
+    raw = str(value or default).strip()
+    normalized = raw.lower()
+    aliases = {
+        "": default,
+        "default": default,
+        "automatico": "auto",
+        "automático": "auto",
+        "opencv": "opencv-tela",
+        "telea": "opencv-tela",
+        "opencv_telea": "opencv-tela",
+        "lama": "lama_mpe",
+        "lama-mpe": "lama_mpe",
+        "lama_large": "lama_large_512px",
+        "lama-large": "lama_large_512px",
+        "bn": "B/N",
+        "b/n": "B/N",
+        "blanco_y_negro": "B/N",
+    }
+    candidate = aliases.get(normalized, normalized)
+    if candidate == "b/n":
+        candidate = "B/N"
+    if candidate not in MODELOS_INPAINT_UI:
+        fallback = aliases.get(str(default).strip().lower(), str(default).strip())
+        return fallback if fallback in MODELOS_INPAINT_UI else "auto"
+    return candidate
 
 # RUTAS LOCALES
 RUTA_LOCAL_MODELO_INPAINTING = construir_ruta(BASE_DIR, "models", "inpainting")

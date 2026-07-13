@@ -16,11 +16,10 @@ from typing import Any, Dict, List, Optional, Sequence
 import cv2
 
 from parallel_manga_translator.cli import build_default_config, build_image_processor, prepare_assets, prepare_runtime
+from parallel_manga_translator.config.constants import normalizar_modelo_inpaint
 from parallel_manga_translator.config.runtime_config import set_active_config
 from parallel_manga_translator.infrastructure.execution_control import (
     ExecutionControl,
-    ExternalUsageLimitError,
-    ExternalUsageLimits,
     JobCancelledError,
     JobPausedError,
     execution_control_scope,
@@ -51,18 +50,9 @@ class JobOptions:
     detection_engine: str = "auto"
     transcription_engine: str = "auto"
     translator: str = "llm"  # google | llm
+    inpaint_model: str = "auto"
     page_max_retries: int = 2
     retry_backoff_seconds: float = 2.0
-    max_total_external_calls: int = 0
-    max_llm_calls: int = 0
-    max_traditional_calls: int = 0
-    max_input_tokens: int = 0
-    max_output_tokens: int = 0
-    max_translation_characters: int = 0
-    max_cost_usd: float = 0.0
-    llm_input_cost_per_million_tokens: float = 0.0
-    llm_output_cost_per_million_tokens: float = 0.0
-    traditional_cost_per_million_characters: float = 0.0
 
 
 @dataclass
@@ -114,7 +104,6 @@ class JobState:
     recovery_count: int = 0
     started_at: float = 0.0
     finished_at: float = 0.0
-    usage: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def total_count(self) -> int:
@@ -218,7 +207,6 @@ def job_to_public(job: JobState) -> Dict[str, Any]:
         "recovery_count": job.recovery_count,
         "started_at": job.started_at,
         "finished_at": job.finished_at,
-        "usage": dict(job.usage or {}),
         "options": asdict(job.options) if hasattr(job.options, "__dataclass_fields__") else job.options,
         "pages": [page_to_public(page, job.job_id) for page in job.pages],
     }
@@ -585,38 +573,6 @@ class JobManager:
         except Exception:
             logger.exception("No se pudo guardar la reanudación del trabajo %s", job_id)
 
-    def _on_usage_changed(self, job_id: str, usage: Dict[str, Any]) -> None:
-        try:
-            job = self.get_job(job_id)
-            with self._lock:
-                job.usage = dict(usage)
-                job.updated_at = time.time()
-                self._save_manifest(job)
-        except Exception:
-            logger.exception("No se pudo guardar el consumo externo del trabajo %s", job_id)
-
-    @staticmethod
-    def _limits_for_job(job: JobState, base: ExternalUsageLimits) -> ExternalUsageLimits:
-        o = job.options
-        def positive(value, fallback):
-            try:
-                numeric = float(value)
-            except (TypeError, ValueError):
-                return fallback
-            return value if numeric > 0 else fallback
-        return ExternalUsageLimits(
-            max_total_calls=int(positive(o.max_total_external_calls, base.max_total_calls)),
-            max_llm_calls=int(positive(o.max_llm_calls, base.max_llm_calls)),
-            max_traditional_calls=int(positive(o.max_traditional_calls, base.max_traditional_calls)),
-            max_input_tokens=int(positive(o.max_input_tokens, base.max_input_tokens)),
-            max_output_tokens=int(positive(o.max_output_tokens, base.max_output_tokens)),
-            max_characters=int(positive(o.max_translation_characters, base.max_characters)),
-            max_cost_usd=float(positive(o.max_cost_usd, base.max_cost_usd)),
-            llm_input_cost_per_million_tokens=float(positive(o.llm_input_cost_per_million_tokens, base.llm_input_cost_per_million_tokens)),
-            llm_output_cost_per_million_tokens=float(positive(o.llm_output_cost_per_million_tokens, base.llm_output_cost_per_million_tokens)),
-            traditional_cost_per_million_characters=float(positive(o.traditional_cost_per_million_characters, base.traditional_cost_per_million_characters)),
-        )
-
     @staticmethod
     def _recount(job: JobState) -> None:
         job.processed_count = sum(1 for item in job.pages if item.status == "ready")
@@ -833,6 +789,7 @@ class JobManager:
                     "deleted": region.deleted,
                     "auto_font_size": region.auto_font_size,
                     "font_size": region.font_size,
+                    "rotation_angle": region.rotation_angle,
                     "ui_layout": region.ui_layout or previous_by_index.get(region.index, {}).get("ui_layout"),
                 }
                 for region in regions
@@ -892,7 +849,6 @@ class JobManager:
         method = "LLM" if translator == "llm" else "Tradicional"
         traditional_provider = "google" if translator == "google" else config.translation.traditional_provider
         llm = replace(config.translation.llm, provider=config.translation.llm.provider or "groq")
-        limits = self._limits_for_job(job, config.translation.external_limits)
         translation = replace(
             config.translation,
             idioma_entrada=options.source_language or config.translation.idioma_entrada,
@@ -901,7 +857,7 @@ class JobManager:
             traditional_provider=traditional_provider,
             llm=llm,
             project_dir=job.input_dir,
-            external_limits=limits,
+            modelo_inpaint=normalizar_modelo_inpaint(options.inpaint_model, config.translation.modelo_inpaint),
         )
         ocr = replace(
             config.ocr,
@@ -939,24 +895,33 @@ class JobManager:
 
         ocr = OcrManager(config.translation.idioma_entrada, config.ocr)
         original_text = ocr.extract_texts([crop])[0] if crop.size else ""
+        rotation_angle = 0.0
+        rotation_confidence = 0.0
+        try:
+            from parallel_manga_translator.geometry.text_orientation import estimate_text_rotation
+            from parallel_manga_translator.ocr.text_detection import TextDetectionFactory
+
+            detector = TextDetectionFactory.create(config.translation.idioma_entrada, config.ocr)
+            rotation = estimate_text_rotation(detector.detect_text_boxes(crop))
+            rotation_angle = float(rotation.get("angle", 0.0) or 0.0)
+            rotation_confidence = float(rotation.get("confidence", 0.0) or 0.0)
+        except Exception:
+            pass
         translated_text = ""
         if translate and original_text.strip():
-            control = ExecutionControl(
-                limits=config.translation.external_limits,
-                initial_usage=job.usage,
-                on_usage_changed=lambda usage: self._on_usage_changed(job_id, usage),
-            )
+            control = ExecutionControl()
             with execution_control_scope(control):
                 translator = TranslatorManager.from_config(config.translation, config.character_memory)
                 translated_text = translator.traducir_textos([original_text])[0]
             with self._lock:
-                job.usage = control.usage_snapshot()
                 job.updated_at = time.time()
                 self._save_manifest(job)
         return {
             "bbox": [x, y, bw, bh],
             "original_text": original_text,
             "translated_text": translated_text,
+            "rotation_angle": rotation_angle,
+            "rotation_confidence": rotation_confidence,
             "source_language": config.translation.idioma_entrada,
             "target_language": config.translation.idioma_salida,
             "ocr_engine": normalize_choice(job.options.transcription_engine, "auto"),
@@ -971,11 +936,8 @@ class JobManager:
 
             config = self._build_config_for_job(job)
             control = ExecutionControl(
-                limits=config.translation.external_limits,
-                initial_usage=job.usage,
                 on_paused=lambda: self._on_control_paused(job_id),
                 on_resumed=lambda: self._on_control_resumed(job_id),
-                on_usage_changed=lambda usage: self._on_usage_changed(job_id, usage),
             )
             with self._lock:
                 self._controls[job_id] = control
@@ -1081,7 +1043,6 @@ class JobManager:
                                     page.completed_at = time.time()
                                     page.updated_at = page.completed_at
                                     self._recount(job)
-                                    job.usage = control.usage_snapshot()
                                     job.updated_at = page.updated_at
                                     self._save_manifest(job)
                                 page_succeeded = True
@@ -1089,7 +1050,7 @@ class JobManager:
                             except JobPausedError:
                                 self._remove_partial_outputs(page)
                                 with self._lock:
-                                    # Una pausa no consume el presupuesto de reintentos de página.
+                                    # Una pausa no consume un intento de procesamiento de página.
                                     page.attempt_count = max(0, page.attempt_count - 1)
                                     page.status = "pending"
                                     page.message = "Página pausada; se retomará desde el inicio al reanudar."
@@ -1103,18 +1064,6 @@ class JobManager:
                                     page.message = "Cancelada por el usuario."
                                     page.completed_at = time.time()
                                     page.updated_at = page.completed_at
-                                    self._save_manifest(job)
-                                raise
-                            except ExternalUsageLimitError as exc:
-                                with self._lock:
-                                    page.status = "failed"
-                                    page.last_error = str(exc)
-                                    page.message = f"Límite de uso externo alcanzado: {exc}"
-                                    page.completed_at = time.time()
-                                    page.updated_at = page.completed_at
-                                    self._recount(job)
-                                    job.usage = control.usage_snapshot()
-                                    job.updated_at = page.updated_at
                                     self._save_manifest(job)
                                 raise
                             except Exception as exc:
@@ -1150,7 +1099,6 @@ class JobManager:
 
                     with self._lock:
                         self._recount(job)
-                        job.usage = control.usage_snapshot()
                         job.finished_at = time.time()
                         job.updated_at = job.finished_at
                         job.pause_requested = False
@@ -1180,30 +1128,18 @@ class JobManager:
                         job.message = "Trabajo pausado. Las páginas terminadas se conservaron."
                         job.pause_requested = True
                         job.updated_at = time.time()
-                    job.usage = control.usage_snapshot()
                     self._save_manifest(job)
                 if requeue:
                     self._wake_worker()
             except JobCancelledError:
                 with self._lock:
                     self._finalize_cancelled_job(job)
-                    job.usage = control.usage_snapshot()
-                    self._save_manifest(job)
-            except ExternalUsageLimitError as exc:
-                logger.warning("Trabajo %s detenido por límites externos: %s", job_id, exc)
-                with self._lock:
-                    job.status = "failed"
-                    job.message = f"Trabajo detenido por límite de llamadas/coste: {exc}"
-                    job.usage = control.usage_snapshot()
-                    job.finished_at = time.time()
-                    job.updated_at = job.finished_at
                     self._save_manifest(job)
             except Exception as exc:
                 logger.exception("Error preparando o ejecutando job %s: %s", job_id, exc)
                 with self._lock:
                     job.status = "failed"
                     job.message = f"Error general: {exc}"
-                    job.usage = control.usage_snapshot()
                     job.finished_at = time.time()
                     job.updated_at = job.finished_at
                     self._save_manifest(job)
@@ -1246,6 +1182,8 @@ class JobManager:
                     "deleted": False,
                     "auto_font_size": True,
                     "font_size": None,
+                    "rotation_angle": item.get("Ángulo de texto", item.get("rotation_angle", 0.0)),
+                    "rotation_confidence": item.get("Confianza de inclinación", item.get("rotation_confidence", 0.0)),
                     "ui_layout": item.get("Layout UI") or item.get("ui_layout"),
                 }
             )
@@ -1268,6 +1206,8 @@ class JobManager:
                     "deleted": by_index[idx].get("deleted", False),
                     "auto_font_size": by_index[idx].get("auto_font_size", True),
                     "font_size": by_index[idx].get("font_size"),
+                    "rotation_angle": item.get("Ángulo de texto", item.get("rotation_angle", by_index[idx].get("rotation_angle", 0.0))),
+                    "rotation_confidence": item.get("Confianza de inclinación", item.get("rotation_confidence", by_index[idx].get("rotation_confidence", 0.0))),
                     "ui_layout": item.get("Layout UI") or item.get("ui_layout") or by_index[idx].get("ui_layout"),
                 }
             )
@@ -1296,6 +1236,7 @@ class JobManager:
                     "deleted": bool(correction.get("deleted", False)),
                     "auto_font_size": bool(correction.get("auto_font_size", True)),
                     "font_size": correction.get("font_size"),
+                    "rotation_angle": correction.get("rotation_angle", region.get("rotation_angle", 0.0)),
                     "ui_layout": correction.get("ui_layout") or region.get("ui_layout"),
                 }
             else:
@@ -1305,6 +1246,7 @@ class JobManager:
                     "modified": bool(region.get("modified", False)),
                     "auto_font_size": region.get("auto_font_size", True),
                     "font_size": region.get("font_size"),
+                    "rotation_angle": region.get("rotation_angle", 0.0),
                     "ui_layout": region.get("ui_layout"),
                 }
             seen.add(region_index)
@@ -1330,6 +1272,7 @@ class JobManager:
                 "deleted": bool(correction.get("deleted", False)),
                 "auto_font_size": bool(correction.get("auto_font_size", True)),
                 "font_size": correction.get("font_size"),
+                "rotation_angle": correction.get("rotation_angle", 0.0),
                 "ui_layout": correction.get("ui_layout"),
             })
         return merged

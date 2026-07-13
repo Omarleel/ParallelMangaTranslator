@@ -11,6 +11,7 @@ from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleC
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 from parallel_manga_translator.geometry.box_geometry import BoxGeometry
+from parallel_manga_translator.geometry.text_orientation import polygon_text_angle, text_rotation_metadata
 from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner
 
 logger = get_logger(__name__)
@@ -27,9 +28,12 @@ class BubbleRegionBuilderMixin:
                 box = self._to_rect(det)
             except Exception:
                 continue
+            raw_polygon = det[0] if isinstance(det, (list, tuple)) and det else []
             items.append({
                 "detection_index": det_idx,
                 "bbox": list(map(int, box)),
+                "polygon": [[round(float(x), 2), round(float(y), 2)] for x, y in np.asarray(raw_polygon, dtype=np.float32).reshape((-1, 2))[:4]] if np.asarray(raw_polygon).size else [],
+                "angle": polygon_text_angle(raw_polygon),
                 "text": self._text(det),
                 "confidence": round(float(self._confidence(det)), 4),
             })
@@ -250,6 +254,7 @@ class BubbleRegionBuilderMixin:
             regions[idx].metadata["text_line_boxes"] = [list(map(int, box)) for box in boxes]
             regions[idx].metadata["ocr_global_hint"] = bool(regions[idx].source_text_hint)
             regions[idx].metadata["assigned_ocr_detections"] = len(group)
+            regions[idx].metadata.update(text_rotation_metadata(group, source="assigned_ocr_polygons"))
         return assigned, grouped
 
     def _is_inside_existing_region(self, text_box: Box, regions: Sequence[TextRegion]) -> bool:

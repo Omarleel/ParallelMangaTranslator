@@ -51,7 +51,7 @@ class MaskTextAreaMixin:
         if not valid_rows:
             return 0, 0, width, height
 
-        # Reduce coste en máscaras muy altas sin perder estabilidad visual.
+        # Reduce carga en máscaras muy altas sin perder estabilidad visual.
         step = max(1, height // 420)
         candidate_tops = range(valid_rows[0], valid_rows[-1] + 1, step)
         best = (0, int(valid_rows[0]), max(1, width), max(1, valid_rows[-1] - valid_rows[0] + 1))

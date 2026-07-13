@@ -176,21 +176,6 @@ llm:
   # true intenta response_format json_schema estricto y cae a json_object si el proveedor no lo soporta.
   strict_json_schema: true
 
-external_limits:
-  # Límites globales por trabajo. 0 = sin límite. La UI puede definir valores
-  # específicos para cada manga; cuando el valor de la UI es 0 se usa este valor.
-  max_total_calls: 0
-  max_llm_calls: 0
-  max_traditional_calls: 0
-  max_input_tokens: 0
-  max_output_tokens: 0
-  max_characters: 0
-  max_cost_usd: 0.0
-  # Introduce las tarifas reales del proveedor/modelo para que max_cost_usd sea útil.
-  llm_input_cost_per_million_tokens: 0.0
-  llm_output_cost_per_million_tokens: 0.0
-  traditional_cost_per_million_characters: 0.0
-
 character_memory:
   # Construye automáticamente memoria de personajes/hablantes usando IA en modo LLM.
   enabled: false

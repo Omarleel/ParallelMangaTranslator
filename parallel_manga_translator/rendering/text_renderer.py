@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -101,6 +102,71 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             return None
         return max(self.absolute_min_font_size, min(self.max_font_size, fixed))
 
+    @staticmethod
+    def _coerce_rotation_angle(value: Any) -> float:
+        try:
+            angle = float(value or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(angle):
+            return 0.0
+        while angle <= -90.0:
+            angle += 180.0
+        while angle > 90.0:
+            angle -= 180.0
+        angle = max(-89.0, min(89.0, angle))
+        return 0.0 if abs(angle) < 0.65 else angle
+
+    @staticmethod
+    def _rotation_fit_scale(width: int, height: int, angle: float) -> float:
+        if abs(angle) < 0.65 or width <= 1 or height <= 1:
+            return 1.0
+        radians = math.radians(abs(angle))
+        cosine = abs(math.cos(radians))
+        sine = abs(math.sin(radians))
+        rotated_width = cosine * width + sine * height
+        rotated_height = sine * width + cosine * height
+        return max(0.18, min(1.0, width / max(1.0, rotated_width), height / max(1.0, rotated_height)))
+
+    @classmethod
+    def _rotation_safe_local_box(
+        cls,
+        box: Tuple[int, int, int, int],
+        canvas_width: int,
+        canvas_height: int,
+        angle: float,
+    ) -> Tuple[int, int, int, int]:
+        if abs(angle) < 0.65:
+            return box
+        x, y, w, h = box
+        scale = cls._rotation_fit_scale(canvas_width, canvas_height, angle)
+        center_x = canvas_width / 2.0
+        center_y = canvas_height / 2.0
+        box_center_x = x + w / 2.0
+        box_center_y = y + h / 2.0
+        new_center_x = center_x + (box_center_x - center_x) * scale
+        new_center_y = center_y + (box_center_y - center_y) * scale
+        new_w = max(1, int(round(w * scale)))
+        new_h = max(1, int(round(h * scale)))
+        new_x = int(round(new_center_x - new_w / 2.0))
+        new_y = int(round(new_center_y - new_h / 2.0))
+        new_x = max(0, min(new_x, max(0, canvas_width - new_w)))
+        new_y = max(0, min(new_y, max(0, canvas_height - new_h)))
+        return new_x, new_y, new_w, new_h
+
+    @staticmethod
+    def _rotate_text_layer(layer: Image.Image, angle: float) -> Image.Image:
+        if abs(angle) < 0.65:
+            return layer
+        # PIL usa grados positivos antihorarios; los polígonos OCR usan coordenadas
+        # de imagen, donde un ángulo positivo se ve horario en pantalla.
+        return layer.rotate(
+            -float(angle),
+            resample=Image.Resampling.BICUBIC,
+            expand=False,
+            center=(layer.width / 2.0, layer.height / 2.0),
+        )
+
     def _stroke_width_for_style(self, fuente, style: str) -> int:
         if style.startswith("onomatopeya"):
             return max(1, min(5, int(getattr(fuente, "size", self.min_font_size) * 0.11)))
@@ -116,6 +182,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         *,
         clip_mask: Optional[np.ndarray] = None,
         requested_font_size: Optional[int] = None,
+        rotation_angle: float = 0.0,
         image_shape: Optional[Tuple[int, int]] = None,
         reading_order_right_to_left: bool = False,
     ) -> Dict[str, Any]:
@@ -129,6 +196,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         image_width = image_shape[1] if image_shape else None
         x, y, w, h = self._coerce_box(bbox, image_width, image_height)
         style = style or "dialogo"
+        rotation_angle = self._coerce_rotation_angle(rotation_angle)
         texto = self._prepare_display_text(texto, style)
 
         split_slots = self._connected_lobe_slots_from_mask(
@@ -176,9 +244,10 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             )
 
         return {
-            "version": 1,
+            "version": 2,
             "bbox": [int(x), int(y), int(w), int(h)],
             "style": style,
+            "rotation_angle": round(float(rotation_angle), 3),
             "block_count": len(blocks),
             "blocks": blocks,
             "uses_clip_mask": clip_mask is not None,
@@ -219,6 +288,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         ui_layouts: Optional[Sequence[Optional[Dict[str, Any]]]] = None,
         text_styles: Optional[Sequence[str]] = None,
         font_sizes: Optional[Sequence[Optional[int]]] = None,
+        rotation_angles: Optional[Sequence[Optional[float]]] = None,
     ) -> np.ndarray:
         """Renderiza usando layouts congelados por la UI cuando existen.
 
@@ -236,6 +306,10 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             ui_layouts = [None] * len(textos)
         else:
             ui_layouts = list(ui_layouts) + [None] * max(0, len(textos) - len(ui_layouts))
+        if rotation_angles is None:
+            rotation_angles = [None] * len(textos)
+        else:
+            rotation_angles = list(rotation_angles) + [None] * max(0, len(textos) - len(rotation_angles))
 
         imagen_pil = Image.fromarray(cv2.cvtColor(imagen_limpia, cv2.COLOR_BGR2RGB))
         ancho_img, alto_img = imagen_pil.size
@@ -244,8 +318,9 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         fallback_texts: List[str] = []
         fallback_styles: List[str] = []
         fallback_sizes: List[Optional[int]] = []
+        fallback_rotations: List[Optional[float]] = []
 
-        for bbox, texto, style, requested_font_size, layout in zip(cuadros_delimitadores, textos, text_styles, font_sizes, ui_layouts):
+        for bbox, texto, style, requested_font_size, layout, requested_rotation in zip(cuadros_delimitadores, textos, text_styles, font_sizes, ui_layouts, rotation_angles):
             x, y, w, h = self._coerce_box(bbox, ancho_img, alto_img)
             if w <= 2 or h <= 2:
                 continue
@@ -255,9 +330,11 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                 fallback_texts.append(texto)
                 fallback_styles.append(style or "dialogo")
                 fallback_sizes.append(requested_font_size)
+                fallback_rotations.append(requested_rotation)
                 continue
 
             style = style or layout.get("style") or "dialogo"
+            rotation_angle = self._coerce_rotation_angle(requested_rotation if requested_rotation is not None else layout.get("rotation_angle", 0.0))
             prepared_text = self._prepare_display_text(texto, style)
             src_x, src_y, src_w, src_h = self._layout_box_values(layout.get("bbox"), (x, y, w, h))
             block_texts = self._split_text_for_slots(prepared_text, len(blocks)) if len(blocks) > 1 else [prepared_text]
@@ -268,6 +345,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             fixed_font_size = self._fixed_font_size(requested_font_size)
             for block, block_text in zip(blocks, block_texts):
                 area_x, area_y, area_w, area_h = self._scale_local_box(block.get("area") or block.get("slot"), src_w, src_h, w, h)
+                area_x, area_y, area_w, area_h = self._rotation_safe_local_box((area_x, area_y, area_w, area_h), w, h, rotation_angle)
                 if fixed_font_size is not None:
                     fuente = self._get_font(fixed_font_size)
                     espacio_entre_lineas = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
@@ -298,6 +376,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                     y_texto += alto_linea + espacio_entre_lineas
 
             del draw
+            capa = self._rotate_text_layer(capa, rotation_angle)
             imagen_pil.paste(capa, (x, y), capa)
 
         result = cv2.cvtColor(np.array(imagen_pil), cv2.COLOR_RGB2BGR)
@@ -308,6 +387,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                 fallback_texts,
                 text_styles=fallback_styles,
                 font_sizes=fallback_sizes,
+                rotation_angles=fallback_rotations,
             )
         return result
 
@@ -319,6 +399,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         text_styles: Optional[Sequence[str]] = None,
         clip_masks: Optional[Sequence[np.ndarray]] = None,
         font_sizes: Optional[Sequence[Optional[int]]] = None,
+        rotation_angles: Optional[Sequence[Optional[float]]] = None,
         *,
         reading_order_right_to_left: bool = False,
     ) -> np.ndarray:
@@ -336,9 +417,14 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             font_sizes = [None] * len(textos)
         else:
             font_sizes = list(font_sizes) + [None] * max(0, len(textos) - len(font_sizes))
+        if rotation_angles is None:
+            rotation_angles = [None] * len(textos)
+        else:
+            rotation_angles = list(rotation_angles) + [None] * max(0, len(textos) - len(rotation_angles))
 
-        for (x, y, w, h), texto, style, clip_mask, requested_font_size in zip(cuadros_delimitadores, textos, text_styles, clip_masks, font_sizes):
+        for (x, y, w, h), texto, style, clip_mask, requested_font_size, requested_rotation in zip(cuadros_delimitadores, textos, text_styles, clip_masks, font_sizes, rotation_angles):
             style = style or "dialogo"
+            rotation_angle = self._coerce_rotation_angle(requested_rotation)
             texto = self._prepare_display_text(texto, style)
             x = int(max(0, x))
             y = int(max(0, y))
@@ -360,6 +446,11 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             else:
                 safe_x, safe_y, safe_w, safe_h = self._safe_text_area_from_mask(clip_mask, w, h, style)
                 render_blocks = [((safe_x, safe_y, safe_w, safe_h), texto)]
+            if abs(rotation_angle) >= 0.65:
+                render_blocks = [
+                    (self._rotation_safe_local_box(tuple(slot), w, h, rotation_angle), block_text)
+                    for slot, block_text in render_blocks
+                ]
 
             color_borde, color_texto = self._resolve_text_colors(imagen_limpia, x, y, w, h)
 
@@ -414,6 +505,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                     y_texto += alto_linea + espacio_entre_lineas
 
             del draw
+            capa = self._rotate_text_layer(capa, rotation_angle)
 
             paste_mask = capa
             if clip_mask is not None and not style.startswith("onomatopeya"):

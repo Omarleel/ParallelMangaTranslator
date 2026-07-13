@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from parallel_manga_translator.config.constants import normalizar_modelo_inpaint
 from parallel_manga_translator.ui.job_manager import JobManager, JobOptions, normalize_choice, job_to_public
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -53,6 +54,7 @@ class RegionPatch(BaseModel):
     source_bbox: Optional[List[float]] = Field(default=None, min_length=4, max_length=4)
     auto_font_size: bool = True
     font_size: Optional[int] = None
+    rotation_angle: float = 0.0
     ui_layout: Optional[Dict[str, Any]] = None
 
 
@@ -98,18 +100,9 @@ def create_job(
     detection_engine: str = Form(default="auto"),
     transcription_engine: str = Form(default="auto"),
     translator: str = Form(default="llm"),
+    inpaint_model: str = Form(default="auto"),
     page_max_retries: int = Form(default=2),
     retry_backoff_seconds: float = Form(default=2.0),
-    max_total_external_calls: int = Form(default=0),
-    max_llm_calls: int = Form(default=0),
-    max_traditional_calls: int = Form(default=0),
-    max_input_tokens: int = Form(default=0),
-    max_output_tokens: int = Form(default=0),
-    max_translation_characters: int = Form(default=0),
-    max_cost_usd: float = Form(default=0.0),
-    llm_input_cost_per_million_tokens: float = Form(default=0.0),
-    llm_output_cost_per_million_tokens: float = Form(default=0.0),
-    traditional_cost_per_million_characters: float = Form(default=0.0),
 ):
     try:
         options = JobOptions(
@@ -118,18 +111,9 @@ def create_job(
             detection_engine=normalize_choice(detection_engine, "auto"),
             transcription_engine=normalize_choice(transcription_engine, "auto"),
             translator=normalize_choice(translator, "llm"),
+            inpaint_model=normalizar_modelo_inpaint(inpaint_model, "auto"),
             page_max_retries=max(0, min(20, int(page_max_retries))),
             retry_backoff_seconds=max(0.0, min(300.0, float(retry_backoff_seconds))),
-            max_total_external_calls=max(0, int(max_total_external_calls)),
-            max_llm_calls=max(0, int(max_llm_calls)),
-            max_traditional_calls=max(0, int(max_traditional_calls)),
-            max_input_tokens=max(0, int(max_input_tokens)),
-            max_output_tokens=max(0, int(max_output_tokens)),
-            max_translation_characters=max(0, int(max_translation_characters)),
-            max_cost_usd=max(0.0, float(max_cost_usd)),
-            llm_input_cost_per_million_tokens=max(0.0, float(llm_input_cost_per_million_tokens)),
-            llm_output_cost_per_million_tokens=max(0.0, float(llm_output_cost_per_million_tokens)),
-            traditional_cost_per_million_characters=max(0.0, float(traditional_cost_per_million_characters)),
         )
         job = manager.create_job_from_uploads(files=images, zip_file=zip_file, title=title, options=options)
         manager.start_job(job.job_id)

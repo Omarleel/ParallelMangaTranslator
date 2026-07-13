@@ -50,20 +50,11 @@ const titleInput = $('titleInput');
 const sourceLanguage = $('sourceLanguage');
 const targetLanguage = $('targetLanguage');
 const translatorSelect = $('translatorSelect');
+const inpaintModel = $('inpaintModel');
 const detectionEngine = $('detectionEngine');
 const transcriptionEngine = $('transcriptionEngine');
 const pageMaxRetries = $('pageMaxRetries');
 const retryBackoffSeconds = $('retryBackoffSeconds');
-const maxExternalCalls = $('maxExternalCalls');
-const maxCostUsd = $('maxCostUsd');
-const maxLlmCalls = $('maxLlmCalls');
-const maxTraditionalCalls = $('maxTraditionalCalls');
-const maxInputTokens = $('maxInputTokens');
-const maxOutputTokens = $('maxOutputTokens');
-const maxTranslationCharacters = $('maxTranslationCharacters');
-const llmInputRate = $('llmInputRate');
-const llmOutputRate = $('llmOutputRate');
-const traditionalCharRate = $('traditionalCharRate');
 const advancedToggle = $('advancedToggle');
 const advancedOptions = $('advancedOptions');
 const continueLastBtn = $('continueLastBtn');
@@ -77,7 +68,6 @@ const jobMessage = $('jobMessage');
 const jobOptionsSummary = $('jobOptionsSummary');
 const progressBar = $('progressBar');
 const progressText = $('progressText');
-const usageText = $('usageText');
 const pauseJobBtn = $('pauseJobBtn');
 const resumeJobBtn = $('resumeJobBtn');
 const cancelJobBtn = $('cancelJobBtn');
@@ -91,6 +81,11 @@ const overlayLayer = $('overlayLayer');
 const pageHeading = $('pageHeading');
 const pageStatus = $('pageStatus');
 const regionCount = $('regionCount');
+const mobilePagesBtn = $('mobilePagesBtn');
+const mobileEditorBtn = $('mobileEditorBtn');
+const closePagesBtn = $('closePagesBtn');
+const closeEditorBtn = $('closeEditorBtn');
+const panelBackdrop = $('panelBackdrop');
 const noRegion = $('noRegion');
 const regionEditor = $('regionEditor');
 const regionTypeBadge = $('regionTypeBadge');
@@ -106,6 +101,10 @@ const autoFontSize = $('autoFontSize');
 const fontSize = $('fontSize');
 const fontSizeNumber = $('fontSizeNumber');
 const fontSizeValue = $('fontSizeValue');
+const rotationAngle = $('rotationAngle');
+const rotationAngleNumber = $('rotationAngleNumber');
+const rotationAngleValue = $('rotationAngleValue');
+const resetRotationBtn = $('resetRotationBtn');
 const saveBtn = $('saveBtn');
 const resetBtn = $('resetBtn');
 const prevBtn = $('prevBtn');
@@ -142,6 +141,103 @@ const deleteRegionBtn = $('deleteRegionBtn');
 const regionList = $('regionList');
 const canvasHint = $('canvasHint');
 const canvasReadout = $('canvasReadout');
+const appJobTitle = $('appJobTitle');
+const appPageName = $('appPageName');
+const documentDirtyIndicator = $('documentDirtyIndicator');
+const undoHistoryBtn = $('undoHistoryBtn');
+const redoHistoryBtn = $('redoHistoryBtn');
+const quickSaveBtn = $('quickSaveBtn');
+const contextToolIcon = $('contextToolIcon');
+const contextToolName = $('contextToolName');
+const contextToolSummary = $('contextToolSummary');
+const statusTool = $('statusTool');
+const statusDocumentSize = $('statusDocumentSize');
+const statusSelection = $('statusSelection');
+const statusZoom = $('statusZoom');
+const shortcutHelpBtn = $('shortcutHelpBtn');
+const shortcutModal = $('shortcutModal');
+const shortcutModalBackdrop = $('shortcutModalBackdrop');
+const closeShortcutModalBtn = $('closeShortcutModalBtn');
+
+const TOOL_PRESENTATION = {
+  select: {
+    icon: '↖',
+    name: 'Seleccionar y transformar',
+    shortcut: 'V',
+    summary: 'Selecciona una región para moverla, redimensionarla o editar su texto.',
+  },
+  region: {
+    icon: '▭',
+    name: 'Crear región de texto',
+    shortcut: 'R',
+    summary: 'Arrastra sobre la página para crear una caja de texto editable.',
+  },
+  brush: {
+    icon: '●',
+    name: 'Pincel de corrección',
+    shortcut: 'B',
+    summary: 'Pinta una máscara para limpiar texto, reconstruir fondo o restaurar el original.',
+  },
+  pan: {
+    icon: '✋',
+    name: 'Desplazar lienzo',
+    shortcut: 'H',
+    summary: 'Arrastra la página. Mantén Espacio para usar esta herramienta temporalmente.',
+  },
+};
+
+function updateWorkspaceChrome() {
+  const page = currentPage();
+  const tool = TOOL_PRESENTATION[activeTool()] || TOOL_PRESENTATION.select;
+  const selected = selectedRegion();
+  const pageTotal = state.job?.pages?.length || 0;
+  const ready = page?.status === 'ready';
+
+  if (appJobTitle) appJobTitle.textContent = state.job?.title || 'Proyecto';
+  if (appPageName) {
+    appPageName.textContent = page
+      ? `Página ${page.index + 1}${pageTotal ? ` de ${pageTotal}` : ''} · ${page.source_filename || 'sin nombre'}`
+      : 'Sin página seleccionada';
+  }
+  if (documentDirtyIndicator) {
+    const kind = state.autosaveError ? 'error' : state.autosaveInFlight ? 'saving pending' : state.dirty ? 'pending' : '';
+    documentDirtyIndicator.className = `document-dirty ${kind}`.trim();
+    const label = state.autosaveError ? 'Error al guardar' : state.autosaveInFlight ? 'Guardando documento' : state.dirty ? 'Cambios pendientes' : 'Documento guardado';
+    documentDirtyIndicator.title = label;
+    documentDirtyIndicator.setAttribute('aria-label', label);
+  }
+  if (undoHistoryBtn) undoHistoryBtn.disabled = state.undoStack.length === 0;
+  if (redoHistoryBtn) redoHistoryBtn.disabled = state.redoStack.length === 0;
+  if (quickSaveBtn) quickSaveBtn.disabled = !ready || state.autosaveInFlight;
+
+  if (contextToolIcon) contextToolIcon.textContent = tool.icon;
+  if (contextToolName) contextToolName.textContent = tool.name;
+  if (contextToolSummary) contextToolSummary.textContent = tool.summary;
+  if (statusTool) statusTool.textContent = `${tool.name} (${tool.shortcut})`;
+  if (statusDocumentSize) statusDocumentSize.textContent = ready ? `${Math.round(state.naturalWidth)} × ${Math.round(state.naturalHeight)} px` : '— × — px';
+  if (statusSelection) {
+    if (!ready) statusSelection.textContent = 'Sin documento';
+    else if (!selected) statusSelection.textContent = 'Sin selección';
+    else {
+      const [x, y, w, h] = selected.bbox || [0, 0, 0, 0];
+      statusSelection.textContent = `Región ${state.selectedRegion + 1} · ${Math.round(w)} × ${Math.round(h)} px · X ${Math.round(x)} Y ${Math.round(y)}`;
+    }
+  }
+  if (statusZoom) statusZoom.textContent = `${Math.round(state.zoom * 100)}%`;
+}
+
+function openShortcutModal() {
+  if (!shortcutModal) return;
+  shortcutModal.classList.remove('hidden');
+  closeShortcutModalBtn?.focus();
+}
+
+function closeShortcutModal() {
+  if (!shortcutModal) return;
+  shortcutModal.classList.add('hidden');
+  shortcutHelpBtn?.focus();
+}
+
 
 function showToast(message) {
   toast.textContent = message;
@@ -151,9 +247,12 @@ function showToast(message) {
 }
 
 function setAutosaveStatus(kind, message) {
-  if (!autosaveDot || !autosaveStatus) return;
-  autosaveDot.className = `autosave-dot ${kind || 'saved'}`;
-  autosaveStatus.textContent = message || 'Cambios guardados automáticamente.';
+  if (autosaveDot && autosaveStatus) {
+    autosaveDot.className = `autosave-dot ${kind || 'saved'}`;
+    autosaveStatus.textContent = message || 'Cambios guardados automáticamente.';
+  }
+  state.autosaveError = kind === 'error' ? String(message || 'Error al guardar') : '';
+  updateWorkspaceChrome();
 }
 
 function hasPendingInpaintStroke() {
@@ -197,6 +296,23 @@ function clampFontSize(value, fallback = null) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.max(6, Math.min(160, Math.round(parsed)));
+}
+
+function clampRotationAngle(value, fallback = 0) {
+  let parsed = Number(value);
+  if (!Number.isFinite(parsed)) parsed = Number(fallback) || 0;
+  while (parsed <= -90) parsed += 180;
+  while (parsed > 90) parsed -= 180;
+  parsed = Math.max(-89, Math.min(89, parsed));
+  return Math.abs(parsed) < 0.65 ? 0 : Math.round(parsed * 10) / 10;
+}
+
+function syncRotationControls(value) {
+  const angle = clampRotationAngle(value, 0);
+  if (rotationAngle) rotationAngle.value = String(Math.max(Number(rotationAngle.min || -45), Math.min(Number(rotationAngle.max || 45), angle)));
+  if (rotationAngleNumber) rotationAngleNumber.value = String(angle);
+  if (rotationAngleValue) rotationAngleValue.textContent = `${angle > 0 ? '+' : ''}${angle}°`;
+  return angle;
 }
 
 const MANGA_FONT_FAMILY = '"New Wild Words", "Comic Sans MS", "Trebuchet MS", Arial, sans-serif';
@@ -456,6 +572,7 @@ function applyRendererTextLayout(element, region, block = null, blockText = null
   element.style.top = `${area.y * scaleY}px`;
   element.style.width = `${area.width * scaleX}px`;
   element.style.height = `${area.height * scaleY}px`;
+  element.style.transformOrigin = `${(region.bbox[2] / 2 - area.x) * scaleX}px ${(region.bbox[3] / 2 - area.y) * scaleY}px`;
   element.style.fontSize = `${Math.max(4, Math.min(240, Math.round(size * ((scaleX + scaleY) / 2))))}px`;
   element.style.lineHeight = regionStyle(region).startsWith('onomatopeya') ? '1' : '1.05';
 }
@@ -481,6 +598,7 @@ function applyInlineEditorLayout(element, region, block = null, blockText = null
   element.style.top = `${area.y * scaleY}px`;
   element.style.width = `${widthPx}px`;
   element.style.height = `${heightPx}px`;
+  element.style.transformOrigin = `${(region.bbox[2] / 2 - area.x) * scaleX}px ${(region.bbox[3] / 2 - area.y) * scaleY}px`;
   element.style.fontSize = `${fontPx}px`;
   element.style.lineHeight = `${lineHeightPx}px`;
   element.style.padding = `${padY}px ${padX}px`;
@@ -550,6 +668,7 @@ function scheduleAutoSave(reason = 'auto', delay = 1200) {
 function markDirty(options = {}) {
   state.dirty = true;
   updateHeavyActions();
+  updateWorkspaceChrome();
   if (options.autosave) scheduleAutoSave(options.reason || 'auto');
 }
 
@@ -605,20 +724,11 @@ uploadForm.addEventListener('submit', async (event) => {
   data.append('source_language', sourceLanguage.value || 'Japonés');
   data.append('target_language', targetLanguage.value || 'Español');
   data.append('translator', translatorSelect.value || 'llm');
+  data.append('inpaint_model', inpaintModel.value || 'auto');
   data.append('detection_engine', detectionEngine.value || 'auto');
   data.append('transcription_engine', transcriptionEngine.value || 'auto');
   data.append('page_max_retries', pageMaxRetries.value || '0');
   data.append('retry_backoff_seconds', retryBackoffSeconds.value || '0');
-  data.append('max_total_external_calls', maxExternalCalls.value || '0');
-  data.append('max_llm_calls', maxLlmCalls.value || '0');
-  data.append('max_traditional_calls', maxTraditionalCalls.value || '0');
-  data.append('max_input_tokens', maxInputTokens.value || '0');
-  data.append('max_output_tokens', maxOutputTokens.value || '0');
-  data.append('max_translation_characters', maxTranslationCharacters.value || '0');
-  data.append('max_cost_usd', maxCostUsd.value || '0');
-  data.append('llm_input_cost_per_million_tokens', llmInputRate.value || '0');
-  data.append('llm_output_cost_per_million_tokens', llmOutputRate.value || '0');
-  data.append('traditional_cost_per_million_characters', traditionalCharRate.value || '0');
   if (zipFile) data.append('zip_file', zipFile, zipFile.name);
   for (const file of folderFiles) {
     data.append('images', file, file.webkitRelativePath || file.name);
@@ -703,18 +813,27 @@ function startPolling(jobId) {
   }, 1800);
 }
 
+function inpaintModelLabel(value) {
+  return {
+    auto: 'Automático',
+    'opencv-tela': 'OpenCV Telea',
+    lama_mpe: 'LaMa MPE',
+    lama_large_512px: 'LaMa Large 512',
+    aot: 'AOT',
+    'B/N': 'B/N',
+  }[value] || value || 'Automático';
+}
+
 function renderJob(job) {
   if (!job) return;
   jobTitle.textContent = job.title || 'Proyecto';
   jobMessage.textContent = job.message || '';
   const opts = job.options || {};
-  jobOptionsSummary.textContent = `${opts.source_language || 'Entrada'} → ${opts.target_language || 'Salida'} · OCR det: ${opts.detection_engine || 'auto'} · OCR trans: ${opts.transcription_engine || 'auto'} · ${opts.translator === 'google' ? 'Google' : 'LLM'}`;
+  jobOptionsSummary.textContent = `${opts.source_language || 'Entrada'} → ${opts.target_language || 'Salida'} · ${opts.translator === 'google' ? 'Google' : 'LLM'} · Inpainting: ${inpaintModelLabel(opts.inpaint_model)}`;
   jobBadge.textContent = readableStatus(job.status);
   jobBadge.className = `badge ${job.status === 'ready' ? 'ready' : job.status === 'failed' ? 'failed' : ''}`;
   progressBar.style.width = `${job.progress || 0}%`;
   progressText.textContent = `${job.processed_count || 0} listas · ${job.failed_count || 0} fallidas · ${job.total_count || 0} total`;
-  const usage = job.usage || {};
-  usageText.textContent = `${usage.total_calls || 0} llamadas externas · USD ${Number(usage.estimated_cost_usd || 0).toFixed(4)}`;
   const terminal = ['ready', 'failed', 'cancelled'].includes(job.status);
   pauseJobBtn.disabled = terminal || ['paused', 'pausing', 'resuming', 'cancelling'].includes(job.status);
   resumeJobBtn.disabled = !['paused', 'pausing', 'resuming'].includes(job.status);
@@ -724,6 +843,7 @@ function renderJob(job) {
   exportBtn.textContent = exportablePages > 0 ? `Exportar ZIP (${exportablePages})` : 'Exportar ZIP';
   renderPageList(job.pages || []);
   renderCurrentPage();
+  updateWorkspaceChrome();
 }
 
 function readableStatus(status) {
@@ -979,9 +1099,10 @@ function clampLocalBox(rawBox, maxWidth, maxHeight) {
 function createFullBoxUiLayout(bbox, style = 'dialogo') {
   const [, , w, h] = normalizeBox(bbox || [0, 0, 1, 1]);
   return {
-    version: 1,
+    version: 2,
     bbox: [0, 0, Math.max(1, w), Math.max(1, h)],
     style: style || 'dialogo',
+    rotation_angle: 0,
     block_count: 1,
     blocks: [{
       slot: [0, 0, Math.max(1, w), Math.max(1, h)],
@@ -1075,6 +1196,8 @@ function cloneRegions(regions) {
       deleted: Boolean(region.deleted),
       auto_font_size: region.auto_font_size !== false,
       font_size: region.auto_font_size === false ? clampFontSize(region.font_size, null) : null,
+      rotation_angle: clampRotationAngle(region.rotation_angle ?? region.text_rotation_angle ?? layoutResult.layout?.rotation_angle ?? 0),
+      rotation_confidence: Number(region.rotation_confidence || 0),
       ui_layout: layoutResult.layout,
       ui_text_region: Boolean(layoutResult.layout?.ui_text_region),
     };
@@ -1217,16 +1340,17 @@ function toolLabel(tool = activeTool()) {
 
 function updateCanvasReadout(point = state.lastPointerImagePoint) {
   const page = currentPage();
-  if (!canvasReadout) return;
   if (!page || page.status !== 'ready') {
-    canvasReadout.textContent = 'Sin página';
+    if (canvasReadout) canvasReadout.textContent = 'Sin página';
+    updateWorkspaceChrome();
     return;
   }
   if (Array.isArray(point)) state.lastPointerImagePoint = point;
   const selected = state.selectedRegion == null ? 'sin región' : `R${state.selectedRegion + 1}`;
   const dirty = state.dirty ? ' · sin guardar' : '';
   const coords = Array.isArray(state.lastPointerImagePoint) ? ` · ${state.lastPointerImagePoint[0]}, ${state.lastPointerImagePoint[1]}` : '';
-  canvasReadout.textContent = `P${page.index + 1}/${state.job?.pages?.length || 1} · ${Math.round(state.zoom * 100)}% · ${toolLabel()} · ${selected}${coords}${dirty}`;
+  if (canvasReadout) canvasReadout.textContent = `P${page.index + 1}/${state.job?.pages?.length || 1} · ${Math.round(state.zoom * 100)}% · ${toolLabel()} · ${selected}${coords}${dirty}`;
+  updateWorkspaceChrome();
 }
 
 function requestOverlayRender() {
@@ -1342,6 +1466,7 @@ function clearHistory() {
   state.undoStack = [];
   state.redoStack = [];
   state.lastHistoryPush = null;
+  updateWorkspaceChrome();
 }
 
 function createHistorySnapshot(label = 'cambio') {
@@ -1384,6 +1509,7 @@ function pushUndoSnapshot(label = 'cambio', options = {}) {
   state.redoStack = [];
   state.lastHistoryPush = { key: coalesceKey || `single:${now}`, pageKey, time: now };
   updateCanvasReadout();
+  updateWorkspaceChrome();
 }
 
 function restoreHistorySnapshot(snapshot, reason = 'historial') {
@@ -1435,6 +1561,7 @@ function undoChange() {
   }
   state.redoStack.push(createHistorySnapshot('rehacer'));
   restoreHistorySnapshot(snapshot, 'deshacer');
+  updateWorkspaceChrome();
   showToast(`Deshecho: ${snapshot.label || 'cambio'}.`);
 }
 
@@ -1451,6 +1578,7 @@ function redoChange() {
   }
   state.undoStack.push(createHistorySnapshot('deshacer rehacer'));
   restoreHistorySnapshot(snapshot, 'rehacer');
+  updateWorkspaceChrome();
   showToast('Cambio rehecho.');
 }
 
@@ -1516,12 +1644,13 @@ function renderOverlay(options = {}) {
     box.style.top = `${y * scaleY}px`;
     box.style.width = `${w * scaleX}px`;
     box.style.height = `${h * scaleY}px`;
+    box.style.setProperty('--text-rotation', `${clampRotationAngle(region.rotation_angle || 0)}deg`);
     box.dataset.index = idx;
     box.tabIndex = 0;
 
     const label = document.createElement('span');
     label.className = 'region-label';
-    label.textContent = `#${idx + 1}${region.manual ? ' · manual' : ''}`;
+    label.textContent = `#${idx + 1}${region.manual ? ' · manual' : ''}${Math.abs(region.rotation_angle || 0) >= 0.65 ? ` · ${region.rotation_angle > 0 ? '+' : ''}${region.rotation_angle}°` : ''}`;
     box.appendChild(label);
 
     const previewText = region.translated_text || region.original_text || '';
@@ -1905,6 +2034,8 @@ document.addEventListener('pointerup', () => {
         deleted: false,
         auto_font_size: true,
         font_size: null,
+        rotation_angle: 0,
+        rotation_confidence: 0,
         ui_layout: createFullBoxUiLayout(bbox, 'dialogo'),
         ui_text_region: true,
       };
@@ -1973,6 +2104,56 @@ canvasCard?.addEventListener('wheel', (event) => {
   zoomTo(state.zoom * factor, event);
 }, { passive: false });
 
+function activateEditorTab(name) {
+  const target = ['text', 'layers', 'brush'].includes(name) ? name : 'text';
+  document.querySelectorAll('[data-editor-tab]').forEach((button) => {
+    const active = button.dataset.editorTab === target;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-editor-pane]').forEach((pane) => {
+    pane.classList.toggle('active', pane.dataset.editorPane === target);
+  });
+}
+
+document.querySelectorAll('[data-editor-tab]').forEach((button) => {
+  button.addEventListener('click', () => activateEditorTab(button.dataset.editorTab));
+});
+
+function closeMobilePanels() {
+  workView?.classList.remove('pages-open', 'editor-open');
+  mobilePagesBtn?.setAttribute('aria-expanded', 'false');
+  mobileEditorBtn?.setAttribute('aria-expanded', 'false');
+  panelBackdrop?.classList.add('hidden');
+}
+
+function toggleMobilePanel(panel) {
+  const className = panel === 'pages' ? 'pages-open' : 'editor-open';
+  const willOpen = !workView?.classList.contains(className);
+  closeMobilePanels();
+  if (!willOpen || !workView) return;
+  workView.classList.add(className);
+  (panel === 'pages' ? mobilePagesBtn : mobileEditorBtn)?.setAttribute('aria-expanded', 'true');
+  panelBackdrop?.classList.remove('hidden');
+}
+
+mobilePagesBtn?.addEventListener('click', () => toggleMobilePanel('pages'));
+mobileEditorBtn?.addEventListener('click', () => toggleMobilePanel('editor'));
+closePagesBtn?.addEventListener('click', closeMobilePanels);
+closeEditorBtn?.addEventListener('click', closeMobilePanels);
+panelBackdrop?.addEventListener('click', closeMobilePanels);
+shortcutHelpBtn?.addEventListener('click', openShortcutModal);
+shortcutModalBackdrop?.addEventListener('click', closeShortcutModal);
+closeShortcutModalBtn?.addEventListener('click', closeShortcutModal);
+undoHistoryBtn?.addEventListener('click', undoChange);
+redoHistoryBtn?.addEventListener('click', redoChange);
+quickSaveBtn?.addEventListener('click', () => {
+  saveCurrentPage({ silent: false, force: true, reason: 'guardar desde barra superior' }).catch(() => {});
+});
+window.addEventListener('resize', () => {
+  if (window.innerWidth > 1050) closeMobilePanels();
+});
+
 function setTool(tool) {
   state.tool = ['select', 'region', 'brush', 'pan'].includes(tool) ? tool : 'select';
   const allToolButtons = [selectTool, newRegionTool, brushTool, panTool, dockSelectTool, dockRegionTool, dockBrushTool, dockPanTool].filter(Boolean);
@@ -1990,8 +2171,11 @@ function setTool(tool) {
   toolHelpTitle.textContent = help[0];
   toolHelpText.textContent = help[1];
   hideBrushCursor();
+  if (state.tool === 'brush') activateEditorTab('brush');
+  else if (state.tool === 'region') activateEditorTab('text');
   setPageImageSource();
   updateCanvasReadout();
+  updateWorkspaceChrome();
 }
 
 [selectTool, newRegionTool, brushTool, panTool, dockSelectTool, dockRegionTool, dockBrushTool, dockPanTool]
@@ -2023,6 +2207,7 @@ undoDeleteBtn?.addEventListener('click', undoLastDelete);
 function selectRegion(idx, rerender = true) {
   if (!isSelectableRegion(state.regions[idx])) return showNoRegion();
   state.selectedRegion = idx;
+  activateEditorTab('text');
   noRegion.classList.add('hidden');
   regionEditor.classList.remove('hidden');
   updateEditorFromRegion();
@@ -2050,6 +2235,7 @@ function updateEditorFromRegion() {
   visibleText.checked = region.visible !== false;
   if (autoFontSize) autoFontSize.checked = usesAutoFontSize(region);
   syncFontControlsFromValue(effectiveManualFontSize(region));
+  syncRotationControls(region.rotation_angle || 0);
   updateFontControlsDisabled();
   regionTypeBadge.textContent = region.manual ? 'Región manual' : 'Región detectada';
 }
@@ -2065,6 +2251,7 @@ function updateRegionFromEditor(options = {}) {
   const nextAutoFont = autoFontSize ? autoFontSize.checked : true;
   const manualFontSize = clampFontSize(fontSizeNumber?.value || fontSize?.value, effectiveManualFontSize(region));
   const nextFontSize = nextAutoFont ? null : manualFontSize;
+  const nextRotationAngle = clampRotationAngle(rotationAngleNumber?.value ?? rotationAngle?.value ?? region.rotation_angle ?? 0);
   const currentFontSize = usesAutoFontSize(region) ? null : clampFontSize(region.font_size, null);
   const changed =
     region.original_text !== nextOriginalText ||
@@ -2073,6 +2260,7 @@ function updateRegionFromEditor(options = {}) {
     region.visible !== nextVisible ||
     usesAutoFontSize(region) !== nextAutoFont ||
     currentFontSize !== nextFontSize ||
+    clampRotationAngle(region.rotation_angle || 0) !== nextRotationAngle ||
     region.bbox.some((value, index) => value !== nextBox[index]);
 
   if (changed && options.history !== false) {
@@ -2086,6 +2274,9 @@ function updateRegionFromEditor(options = {}) {
   region.visible = nextVisible;
   region.auto_font_size = nextAutoFont;
   region.font_size = nextFontSize;
+  region.rotation_angle = nextRotationAngle;
+  if (region.ui_layout) region.ui_layout.rotation_angle = nextRotationAngle;
+  syncRotationControls(nextRotationAngle);
   updateFontControlsDisabled();
   if (changed) {
     markRegionModified(region);
@@ -2132,6 +2323,20 @@ function nextRegionIndex() {
   element.addEventListener('input', updateRegionFromEditor);
   element.addEventListener('change', updateRegionFromEditor);
 });
+rotationAngle?.addEventListener('input', () => {
+  const value = clampRotationAngle(rotationAngle.value);
+  if (rotationAngleNumber) rotationAngleNumber.value = String(value);
+  updateRegionFromEditor();
+});
+rotationAngleNumber?.addEventListener('input', () => {
+  const value = clampRotationAngle(rotationAngleNumber.value);
+  if (rotationAngle) rotationAngle.value = String(Math.max(-45, Math.min(45, value)));
+  updateRegionFromEditor();
+});
+rotationAngleNumber?.addEventListener('change', () => {
+  syncRotationControls(rotationAngleNumber.value);
+  updateRegionFromEditor();
+});
 fontSize?.addEventListener('input', () => {
   syncFontControlsFromValue(fontSize.value);
   updateRegionFromEditor();
@@ -2165,6 +2370,11 @@ ocrRegionBtn.addEventListener('click', async () => {
     pushUndoSnapshot('OCR de región');
     region.original_text = result.original_text || '';
     if (result.translated_text) region.translated_text = result.translated_text;
+    if (Number.isFinite(Number(result.rotation_angle))) {
+      region.rotation_angle = clampRotationAngle(result.rotation_angle, region.rotation_angle || 0);
+      region.rotation_confidence = Number(result.rotation_confidence || 0);
+      if (region.ui_layout) region.ui_layout.rotation_angle = region.rotation_angle;
+    }
     region.bbox = result.bbox || region.bbox;
     region.source_bbox = region.source_bbox || [...region.bbox];
     markRegionModified(region);
@@ -2277,6 +2487,13 @@ document.addEventListener('keydown', (event) => {
   if (workView.classList.contains('hidden')) return;
 
   const key = event.key.toLowerCase();
+  if (shortcutModal && !shortcutModal.classList.contains('hidden')) {
+    if (key === 'escape') {
+      event.preventDefault();
+      closeShortcutModal();
+    }
+    return;
+  }
   const ctrl = event.ctrlKey || event.metaKey;
 
   if (ctrl && key === 'z' && !isTypingTarget(event.target)) {
@@ -2343,6 +2560,7 @@ document.addEventListener('keydown', (event) => {
   }
 
   if (!ctrl) {
+    if (key === '?' || (key === '/' && event.shiftKey)) { event.preventDefault(); openShortcutModal(); return; }
     if (key === 'v') { event.preventDefault(); setTool('select'); return; }
     if (key === 'b') { event.preventDefault(); setTool('brush'); return; }
     if (key === 'r') { event.preventDefault(); setTool('region'); return; }
@@ -2397,6 +2615,11 @@ async function controlCurrentJob(action) {
 }
 
 pauseJobBtn.addEventListener('click', () => controlCurrentJob('pause'));
+resetRotationBtn?.addEventListener('click', () => {
+  syncRotationControls(0);
+  updateRegionFromEditor();
+});
+
 resumeJobBtn.addEventListener('click', () => controlCurrentJob('resume'));
 cancelJobBtn.addEventListener('click', () => controlCurrentJob('cancel'));
 
@@ -2445,6 +2668,7 @@ function regionToRenderPatch(region, idx) {
     source_bbox: region.source_bbox || region.bbox,
     auto_font_size: region.auto_font_size !== false,
     font_size: region.auto_font_size === false ? clampFontSize(region.font_size, null) : null,
+    rotation_angle: clampRotationAngle(region.rotation_angle || 0),
     ui_layout: region.ui_layout || null,
     ui_text_region: Boolean(region.ui_text_region || region.ui_layout?.ui_text_region),
   };
@@ -2566,6 +2790,7 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
   clearTimeout(state.autosaveTimer);
   saveBtn.disabled = true;
   state.autosaveInFlight = true;
+  updateWorkspaceChrome();
   setAutosaveStatus(markInpaintApplied ? 'saving' : 'saving', markInpaintApplied ? 'Aplicando inpaint…' : 'Guardando cambios…');
   try {
     const updatedPage = await requestJson(`/api/jobs/${state.job.job_id}/pages/${page.index}/render`, {
@@ -2576,6 +2801,7 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
     state.job.pages[page.index] = updatedPage;
     state.dirty = false;
     state.pageStamp = `${state.job.job_id}:${page.index}:${updatedPage.updated_at || ''}`;
+    updateWorkspaceChrome();
     state.variant = 'current';
     state.deletedStack = [];
     state.brushStrokes = cloneBrushStrokes(updatedPage.brush_strokes || []);
@@ -2597,6 +2823,7 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
   } finally {
     state.autosaveInFlight = false;
     saveBtn.disabled = false;
+    updateWorkspaceChrome();
   }
 }
 
@@ -2700,3 +2927,5 @@ function escapeHtml(value) {
     }
   } catch (_) {}
 })();
+
+updateWorkspaceChrome();

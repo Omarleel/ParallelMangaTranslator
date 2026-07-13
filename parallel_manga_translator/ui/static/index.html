@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Parallel Manga Translator · Asistente corrector</title>
+  <title>Parallel Manga Translator · Editor de manga</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
@@ -64,13 +64,27 @@
             </label>
           </div>
 
-          <label class="field">
-            <span>Traductor</span>
-            <select id="translatorSelect" name="translator">
-              <option value="google">Google / tradicional</option>
-              <option value="llm" selected>LLM</option>
-            </select>
-          </label>
+          <div class="grid-fields two">
+            <label class="field compact">
+              <span>Traductor</span>
+              <select id="translatorSelect" name="translator">
+                <option value="google">Google / tradicional</option>
+                <option value="llm" selected>LLM</option>
+              </select>
+            </label>
+            <label class="field compact">
+              <span>Modelo de inpainting</span>
+              <select id="inpaintModel" name="inpaint_model">
+                <option value="auto" selected>Automático (recomendado)</option>
+                <option value="opencv-tela">OpenCV Telea · rápido</option>
+                <option value="lama_mpe">LaMa MPE · equilibrado</option>
+                <option value="lama_large_512px">LaMa Large 512 · alta calidad</option>
+                <option value="aot">AOT · fondos complejos</option>
+                <option value="B/N">B/N · manga monocromo</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint model-hint">Automático usa LaMa MPE en páginas a color y el modelo B/N en páginas monocromas.</p>
         </div>
 
         <div class="form-section">
@@ -128,29 +142,7 @@
                 <span>Espera inicial entre reintentos (s)</span>
                 <input id="retryBackoffSeconds" name="retry_backoff_seconds" type="number" min="0" max="300" step="0.5" value="2" />
               </label>
-              <label class="field compact">
-                <span>Máximo de llamadas externas</span>
-                <input id="maxExternalCalls" name="max_total_external_calls" type="number" min="0" value="0" />
-              </label>
-              <label class="field compact">
-                <span>Presupuesto máximo (USD)</span>
-                <input id="maxCostUsd" name="max_cost_usd" type="number" min="0" step="0.0001" value="0" />
-              </label>
             </div>
-            <details class="budget-details">
-              <summary>Tarifas y límites detallados</summary>
-              <div class="grid-fields two">
-                <label class="field compact"><span>Máx. llamadas LLM</span><input id="maxLlmCalls" type="number" min="0" value="0" /></label>
-                <label class="field compact"><span>Máx. llamadas tradicionales</span><input id="maxTraditionalCalls" type="number" min="0" value="0" /></label>
-                <label class="field compact"><span>Máx. tokens entrada</span><input id="maxInputTokens" type="number" min="0" value="0" /></label>
-                <label class="field compact"><span>Máx. tokens salida</span><input id="maxOutputTokens" type="number" min="0" value="0" /></label>
-                <label class="field compact"><span>Máx. caracteres tradicionales</span><input id="maxTranslationCharacters" type="number" min="0" value="0" /></label>
-                <label class="field compact"><span>USD / millón tokens entrada</span><input id="llmInputRate" type="number" min="0" step="0.0001" value="0" /></label>
-                <label class="field compact"><span>USD / millón tokens salida</span><input id="llmOutputRate" type="number" min="0" step="0.0001" value="0" /></label>
-                <label class="field compact"><span>USD / millón caracteres</span><input id="traditionalCharRate" type="number" min="0" step="0.0001" value="0" /></label>
-              </div>
-              <p class="hint">Cero significa sin límite. Para aplicar un presupuesto monetario debes indicar las tarifas del proveedor/modelo.</p>
-            </details>
           </div>
         </div>
 
@@ -164,32 +156,38 @@
   </section>
 
   <section id="workView" class="work-view hidden">
-    <nav id="toolDock" class="tool-dock" aria-label="Barra de herramientas rápida">
-      <button id="dockSelectTool" class="dock-tool active" type="button" data-tool="select" title="Seleccionar / mover texto (V)">
-        <span class="tool-icon">↖</span><span class="tool-label">Seleccionar</span>
+    <nav id="toolDock" class="tool-dock" aria-label="Barra de herramientas">
+      <div class="dock-brand" title="Parallel Manga Translator">P</div>
+      <span class="dock-separator dock-separator-brand"></span>
+      <button id="dockSelectTool" class="dock-tool active" type="button" data-tool="select" title="Seleccionar y transformar (V)">
+        <span class="tool-icon">↖</span><span class="tool-key">V</span><span class="tool-label">Seleccionar y transformar</span>
       </button>
-      <button id="dockRegionTool" class="dock-tool" type="button" data-tool="region" title="Nueva región de texto (R)">
-        <span class="tool-icon">▭</span><span class="tool-label">Región</span>
+      <button id="dockRegionTool" class="dock-tool" type="button" data-tool="region" title="Crear región de texto (R)">
+        <span class="tool-icon">▭</span><span class="tool-key">R</span><span class="tool-label">Crear región de texto</span>
       </button>
-      <button id="dockBrushTool" class="dock-tool" type="button" data-tool="brush" title="Pincel / máscaras (B)">
-        <span class="tool-icon">●</span><span class="tool-label">Pincel</span>
+      <button id="dockBrushTool" class="dock-tool" type="button" data-tool="brush" title="Pincel de corrección (B)">
+        <span class="tool-icon">●</span><span class="tool-key">B</span><span class="tool-label">Pincel de corrección</span>
       </button>
-      <button id="dockPanTool" class="dock-tool" type="button" data-tool="pan" title="Mano / desplazar lienzo (H o mantener Espacio)">
-        <span class="tool-icon">✋</span><span class="tool-label">Mano</span>
+      <button id="dockPanTool" class="dock-tool" type="button" data-tool="pan" title="Mano / desplazar lienzo (H o Espacio)">
+        <span class="tool-icon">✋</span><span class="tool-key">H</span><span class="tool-label">Desplazar lienzo</span>
       </button>
       <span class="dock-separator"></span>
       <button id="dockFitBtn" class="dock-tool utility" type="button" title="Ajustar al lienzo (Ctrl+0)">
-        <span class="tool-icon">⛶</span><span class="tool-label">Ajustar</span>
+        <span class="tool-icon">⛶</span><span class="tool-label">Ajustar al lienzo</span>
+      </button>
+      <button id="shortcutHelpBtn" class="dock-tool utility" type="button" title="Ver atajos de teclado (?)">
+        <span class="tool-icon">?</span><span class="tool-label">Atajos de teclado</span>
       </button>
     </nav>
 
     <aside class="work-sidebar">
       <div class="sidebar-head">
         <div class="brand-mark small-mark">PMT</div>
-        <div>
-          <h2>Revisión</h2>
+        <div class="sidebar-copy">
+          <h2>Proyecto</h2>
           <p id="jobOptionsSummary">Sin proyecto.</p>
         </div>
+        <button id="closePagesBtn" class="icon-button mobile-only" type="button" aria-label="Cerrar panel de páginas">×</button>
       </div>
 
       <section class="panel progress-panel" id="progressPanel">
@@ -200,11 +198,16 @@
         <p id="jobMessage" class="muted">Sin proyecto cargado.</p>
         <div class="progress-bar"><span id="progressBar"></span></div>
         <p id="progressText" class="muted">0 / 0 páginas</p>
-        <p id="usageText" class="muted">0 llamadas externas · USD 0.0000</p>
-        <div class="job-control-row">
-          <button id="pauseJobBtn" class="ghost" type="button" disabled>Pausar</button>
-          <button id="resumeJobBtn" class="ghost" type="button" disabled>Reanudar</button>
-          <button id="cancelJobBtn" class="danger" type="button" disabled>Cancelar</button>
+        <div class="job-control-row" aria-label="Controles del procesamiento">
+          <button id="pauseJobBtn" class="ghost job-control-button" type="button" disabled>
+            <span class="job-control-icon" aria-hidden="true">Ⅱ</span><span>Pausar</span>
+          </button>
+          <button id="resumeJobBtn" class="ghost job-control-button" type="button" disabled>
+            <span class="job-control-icon" aria-hidden="true">▶</span><span>Reanudar</span>
+          </button>
+          <button id="cancelJobBtn" class="danger job-control-button" type="button" disabled>
+            <span class="job-control-icon" aria-hidden="true">■</span><span>Cancelar trabajo</span>
+          </button>
         </div>
         <button id="exportBtn" class="ghost export-btn" type="button" disabled>Exportar ZIP</button>
         <button id="newJobBtn" class="ghost export-btn" type="button">Nuevo trabajo</button>
@@ -220,8 +223,38 @@
     </aside>
 
     <main class="work-main">
+      <div class="application-bar" aria-label="Barra del documento">
+        <div class="document-tabs">
+          <div class="document-tab active" aria-current="page">
+            <span class="document-icon" aria-hidden="true">▤</span>
+            <span class="document-copy">
+              <strong id="appJobTitle">Proyecto</strong>
+              <span id="appPageName">Sin página seleccionada</span>
+            </span>
+            <span id="documentDirtyIndicator" class="document-dirty" title="Estado del documento" aria-label="Documento guardado"></span>
+          </div>
+        </div>
+        <div class="command-bar" aria-label="Acciones rápidas">
+          <button id="undoHistoryBtn" class="command-button" type="button" title="Deshacer (Ctrl+Z)" disabled><span aria-hidden="true">↶</span><span class="command-label">Deshacer</span></button>
+          <button id="redoHistoryBtn" class="command-button" type="button" title="Rehacer (Ctrl+Mayús+Z)" disabled><span aria-hidden="true">↷</span><span class="command-label">Rehacer</span></button>
+          <span class="command-separator"></span>
+          <button id="quickSaveBtn" class="command-button emphasized" type="button" title="Guardar ahora (Ctrl+S)" disabled><span aria-hidden="true">▣</span><span class="command-label">Guardar</span></button>
+        </div>
+      </div>
+
       <header class="toolbar">
         <div class="toolbar-row nav-row">
+          <div class="mobile-panel-actions" aria-label="Paneles de trabajo">
+            <button id="mobilePagesBtn" class="ghost mini" type="button" aria-expanded="false">☰ Páginas</button>
+            <button id="mobileEditorBtn" class="ghost mini" type="button" aria-expanded="false">Propiedades</button>
+          </div>
+          <div class="tool-context-bar" aria-live="polite">
+            <span id="contextToolIcon" class="context-tool-icon" aria-hidden="true">↖</span>
+            <span class="context-tool-copy">
+              <strong id="contextToolName">Seleccionar</strong>
+              <span id="contextToolSummary">Selecciona una región para moverla, redimensionarla o editar su texto.</span>
+            </span>
+          </div>
           <div class="nav-actions">
             <button id="prevBtn" class="ghost" type="button">← Anterior</button>
             <button id="nextBtn" class="ghost" type="button">Siguiente →</button>
@@ -259,130 +292,217 @@
             <img id="pageImage" alt="Página de manga" draggable="false" />
             <div id="overlayLayer" class="overlay-layer"></div>
           </div>
+          <div class="canvas-statusbar" aria-live="polite">
+            <span id="statusTool">Seleccionar (V)</span>
+            <span id="statusDocumentSize">— × — px</span>
+            <span id="statusSelection">Sin selección</span>
+            <strong id="statusZoom">100%</strong>
+          </div>
         </div>
 
-        <aside class="editor-panel">
+        <aside class="editor-panel" aria-label="Inspector de página">
           <div class="editor-header">
             <div>
               <h2 id="pageHeading">Página</h2>
-              <p id="pageStatus" class="muted">Selecciona una región.</p>
+              <p id="pageStatus" class="muted">Selecciona una región para editarla.</p>
             </div>
-            <span id="regionCount" class="badge soft">0 regiones</span>
+            <div class="editor-header-actions">
+              <span id="regionCount" class="badge soft">0 regiones</span>
+              <button id="closeEditorBtn" class="icon-button mobile-only" type="button" aria-label="Cerrar inspector">×</button>
+            </div>
           </div>
 
-          <div class="tool-help">
-            <strong id="toolHelpTitle">Herramienta activa: seleccionar</strong>
-            <p id="toolHelpText">Haz clic en una región para editarla. Doble clic selecciona el texto. Flechas mueven 1 px, Shift+flechas 10 px y Ctrl+flechas redimensionan. Ctrl+Z deshace y Ctrl+Shift+Z rehace.</p>
+          <div class="editor-tabs" role="tablist" aria-label="Herramientas del inspector">
+            <button class="editor-tab active" type="button" data-editor-tab="text" role="tab" aria-selected="true">Propiedades</button>
+            <button class="editor-tab" type="button" data-editor-tab="layers" role="tab" aria-selected="false">Capas</button>
+            <button class="editor-tab" type="button" data-editor-tab="brush" role="tab" aria-selected="false">Retoque</button>
           </div>
 
-          <section class="brush-options-panel" aria-label="Opciones de pincel">
-            <div class="layer-head">
-              <div>
-                <h3>Pincel</h3>
-                <p>Opciones de limpieza e inpaint. Activa la herramienta desde la barra izquierda.</p>
+          <div class="editor-pane active" data-editor-pane="text">
+            <div class="tool-help compact-help">
+              <strong id="toolHelpTitle">Seleccionar y editar</strong>
+              <p id="toolHelpText">Haz clic en una región y escribe sobre el lienzo. Arrastra para mover y usa el tirador para cambiar su tamaño.</p>
+            </div>
+
+            <div id="noRegion" class="no-region">
+              Selecciona una región en la página o crea una nueva con la herramienta <strong>Región</strong>.
+            </div>
+
+            <div id="regionEditor" class="region-editor hidden">
+              <div class="property-section-heading">
+                <span>Contenido</span>
+                <small>Edición directa sobre la página</small>
               </div>
-              <span class="kbd">B</span>
-            </div>
-            <div class="brush-controls side-brush-controls">
-              <label class="field inline-field">
-                <span>Modo pincel</span>
-                <select id="brushMode">
-                  <option value="restore_clean" selected>Limpiar texto</option>
-                  <option value="inpaint">Inpaint</option>
-                  <option value="mask_eraser">Restaurar manga original / borrar inpaint</option>
-                </select>
-              </label>
-              <label class="brush-size">Tamaño <input id="brushSize" type="range" min="4" max="90" value="22" /><strong id="brushSizeValue">22 px</strong></label>
-              <button id="applyInpaintBtn" class="primary compact-heavy" type="button" disabled>Aplicar inpaint</button>
-            </div>
-          </section>
-
-          <section class="layers-panel" aria-label="Lista de regiones de texto">
-            <div class="layer-head">
-              <div>
-                <h3>Regiones</h3>
-                <p>Como capas: selecciona, enfoca u oculta texto.</p>
+              <div class="region-meta">
+                <span id="regionTypeBadge" class="badge soft">Región</span>
+                <span class="kbd">Supr</span>
+                <span class="kbd">Flechas</span>
               </div>
-              <span class="kbd">V</span>
-            </div>
-            <div id="regionList" class="region-list"></div>
-          </section>
 
-          <div id="noRegion" class="no-region">
-            Selecciona una caja de texto y escribe directamente dentro de ella. Doble clic selecciona el texto; mueve/redimensiona desde el borde, el tirador o con flechas.
-          </div>
-
-          <div id="regionEditor" class="region-editor hidden">
-            <div class="region-meta">
-              <span id="regionTypeBadge" class="badge soft">Región</span>
-              <span class="kbd">Supr</span>
-              <span class="kbd">Ctrl+C/X/V</span>
-              <span class="kbd">Flechas</span>
-            </div>
-
-            <label class="field">
-              <span>Texto original OCR</span>
-              <textarea id="originalText" rows="3"></textarea>
-            </label>
-            <label class="field">
-              <span>Traducción editable</span>
-              <textarea id="translatedText" rows="5"></textarea>
-            </label>
-
-            <div class="grid-fields two">
-              <label class="field compact"><span>X</span><input id="boxX" type="number" /></label>
-              <label class="field compact"><span>Y</span><input id="boxY" type="number" /></label>
-              <label class="field compact"><span>Ancho</span><input id="boxW" type="number" /></label>
-              <label class="field compact"><span>Alto</span><input id="boxH" type="number" /></label>
-            </div>
-
-            <div class="font-card">
-              <label class="checkbox-row">
-                <input id="autoFontSize" type="checkbox" checked />
-                <span>Tamaño de fuente automático</span>
+              <label class="field primary-text-field">
+                <span>Traducción</span>
+                <textarea id="translatedText" rows="5" placeholder="Escribe la traducción..."></textarea>
               </label>
-              <label class="field compact font-size-field">
-                <span>Tamaño manual <strong id="fontSizeValue">24 px</strong></span>
-                <div class="font-size-row">
-                  <input id="fontSize" type="range" min="6" max="120" value="24" />
-                  <input id="fontSizeNumber" type="number" min="6" max="160" value="24" />
+
+              <details class="inspector-details">
+                <summary>Texto original OCR</summary>
+                <label class="field">
+                  <span>Texto original OCR</span>
+                  <textarea id="originalText" rows="3"></textarea>
+                </label>
+              </details>
+
+              <section class="property-section transform-section" aria-label="Transformar región">
+                <div class="property-section-heading compact-property-heading">
+                  <span>Transformar</span>
+                  <small>Posición y tamaño en píxeles</small>
                 </div>
-              </label>
-              <p class="hint tiny">Desactiva “automático” para fijar el tamaño exacto de esta región. Si el texto es muy grande, se recortará dentro de la caja.</p>
+                <div class="grid-fields four geometry-grid">
+                  <label class="field compact"><span>X</span><input id="boxX" type="number" /></label>
+                  <label class="field compact"><span>Y</span><input id="boxY" type="number" /></label>
+                  <label class="field compact"><span>Ancho</span><input id="boxW" type="number" /></label>
+                  <label class="field compact"><span>Alto</span><input id="boxH" type="number" /></label>
+                </div>
+              </section>
+
+              <div class="property-section-heading compact-property-heading">
+                <span>Tipografía</span>
+                <small>Ajuste y rotación del texto</small>
+              </div>
+              <div class="style-controls">
+                <div class="font-card">
+                  <label class="checkbox-row compact-check">
+                    <input id="autoFontSize" type="checkbox" checked />
+                    <span>Fuente automática</span>
+                  </label>
+                  <label class="field compact font-size-field">
+                    <span>Tamaño <strong id="fontSizeValue">24 px</strong></span>
+                    <div class="font-size-row">
+                      <input id="fontSize" type="range" min="6" max="120" value="24" />
+                      <input id="fontSizeNumber" type="number" min="6" max="160" value="24" />
+                    </div>
+                  </label>
+                </div>
+
+                <div class="rotation-card">
+                  <div class="control-title">
+                    <span>Inclinación</span>
+                    <strong id="rotationAngleValue">0°</strong>
+                  </div>
+                  <div class="rotation-row">
+                    <input id="rotationAngle" type="range" min="-45" max="45" step="0.5" value="0" />
+                    <input id="rotationAngleNumber" type="number" min="-89" max="89" step="0.5" value="0" />
+                    <button id="resetRotationBtn" class="ghost mini" type="button" title="Restablecer inclinación">0°</button>
+                  </div>
+                  <p class="hint tiny">Se detecta automáticamente a partir de los polígonos OCR y puede corregirse aquí.</p>
+                </div>
+              </div>
+
+              <div class="visibility-controls">
+                <label class="checkbox-row compact-check">
+                  <input id="visibleText" type="checkbox" checked />
+                  <span>Mostrar traducción</span>
+                </label>
+                <label class="checkbox-row compact-check">
+                  <input id="restoreOriginal" type="checkbox" />
+                  <span>Restaurar original en esta región</span>
+                </label>
+              </div>
+
+              <div class="mini-actions">
+                <button id="ocrRegionBtn" class="ghost" type="button">Detectar OCR</button>
+                <button id="copyRegionBtn" class="ghost" type="button">Duplicar</button>
+                <button id="deleteRegionBtn" class="ghost danger" type="button">Eliminar</button>
+              </div>
             </div>
+          </div>
 
-            <label class="checkbox-row">
-              <input id="restoreOriginal" type="checkbox" />
-              <span>Revertir limpieza en esta región</span>
-            </label>
-            <label class="checkbox-row">
-              <input id="visibleText" type="checkbox" checked />
-              <span>Renderizar texto de esta región</span>
-            </label>
+          <div class="editor-pane" data-editor-pane="layers">
+            <section class="layers-panel" aria-label="Lista de regiones de texto">
+              <div class="layer-head">
+                <div>
+                  <h3>Regiones de la página</h3>
+                  <p>Selecciona una región, céntrala u oculta su texto.</p>
+                </div>
+                <span class="kbd">V</span>
+              </div>
+              <div id="regionList" class="region-list"></div>
+            </section>
+          </div>
 
-            <div class="mini-actions">
-              <button id="ocrRegionBtn" class="ghost" type="button">OCR + traducir región</button>
-              <button id="copyRegionBtn" class="ghost" type="button">Copiar región</button>
-              <button id="deleteRegionBtn" class="ghost danger" type="button">Eliminar región</button>
+          <div class="editor-pane" data-editor-pane="brush">
+            <section class="brush-options-panel" aria-label="Opciones de pincel">
+              <div class="layer-head">
+                <div>
+                  <h3>Corrección de imagen</h3>
+                  <p>Pinta únicamente sobre la zona que deseas limpiar, reconstruir o restaurar.</p>
+                </div>
+                <span class="kbd">B</span>
+              </div>
+              <div class="brush-controls side-brush-controls">
+                <label class="field inline-field">
+                  <span>Acción</span>
+                  <select id="brushMode">
+                    <option value="restore_clean" selected>Limpiar texto</option>
+                    <option value="inpaint">Reconstruir fondo (inpaint)</option>
+                    <option value="mask_eraser">Restaurar manga original</option>
+                  </select>
+                </label>
+                <label class="brush-size">Tamaño <input id="brushSize" type="range" min="4" max="90" value="22" /><strong id="brushSizeValue">22 px</strong></label>
+                <div class="brush-action-grid">
+                  <button id="undoBrushBtn" class="ghost" type="button">Deshacer trazo</button>
+                  <button id="applyInpaintBtn" class="primary compact-heavy" type="button" disabled>Aplicar inpaint</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="editor-footer">
+            <div class="autosave-card">
+              <span id="autosaveDot" class="autosave-dot saved"></span>
+              <span id="autosaveStatus">Cambios guardados automáticamente.</span>
+            </div>
+            <div class="editor-actions">
+              <button id="saveBtn" class="ghost" type="button">Guardar ahora</button>
+              <button id="resetBtn" class="ghost danger" type="button">Restaurar automático</button>
             </div>
           </div>
-
-          <div class="autosave-card">
-            <span id="autosaveDot" class="autosave-dot saved"></span>
-            <span id="autosaveStatus">Cambios guardados automáticamente.</span>
-          </div>
-
-          <div class="editor-actions">
-            <button id="saveBtn" class="ghost" type="button">Guardar ahora</button>
-            <button id="resetBtn" class="ghost danger" type="button">Restaurar automático</button>
-          </div>
-          <p class="hint">Los cambios ligeros se guardan solos. Los botones quedan para procesos pesados: <strong>OCR + traducir</strong>, <strong>Aplicar inpaint</strong> o exportar. Usa <strong>Ctrl + rueda</strong> sobre la página para acercar o alejar.</p>
         </aside>
       </section>
     </main>
   </section>
 
+  <button id="panelBackdrop" class="panel-backdrop hidden" type="button" aria-label="Cerrar panel"></button>
   <div id="toast" class="toast hidden"></div>
+
+  <div id="shortcutModal" class="shortcut-modal hidden" role="dialog" aria-modal="true" aria-labelledby="shortcutModalTitle">
+    <button id="shortcutModalBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar atajos"></button>
+    <section class="shortcut-dialog">
+      <header>
+        <div>
+          <span class="eyebrow">Referencia rápida</span>
+          <h2 id="shortcutModalTitle">Atajos de edición</h2>
+        </div>
+        <button id="closeShortcutModalBtn" class="icon-button" type="button" aria-label="Cerrar">×</button>
+      </header>
+      <div class="shortcut-grid">
+        <div><kbd>V</kbd><span>Seleccionar y transformar</span></div>
+        <div><kbd>R</kbd><span>Crear una región</span></div>
+        <div><kbd>B</kbd><span>Pincel de corrección</span></div>
+        <div><kbd>H</kbd><span>Herramienta mano</span></div>
+        <div><kbd>Espacio</kbd><span>Desplazar temporalmente</span></div>
+        <div><kbd>Ctrl 0</kbd><span>Ajustar página al lienzo</span></div>
+        <div><kbd>Ctrl + / −</kbd><span>Acercar o alejar</span></div>
+        <div><kbd>Ctrl Z</kbd><span>Deshacer</span></div>
+        <div><kbd>Ctrl ⇧ Z</kbd><span>Rehacer</span></div>
+        <div><kbd>Ctrl S</kbd><span>Guardar página</span></div>
+        <div><kbd>Supr</kbd><span>Eliminar región</span></div>
+        <div><kbd>[ / ]</kbd><span>Cambiar tamaño del pincel</span></div>
+      </div>
+      <p class="shortcut-tip">Consejo: haz doble clic sobre el texto de una región para editarlo directamente sobre la página.</p>
+    </section>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -29,6 +29,7 @@ class ManualRegion:
     deleted: bool = False
     auto_font_size: bool = True
     font_size: Optional[int] = None
+    rotation_angle: float = 0.0
     ui_layout: Optional[Dict[str, Any]] = None
 
 
@@ -95,6 +96,19 @@ def _optional_font_size(value: Any) -> Optional[int]:
     return max(6, min(160, size))
 
 
+def _rotation_angle(value: Any) -> float:
+    try:
+        angle = float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    while angle <= -90.0:
+        angle += 180.0
+    while angle > 90.0:
+        angle -= 180.0
+    angle = max(-89.0, min(89.0, angle))
+    return 0.0 if abs(angle) < 0.65 else round(angle, 3)
+
+
 def parse_manual_regions(payload: Iterable[Dict[str, Any]], image_width: int, image_height: int) -> List[ManualRegion]:
     regions: List[ManualRegion] = []
     for fallback_index, item in enumerate(payload):
@@ -137,6 +151,7 @@ def parse_manual_regions(payload: Iterable[Dict[str, Any]], image_width: int, im
                 deleted=deleted,
                 auto_font_size=auto_font_size,
                 font_size=font_size,
+                rotation_angle=_rotation_angle(item.get("rotation_angle", item.get("text_rotation_angle", ui_layout.get("rotation_angle", 0.0) if ui_layout else 0.0))),
                 ui_layout=ui_layout,
             )
         )
@@ -423,6 +438,7 @@ def render_manual_page(
             [r.text for r in drawable],
             text_styles=[r.style for r in drawable],
             font_sizes=[None if r.auto_font_size else r.font_size for r in drawable],
+            rotation_angles=[r.rotation_angle for r in drawable],
             ui_layouts=[r.ui_layout for r in drawable],
         )
 
@@ -464,6 +480,7 @@ def render_manual_region_preview(
             [region.text],
             text_styles=[region.style],
             font_sizes=[None if region.auto_font_size else region.font_size],
+            rotation_angles=[region.rotation_angle],
             ui_layouts=[region.ui_layout],
         )
 
@@ -492,6 +509,7 @@ def write_corrections(path: str | Path, regions: Sequence[ManualRegion], brush_s
                 "deleted": region.deleted,
                 "auto_font_size": region.auto_font_size,
                 "font_size": region.font_size,
+                "rotation_angle": region.rotation_angle,
                 "ui_layout": region.ui_layout,
             }
             for region in regions

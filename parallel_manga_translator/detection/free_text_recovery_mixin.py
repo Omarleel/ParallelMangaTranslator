@@ -11,6 +11,7 @@ from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleC
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner
+from parallel_manga_translator.geometry.text_orientation import text_rotation_metadata
 
 logger = get_logger(__name__)
 BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
@@ -102,6 +103,7 @@ class FreeTextRecoveryMixin:
                 "fine_text_mask_source": source,
                 "fine_text_mask_pixels": int(cv2.countNonZero(mask)),
             }
+            metadata.update(text_rotation_metadata(group, source="free_text_ocr_polygons"))
             if filter_reason == "cjk_vertical_bbox_retry_ocr":
                 metadata.update({
                     "ocr_global_hint_used_as_bbox_only": True,

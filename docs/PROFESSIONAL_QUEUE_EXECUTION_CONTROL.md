@@ -8,8 +8,6 @@
 - Cancelación cooperativa que conserva las páginas terminadas y marca las restantes como canceladas.
 - Recuperación de manifiestos después de cierre abrupto, incluyendo detección de estados `processing` abandonados.
 - Reintentos configurables por página, con espera exponencial y contador persistente.
-- Límites por trabajo para llamadas LLM/tradicionales, tokens, caracteres y coste estimado.
-- Persistencia síncrona del consumo externo después de cada reserva/llamada para no perder presupuesto en un reinicio.
 - Caché y log separados por trabajo.
 - Endpoints y controles UI para pausar, reanudar y cancelar.
 - Instalador automático `install_pmt.py`, más wrappers `.bat` y `.sh`.
@@ -25,7 +23,7 @@ El control es cooperativo. No es posible interrumpir de forma segura un kernel C
 
 Cada trabajo contiene:
 
-- `manifest.json`: estado, páginas, intentos, uso externo y opciones.
+- `manifest.json`: estado, páginas, intentos y opciones del trabajo.
 - `.cache/`: caché privada del trabajo.
 - `job.log`: log privado del trabajo.
 - `outputs/`: resultados y correcciones.
@@ -52,4 +50,4 @@ python install_pmt.py --profile cpu
 
 ## Pruebas añadidas
 
-Las pruebas cubren persistencia FIFO, recuperación de filas `processing`, pausa/cancelación cooperativa, liberación del worker al pausar, recuperación de páginas completas e incompletas, reintentos transitorios, presupuestos externos y selección de perfiles de hardware.
+Las pruebas cubren persistencia FIFO, recuperación de filas `processing`, pausa/cancelación cooperativa, liberación del worker al pausar, recuperación de páginas completas e incompletas, reintentos transitorios, selección del modelo de inpainting y perfiles de hardware.

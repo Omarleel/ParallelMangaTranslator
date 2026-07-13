@@ -17,8 +17,7 @@ from parallel_manga_translator.config.app_config import (
     QualityConfig,
     TranslationConfig,
 )
-from parallel_manga_translator.config.constants import MODELOS_INPAINT
-from parallel_manga_translator.infrastructure.execution_control import ExternalUsageLimits
+from parallel_manga_translator.config.constants import MODELOS_INPAINT, normalizar_modelo_inpaint
 from parallel_manga_translator.config.environment import bool_value, float_value, int_value
 
 
@@ -117,7 +116,7 @@ class ConfigManager:
             idioma_entrada=str(translation_section.get("source_language", "Japonés")),
             idioma_salida=str(translation_section.get("target_language", "Español")),
             metodo_traduccion=str(translation_section.get("method", "LLM")),
-            modelo_inpaint=str(translation_section.get("inpaint_model", model_default)),
+            modelo_inpaint=normalizar_modelo_inpaint(translation_section.get("inpaint_model", model_default), model_default),
             lore_manga=str(translation_section.get("lore", "")),
             glossary_path=str(translation_section.get("glossary", "")),
             groq_api_key=os.getenv("GROQ_API_KEY", ""),
@@ -131,23 +130,6 @@ class ConfigManager:
                 seed=int_value(llm_section.get("seed", 7), 7),
                 max_retries=max(1, int_value(llm_section.get("max_retries", 3), 3)),
             ),
-            external_limits=self._build_external_usage_limits(),
-        )
-
-
-    def _build_external_usage_limits(self) -> ExternalUsageLimits:
-        section = self._section("external_limits")
-        return ExternalUsageLimits(
-            max_total_calls=max(0, int_value(section.get("max_total_calls", 0), 0)),
-            max_llm_calls=max(0, int_value(section.get("max_llm_calls", 0), 0)),
-            max_traditional_calls=max(0, int_value(section.get("max_traditional_calls", 0), 0)),
-            max_input_tokens=max(0, int_value(section.get("max_input_tokens", 0), 0)),
-            max_output_tokens=max(0, int_value(section.get("max_output_tokens", 0), 0)),
-            max_characters=max(0, int_value(section.get("max_characters", 0), 0)),
-            max_cost_usd=max(0.0, float_value(section.get("max_cost_usd", 0.0), 0.0)),
-            llm_input_cost_per_million_tokens=max(0.0, float_value(section.get("llm_input_cost_per_million_tokens", 0.0), 0.0)),
-            llm_output_cost_per_million_tokens=max(0.0, float_value(section.get("llm_output_cost_per_million_tokens", 0.0), 0.0)),
-            traditional_cost_per_million_characters=max(0.0, float_value(section.get("traditional_cost_per_million_characters", 0.0), 0.0)),
         )
 
     @staticmethod
