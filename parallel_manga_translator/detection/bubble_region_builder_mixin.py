@@ -254,7 +254,11 @@ class BubbleRegionBuilderMixin:
             regions[idx].metadata["text_line_boxes"] = [list(map(int, box)) for box in boxes]
             regions[idx].metadata["ocr_global_hint"] = bool(regions[idx].source_text_hint)
             regions[idx].metadata["assigned_ocr_detections"] = len(group)
-            regions[idx].metadata.update(text_rotation_metadata(group, source="assigned_ocr_polygons"))
+            regions[idx].metadata.update(text_rotation_metadata(
+                group,
+                source="assigned_ocr_polygons",
+                source_language=self.idioma_entrada,
+            ))
         return assigned, grouped
 
     def _is_inside_existing_region(self, text_box: Box, regions: Sequence[TextRegion]) -> bool:

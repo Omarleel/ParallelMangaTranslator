@@ -103,7 +103,13 @@ class FreeTextRecoveryMixin:
                 "fine_text_mask_source": source,
                 "fine_text_mask_pixels": int(cv2.countNonZero(mask)),
             }
-            metadata.update(text_rotation_metadata(group, source="free_text_ocr_polygons"))
+            layout_hint = "vertical_cjk" if filter_reason == "cjk_vertical_bbox_retry_ocr" else ""
+            metadata.update(text_rotation_metadata(
+                group,
+                source="free_text_ocr_polygons",
+                source_language=self.idioma_entrada,
+                layout_hint=layout_hint,
+            ))
             if filter_reason == "cjk_vertical_bbox_retry_ocr":
                 metadata.update({
                     "ocr_global_hint_used_as_bbox_only": True,

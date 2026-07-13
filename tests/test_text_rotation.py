@@ -9,7 +9,9 @@ import numpy as np
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.geometry.text_orientation import (
+    effective_text_rotation_angle,
     estimate_text_rotation,
+    is_vertical_cjk_layout,
     polygon_text_angle,
     text_rotation_metadata,
 )
@@ -67,6 +69,44 @@ class TextRotationDetectionTests(unittest.TestCase):
         self.assertEqual(len(regions), 1)
         self.assertAlmostEqual(regions[0].metadata["text_rotation_angle"], -16.0, delta=0.2)
         self.assertEqual(regions[0].metadata["text_rotation_source"], "assigned_ocr_polygons")
+
+    def test_vertical_japanese_column_does_not_rotate_translation(self):
+        image = np.full((240, 180, 3), 255, dtype=np.uint8)
+        mask = np.zeros((240, 180), dtype=np.uint8)
+        cv2.rectangle(mask, (30, 20), (150, 220), 255, -1)
+        region = TextRegion(
+            bbox=(30, 20, 120, 200),
+            text_bbox=(30, 20, 120, 200),
+            mask=mask,
+            kind="dialogue",
+            confidence=0.8,
+        )
+        detection = (rotated_rectangle(90, 120, 150, 28, 88.0), "縦書きです", 0.96)
+
+        regions = BubbleDetector("Japonés").build_regions_from_bubbles_and_text(image, [region], [detection])
+
+        metadata = regions[0].metadata
+        self.assertAlmostEqual(metadata["text_rotation_detected_angle"], 88.0, delta=0.2)
+        self.assertEqual(metadata["text_rotation_angle"], 0.0)
+        self.assertTrue(metadata["text_rotation_suppressed"])
+        self.assertEqual(metadata["source_text_layout"], "vertical_cjk")
+
+    def test_vertical_cjk_detection_does_not_affect_non_cjk_text(self):
+        detections = [(rotated_rectangle(90, 120, 150, 28, 82.0), "VERTICAL", 0.95)]
+
+        metadata = text_rotation_metadata(detections, source_language="Inglés")
+
+        self.assertFalse(is_vertical_cjk_layout(detections, source_language="Inglés"))
+        self.assertAlmostEqual(metadata["text_rotation_angle"], 82.0, delta=0.2)
+        self.assertFalse(metadata["text_rotation_suppressed"])
+
+    def test_legacy_vertical_layout_hint_forces_effective_zero_angle(self):
+        metadata = {
+            "text_rotation_angle": 87.0,
+            "layout_hint": "vertical_cjk",
+        }
+
+        self.assertEqual(effective_text_rotation_angle(metadata, source_language="Japonés"), 0.0)
 
     def test_group_estimation_rejects_a_small_outlier(self):
         detections = [

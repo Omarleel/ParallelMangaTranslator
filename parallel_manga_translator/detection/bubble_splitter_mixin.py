@@ -359,7 +359,11 @@ class BubbleSplitterMixin:
                     "split_cluster_min_gap_px": self.split_cluster_min_gap_px,
                     "ocr_group_text": text_hint,
                 })
-                metadata.update(text_rotation_metadata(group, source="split_cluster_ocr_polygons"))
+                metadata.update(text_rotation_metadata(
+                    group,
+                    source="split_cluster_ocr_polygons",
+                    source_language=self.idioma_entrada,
+                ))
                 created_regions.append(TextRegion(
                     bbox=bbox,
                     text_bbox=text_box,

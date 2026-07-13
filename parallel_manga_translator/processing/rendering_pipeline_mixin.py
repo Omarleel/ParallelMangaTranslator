@@ -11,6 +11,7 @@ import torch
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.models.processing_models import TextRegion
+from parallel_manga_translator.geometry.text_orientation import effective_text_rotation_angle
 from parallel_manga_translator.translation.text_normalization import OcrTextNormalizer
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
@@ -20,6 +21,13 @@ logger = get_logger(__name__)
 
 class RenderingPipelineMixin:
     """Renderizado final y publicación de colas de salida."""
+
+    def _region_rotation_angle(self, region: Optional[TextRegion]) -> float:
+        if region is None:
+            return 0.0
+        metadata = getattr(region, "metadata", {}) or {}
+        source_language = metadata.get("source_language") or getattr(self, "idioma_entrada", "")
+        return effective_text_rotation_angle(metadata, source_language=source_language)
 
     @staticmethod
     def _es_estilo_onomatopeya(estilo: str) -> bool:
@@ -45,7 +53,8 @@ class RenderingPipelineMixin:
                     "Confianza": round(float(region.confidence), 4),
                     "Coordenadas texto original": [[region.text_bbox[0], region.text_bbox[1]], [region.text_bbox[0] + region.text_bbox[2], region.text_bbox[1] + region.text_bbox[3]]],
                     "Fuente máscara": region.metadata.get("mask_source", ""),
-                    "Ángulo de texto": float(region.metadata.get("text_rotation_angle", 0.0) or 0.0),
+                    "Ángulo de texto": self._region_rotation_angle(region),
+                    "Ángulo detectado del original": float(region.metadata.get("text_rotation_detected_angle", region.metadata.get("text_rotation_angle", 0.0)) or 0.0),
                     "Confianza de inclinación": float(region.metadata.get("text_rotation_confidence", 0.0) or 0.0),
                 })
             if idx < len(self.ultimas_asignaciones_hablante):
@@ -84,7 +93,8 @@ class RenderingPipelineMixin:
                     "Tipo": region.kind,
                     "Confianza": round(float(region.confidence), 4),
                     "Fuente máscara": region.metadata.get("mask_source", ""),
-                    "Ángulo de texto": float(region.metadata.get("text_rotation_angle", 0.0) or 0.0),
+                    "Ángulo de texto": self._region_rotation_angle(region),
+                    "Ángulo detectado del original": float(region.metadata.get("text_rotation_detected_angle", region.metadata.get("text_rotation_angle", 0.0)) or 0.0),
                     "Confianza de inclinación": float(region.metadata.get("text_rotation_confidence", 0.0) or 0.0),
                 })
                 try:
@@ -94,7 +104,7 @@ class RenderingPipelineMixin:
                         texto_layout,
                         estilo,
                         clip_mask=region.local_mask(),
-                        rotation_angle=float(region.metadata.get("text_rotation_angle", 0.0) or 0.0),
+                        rotation_angle=self._region_rotation_angle(region),
                         image_shape=getattr(region.mask, "shape", None),
                         reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,
                     )
@@ -134,7 +144,7 @@ class RenderingPipelineMixin:
             textos_para_render,
             text_styles=self.ultimo_estilos_texto,
             clip_masks=clip_masks,
-            rotation_angles=[float(region.metadata.get("text_rotation_angle", 0.0) or 0.0) for region in self.ultimas_regiones]
+            rotation_angles=[self._region_rotation_angle(region) for region in self.ultimas_regiones]
             if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores)
             else None,
             reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,
