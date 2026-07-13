@@ -73,8 +73,6 @@ siguen seleccionando automáticamente el dispositivo disponible.
 
 Además de la CLI, el proyecto incluye una interfaz web local para revisar páginas a medida que se procesan. Permite cargar una carpeta desde el navegador o un archivo `.zip`, ver la salida automática de traducción y limpieza, alternar entre original/limpieza/traducción/corregida, editar traducciones manualmente, mover o redimensionar regiones de texto y revertir la limpieza por región antes de guardar una nueva imagen corregida. El espacio de revisión sigue un flujo familiar de editor gráfico: herramientas a la izquierda, documento y comandos arriba, lienzo en el centro, propiedades/capas/retoque a la derecha y una barra de estado inferior. En móvil, los paneles se convierten en cajones y las herramientas quedan fijas en la parte inferior.
 
-La edición directa vuelve a usar una previsualización HTML inmediata y estable, sin sustituir el texto editable por una rasterización del backend. El inspector conserva los controles por región para alineación horizontal/vertical, interlineado y desplazamiento interno. También incluye ocho tiradores de redimensionado, rotación directa, centrado, ajuste de caja al texto y duplicado de regiones. El resultado definitivo continúa generándose al guardar mediante el motor de renderizado del proyecto.
-
 Instala las dependencias y lanza la UI:
 
 ```bash
