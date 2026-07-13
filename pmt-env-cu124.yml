@@ -1,4 +1,4 @@
-name: ParallelMangaTranslator-gpu
+name: ParallelMangaTranslator-cu124
 channels:
   - conda-forge
   - defaults
@@ -17,11 +17,10 @@ dependencies:
       # Dependencias principales del proyecto
       - easyocr
       - manga-ocr
-      - deep_translator
+      - deep-translator
       - Pillow>=10.0
       - wget
       - colorama
-      - nest_asyncio
       - nest-asyncio
       - python-dotenv
       - pydrive2
@@ -30,8 +29,12 @@ dependencies:
       - numpy<2
       - PyYAML>=6.0
       - ultralytics>=8.3.0
-      - huggingface_hub>=0.23.0
+      - huggingface-hub>=0.23.0
       # Importado como cv2 en el código; falta en requirements.txt del adjunto
       - opencv-python-headless>=4.8
       # Utilidad para probar/importar el proyecto
+      - requests>=2.31
+      - fastapi>=0.110
+      - uvicorn[standard]>=0.27
+      - python-multipart>=0.0.9
       - pytest

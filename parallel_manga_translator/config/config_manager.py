@@ -18,6 +18,7 @@ from parallel_manga_translator.config.app_config import (
     TranslationConfig,
 )
 from parallel_manga_translator.config.constants import MODELOS_INPAINT
+from parallel_manga_translator.infrastructure.execution_control import ExternalUsageLimits
 from parallel_manga_translator.config.environment import bool_value, float_value, int_value
 
 
@@ -130,6 +131,23 @@ class ConfigManager:
                 seed=int_value(llm_section.get("seed", 7), 7),
                 max_retries=max(1, int_value(llm_section.get("max_retries", 3), 3)),
             ),
+            external_limits=self._build_external_usage_limits(),
+        )
+
+
+    def _build_external_usage_limits(self) -> ExternalUsageLimits:
+        section = self._section("external_limits")
+        return ExternalUsageLimits(
+            max_total_calls=max(0, int_value(section.get("max_total_calls", 0), 0)),
+            max_llm_calls=max(0, int_value(section.get("max_llm_calls", 0), 0)),
+            max_traditional_calls=max(0, int_value(section.get("max_traditional_calls", 0), 0)),
+            max_input_tokens=max(0, int_value(section.get("max_input_tokens", 0), 0)),
+            max_output_tokens=max(0, int_value(section.get("max_output_tokens", 0), 0)),
+            max_characters=max(0, int_value(section.get("max_characters", 0), 0)),
+            max_cost_usd=max(0.0, float_value(section.get("max_cost_usd", 0.0), 0.0)),
+            llm_input_cost_per_million_tokens=max(0.0, float_value(section.get("llm_input_cost_per_million_tokens", 0.0), 0.0)),
+            llm_output_cost_per_million_tokens=max(0.0, float_value(section.get("llm_output_cost_per_million_tokens", 0.0), 0.0)),
+            traditional_cost_per_million_characters=max(0.0, float_value(section.get("traditional_cost_per_million_characters", 0.0), 0.0)),
         )
 
     @staticmethod
@@ -147,13 +165,27 @@ class ConfigManager:
             return default
         return normalized
 
+    @staticmethod
+    def _resolve_ocr_gpu(value: Any) -> bool:
+        """Resuelve `ocr.gpu: auto` sin exigir que CUDA esté instalada al leer YAML."""
+        normalized = str(value if value is not None else "auto").strip().lower()
+        if normalized in {"auto", "detect", "automatic"}:
+            try:
+                import torch
+
+                # En PyTorch ROCm la API compatible también se expone como torch.cuda.
+                return bool(torch.cuda.is_available())
+            except Exception:
+                return False
+        return bool_value(value, False)
+
     def _build_ocr_config(self) -> OcrConfig:
         ocr_section = self._section("ocr")
         processing_section = self._section("processing")
         return OcrConfig(
             detection_engine=self._normalize_ocr_engine(ocr_section.get("detection_engine", "auto")),
             transcription_engine=self._normalize_ocr_engine(ocr_section.get("transcription_engine", "auto")),
-            gpu=bool_value(ocr_section.get("gpu", False), False),
+            gpu=self._resolve_ocr_gpu(ocr_section.get("gpu", "auto")),
             paddle_subprocess=self._normalize_ocr_engine(ocr_section.get("paddle_subprocess", "auto")),
             fast_mode=bool_value(ocr_section.get("fast_mode", processing_section.get("fast_mode", False)), False),
         )

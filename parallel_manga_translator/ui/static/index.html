@@ -118,6 +118,39 @@
               </label>
             </div>
             <p class="hint">Auto usa la mejor opción disponible según idioma y proceso. La detección/localización no usa MangaOCR porque no entrega cajas.</p>
+
+            <div class="grid-fields two">
+              <label class="field compact">
+                <span>Reintentos por página</span>
+                <input id="pageMaxRetries" name="page_max_retries" type="number" min="0" max="20" value="2" />
+              </label>
+              <label class="field compact">
+                <span>Espera inicial entre reintentos (s)</span>
+                <input id="retryBackoffSeconds" name="retry_backoff_seconds" type="number" min="0" max="300" step="0.5" value="2" />
+              </label>
+              <label class="field compact">
+                <span>Máximo de llamadas externas</span>
+                <input id="maxExternalCalls" name="max_total_external_calls" type="number" min="0" value="0" />
+              </label>
+              <label class="field compact">
+                <span>Presupuesto máximo (USD)</span>
+                <input id="maxCostUsd" name="max_cost_usd" type="number" min="0" step="0.0001" value="0" />
+              </label>
+            </div>
+            <details class="budget-details">
+              <summary>Tarifas y límites detallados</summary>
+              <div class="grid-fields two">
+                <label class="field compact"><span>Máx. llamadas LLM</span><input id="maxLlmCalls" type="number" min="0" value="0" /></label>
+                <label class="field compact"><span>Máx. llamadas tradicionales</span><input id="maxTraditionalCalls" type="number" min="0" value="0" /></label>
+                <label class="field compact"><span>Máx. tokens entrada</span><input id="maxInputTokens" type="number" min="0" value="0" /></label>
+                <label class="field compact"><span>Máx. tokens salida</span><input id="maxOutputTokens" type="number" min="0" value="0" /></label>
+                <label class="field compact"><span>Máx. caracteres tradicionales</span><input id="maxTranslationCharacters" type="number" min="0" value="0" /></label>
+                <label class="field compact"><span>USD / millón tokens entrada</span><input id="llmInputRate" type="number" min="0" step="0.0001" value="0" /></label>
+                <label class="field compact"><span>USD / millón tokens salida</span><input id="llmOutputRate" type="number" min="0" step="0.0001" value="0" /></label>
+                <label class="field compact"><span>USD / millón caracteres</span><input id="traditionalCharRate" type="number" min="0" step="0.0001" value="0" /></label>
+              </div>
+              <p class="hint">Cero significa sin límite. Para aplicar un presupuesto monetario debes indicar las tarifas del proveedor/modelo.</p>
+            </details>
           </div>
         </div>
 
@@ -167,6 +200,12 @@
         <p id="jobMessage" class="muted">Sin proyecto cargado.</p>
         <div class="progress-bar"><span id="progressBar"></span></div>
         <p id="progressText" class="muted">0 / 0 páginas</p>
+        <p id="usageText" class="muted">0 llamadas externas · USD 0.0000</p>
+        <div class="job-control-row">
+          <button id="pauseJobBtn" class="ghost" type="button" disabled>Pausar</button>
+          <button id="resumeJobBtn" class="ghost" type="button" disabled>Reanudar</button>
+          <button id="cancelJobBtn" class="danger" type="button" disabled>Cancelar</button>
+        </div>
         <button id="exportBtn" class="ghost export-btn" type="button" disabled>Exportar ZIP</button>
         <button id="newJobBtn" class="ghost export-btn" type="button">Nuevo trabajo</button>
       </section>

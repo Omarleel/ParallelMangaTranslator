@@ -16,12 +16,20 @@ from typing import Any, Dict, List, Optional, Sequence
 import cv2
 
 from parallel_manga_translator.cli import build_default_config, build_image_processor, prepare_assets, prepare_runtime
-from parallel_manga_translator.config.app_config import LlmConfig, OcrConfig
 from parallel_manga_translator.config.runtime_config import set_active_config
+from parallel_manga_translator.infrastructure.execution_control import (
+    ExecutionControl,
+    ExternalUsageLimitError,
+    ExternalUsageLimits,
+    JobCancelledError,
+    JobPausedError,
+    execution_control_scope,
+)
 from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
 from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, render_manual_region_preview, restore_mask_erased_pixels, write_corrections
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
+from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
 
 logger = get_logger(__name__)
 
@@ -43,6 +51,18 @@ class JobOptions:
     detection_engine: str = "auto"
     transcription_engine: str = "auto"
     translator: str = "llm"  # google | llm
+    page_max_retries: int = 2
+    retry_backoff_seconds: float = 2.0
+    max_total_external_calls: int = 0
+    max_llm_calls: int = 0
+    max_traditional_calls: int = 0
+    max_input_tokens: int = 0
+    max_output_tokens: int = 0
+    max_translation_characters: int = 0
+    max_cost_usd: float = 0.0
+    llm_input_cost_per_million_tokens: float = 0.0
+    llm_output_cost_per_million_tokens: float = 0.0
+    traditional_cost_per_million_characters: float = 0.0
 
 
 @dataclass
@@ -59,6 +79,10 @@ class PageState:
     corrections_path: str = ""
     regions: List[Dict[str, Any]] = field(default_factory=list)
     brush_strokes: List[Dict[str, Any]] = field(default_factory=list)
+    attempt_count: int = 0
+    last_error: str = ""
+    started_at: float = 0.0
+    completed_at: float = 0.0
     updated_at: float = field(default_factory=time.time)
 
     @property
@@ -84,6 +108,13 @@ class JobState:
     failed_count: int = 0
     active_page: int = 0
     options: JobOptions = field(default_factory=JobOptions)
+    pause_requested: bool = False
+    cancel_requested: bool = False
+    resume_requested: bool = False
+    recovery_count: int = 0
+    started_at: float = 0.0
+    finished_at: float = 0.0
+    usage: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def total_count(self) -> int:
@@ -150,6 +181,10 @@ def page_to_public(page: PageState, job_id: str) -> Dict[str, Any]:
         "status": page.status,
         "display_status": "corrected" if corrected_exists else page.status,
         "message": page.message,
+        "attempt_count": page.attempt_count,
+        "last_error": page.last_error,
+        "started_at": page.started_at,
+        "completed_at": page.completed_at,
         "regions": page.regions,
         "brush_strokes": page.brush_strokes,
         "has_corrected": corrected_exists,
@@ -177,21 +212,49 @@ def job_to_public(job: JobState) -> Dict[str, Any]:
         "total_count": job.total_count,
         "progress": job.progress,
         "active_page": job.active_page,
+        "pause_requested": job.pause_requested,
+        "cancel_requested": job.cancel_requested,
+        "resume_requested": job.resume_requested,
+        "recovery_count": job.recovery_count,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+        "usage": dict(job.usage or {}),
         "options": asdict(job.options) if hasattr(job.options, "__dataclass_fields__") else job.options,
         "pages": [page_to_public(page, job.job_id) for page in job.pages],
     }
 
 
 class JobManager:
-    def __init__(self, jobs_root: Path = PROJECT_JOBS_DIR, config_path: str = "config.yaml") -> None:
-        self.jobs_root = jobs_root
+    def __init__(
+        self,
+        jobs_root: Path = PROJECT_JOBS_DIR,
+        config_path: str = "config.yaml",
+        *,
+        start_worker: bool = True,
+    ) -> None:
+        self.jobs_root = Path(jobs_root).resolve()
         self.config_path = config_path
         self.jobs_root.mkdir(parents=True, exist_ok=True)
         self._jobs: Dict[str, JobState] = {}
         self._lock = threading.RLock()
-        # El pipeline carga modelos grandes y usa configuración global; procesar de a un job evita pelear por GPU/config.
+        # El pipeline usa configuración global y modelos CUDA grandes. Un único worker
+        # garantiza aislamiento entre trabajos y evita duplicar memoria de GPU.
         self._processing_lock = threading.Lock()
         self._assets_prepared = False
+        self._queue = PersistentJobQueue(self.jobs_root / "queue.sqlite3")
+        self._queue_condition = threading.Condition(threading.RLock())
+        self._controls: Dict[str, ExecutionControl] = {}
+        self._shutdown = threading.Event()
+        self._worker_thread: Optional[threading.Thread] = None
+        self._queue.recover_processing()
+        self._recover_interrupted_jobs()
+        if start_worker:
+            self._worker_thread = threading.Thread(
+                target=self._worker_loop,
+                name="pmt-persistent-worker",
+                daemon=True,
+            )
+            self._worker_thread.start()
 
     def create_job_from_paths(self, *, title: str, input_dir: Path, output_dir: Path, root_dir: Path, options: JobOptions | None = None) -> JobState:
         image_files = [p.name for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
@@ -285,8 +348,96 @@ class JobManager:
 
     def start_job(self, job_id: str) -> None:
         job = self.get_job(job_id)
-        thread = threading.Thread(target=self._run_job, args=(job.job_id,), daemon=True)
-        thread.start()
+        with self._lock:
+            if job.status in {"ready", "cancelled"}:
+                raise ValueError(f"El trabajo ya está en estado {job.status}.")
+            if job.status == "failed":
+                for page in job.pages:
+                    if page.status == "failed":
+                        page.status = "pending"
+                        page.message = "Pendiente de un nuevo intento solicitado por el usuario."
+                        page.attempt_count = 0
+                        page.last_error = ""
+                        page.completed_at = 0.0
+                self._recount(job)
+            job.pause_requested = False
+            job.cancel_requested = False
+            job.resume_requested = False
+            job.status = "queued"
+            job.message = "Trabajo añadido a la cola persistente."
+            job.updated_at = time.time()
+            self._save_manifest(job)
+        self._queue.enqueue(job.job_id)
+        self._wake_worker()
+
+    def pause_job(self, job_id: str) -> JobState:
+        job = self.get_job(job_id)
+        with self._lock:
+            if job.status in {"ready", "failed", "cancelled"}:
+                raise ValueError(f"No se puede pausar un trabajo en estado {job.status}.")
+            job.pause_requested = True
+            job.updated_at = time.time()
+            control = self._controls.get(job_id)
+            if control is not None:
+                job.status = "pausing"
+                job.message = "Pausa solicitada; se detendrá en el próximo punto seguro."
+                control.request_pause()
+            else:
+                self._queue.remove(job_id)
+                job.status = "paused"
+                job.message = "Trabajo pausado en la cola."
+            self._save_manifest(job)
+        return job
+
+    def resume_job(self, job_id: str) -> JobState:
+        job = self.get_job(job_id)
+        with self._lock:
+            if job.status not in {"paused", "pausing", "resuming"}:
+                raise ValueError("El trabajo no está pausado.")
+            job.pause_requested = False
+            job.updated_at = time.time()
+            control = self._controls.get(job_id)
+            if control is not None and not control.pause_triggered:
+                # La pausa aún no llegó a un checkpoint: se puede retirar sin perder
+                # el trabajo actual ni repetir la página.
+                job.status = "processing"
+                job.message = "Solicitud de pausa retirada; el procesamiento continúa."
+                job.resume_requested = False
+                control.resume()
+            elif control is not None:
+                # El worker ya está desenrollando la página. Se reencolará al salir.
+                job.status = "resuming"
+                job.message = "Reanudación solicitada; el trabajo volverá a la cola al liberar el worker."
+                job.resume_requested = True
+            else:
+                job.status = "queued"
+                job.message = "Trabajo reanudado y devuelto a la cola."
+                job.resume_requested = False
+                self._queue.enqueue(job_id, preserve_time=False)
+            self._save_manifest(job)
+        self._wake_worker()
+        return job
+
+    def cancel_job(self, job_id: str) -> JobState:
+        job = self.get_job(job_id)
+        with self._lock:
+            if job.status in {"ready", "failed", "cancelled"}:
+                return job
+            job.cancel_requested = True
+            job.pause_requested = False
+            job.resume_requested = False
+            job.updated_at = time.time()
+            self._queue.remove(job_id)
+            control = self._controls.get(job_id)
+            if control is not None:
+                job.status = "cancelling"
+                job.message = "Cancelación solicitada; se detendrá en el próximo punto seguro."
+                control.request_cancel()
+            else:
+                self._finalize_cancelled_job(job)
+            self._save_manifest(job)
+        self._wake_worker()
+        return job
 
     def get_job(self, job_id: str) -> JobState:
         with self._lock:
@@ -304,10 +455,206 @@ class JobManager:
             job_id = manifest.parent.name
             if job_id not in known:
                 try:
-                    loaded.append(self._load_manifest(job_id))
+                    job = self._load_manifest(job_id)
+                    loaded.append(job)
+                    with self._lock:
+                        self._jobs[job_id] = job
                 except Exception:
                     continue
-        return [job_to_public(job) for job in sorted(loaded, key=lambda item: item.created_at, reverse=True)]
+        result = []
+        for job in sorted(loaded, key=lambda item: item.created_at, reverse=True):
+            payload = job_to_public(job)
+            payload["queue_position"] = self._queue.position(job.job_id)
+            result.append(payload)
+        return result
+
+    def shutdown(self, timeout: float = 2.0) -> None:
+        self._shutdown.set()
+        self._wake_worker()
+        thread = self._worker_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=max(0.0, float(timeout)))
+
+    def _wake_worker(self) -> None:
+        with self._queue_condition:
+            self._queue_condition.notify_all()
+
+    def _worker_loop(self) -> None:
+        while not self._shutdown.is_set():
+            job_id = self._queue.pop_next()
+            if not job_id:
+                with self._queue_condition:
+                    self._queue_condition.wait(timeout=0.75)
+                continue
+            try:
+                job = self.get_job(job_id)
+                if job.status in {"paused", "cancelled", "ready"}:
+                    continue
+                self._run_job(job_id)
+            except Exception as exc:  # el worker no debe morir por un manifiesto defectuoso
+                logger.exception("El worker persistente falló para %s: %s", job_id, exc)
+                try:
+                    job = self.get_job(job_id)
+                    self._mark_job(job, status="failed", message=f"Error del worker: {exc}")
+                except Exception:
+                    pass
+            finally:
+                self._queue.complete(job_id)
+
+    def _recover_interrupted_jobs(self) -> None:
+        manifest_ids = set()
+        for manifest in self.jobs_root.glob("*/manifest.json"):
+            job_id = manifest.parent.name
+            manifest_ids.add(job_id)
+            try:
+                job = self._load_manifest(job_id)
+            except Exception as exc:
+                logger.warning("No se pudo recuperar el manifiesto %s: %s", manifest, exc)
+                self._queue.remove(job_id)
+                continue
+
+            changed = False
+            for page in job.pages:
+                if page.status == "processing":
+                    if Path(page.clean_path).exists() and Path(page.translated_path).exists():
+                        page.status = "ready"
+                        page.message = "Página recuperada desde archivos ya generados."
+                        page.completed_at = page.completed_at or time.time()
+                    else:
+                        page.status = "pending"
+                        page.message = "Página interrumpida recuperada; pendiente de reintento."
+                    page.updated_at = time.time()
+                    changed = True
+
+            self._recount(job)
+            if job.cancel_requested or job.status == "cancelling":
+                self._finalize_cancelled_job(job)
+                self._queue.remove(job_id)
+                changed = True
+            elif job.pause_requested or job.status in {"paused", "pausing"}:
+                job.status = "paused"
+                job.pause_requested = True
+                job.message = "Trabajo pausado recuperado después del reinicio."
+                self._queue.remove(job_id)
+                changed = True
+            elif job.status in {"processing", "queued", "resuming"}:
+                if all(page.status == "ready" for page in job.pages):
+                    job.status = "ready"
+                    job.message = "Trabajo recuperado: todas las páginas estaban completas."
+                    job.finished_at = job.finished_at or time.time()
+                    self._queue.remove(job_id)
+                else:
+                    job.status = "queued"
+                    job.message = "Trabajo recuperado y devuelto a la cola persistente."
+                    job.recovery_count += 1
+                    self._queue.enqueue(job_id)
+                changed = True
+            elif job.status in {"ready", "failed", "cancelled"}:
+                self._queue.remove(job_id)
+
+            if changed:
+                job.updated_at = time.time()
+                self._save_manifest(job)
+            self._jobs[job_id] = job
+
+        for stale_id in set(self._queue.all_ids()) - manifest_ids:
+            self._queue.remove(stale_id)
+
+    def _on_control_paused(self, job_id: str) -> None:
+        try:
+            job = self.get_job(job_id)
+            with self._lock:
+                job.status = "paused"
+                job.pause_requested = True
+                job.message = "Trabajo pausado en un punto seguro."
+                job.updated_at = time.time()
+                self._save_manifest(job)
+        except Exception:
+            logger.exception("No se pudo guardar la pausa del trabajo %s", job_id)
+
+    def _on_control_resumed(self, job_id: str) -> None:
+        try:
+            job = self.get_job(job_id)
+            with self._lock:
+                job.status = "processing"
+                job.pause_requested = False
+                job.resume_requested = False
+                job.message = "Procesamiento reanudado."
+                job.updated_at = time.time()
+                self._save_manifest(job)
+        except Exception:
+            logger.exception("No se pudo guardar la reanudación del trabajo %s", job_id)
+
+    def _on_usage_changed(self, job_id: str, usage: Dict[str, Any]) -> None:
+        try:
+            job = self.get_job(job_id)
+            with self._lock:
+                job.usage = dict(usage)
+                job.updated_at = time.time()
+                self._save_manifest(job)
+        except Exception:
+            logger.exception("No se pudo guardar el consumo externo del trabajo %s", job_id)
+
+    @staticmethod
+    def _limits_for_job(job: JobState, base: ExternalUsageLimits) -> ExternalUsageLimits:
+        o = job.options
+        def positive(value, fallback):
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return fallback
+            return value if numeric > 0 else fallback
+        return ExternalUsageLimits(
+            max_total_calls=int(positive(o.max_total_external_calls, base.max_total_calls)),
+            max_llm_calls=int(positive(o.max_llm_calls, base.max_llm_calls)),
+            max_traditional_calls=int(positive(o.max_traditional_calls, base.max_traditional_calls)),
+            max_input_tokens=int(positive(o.max_input_tokens, base.max_input_tokens)),
+            max_output_tokens=int(positive(o.max_output_tokens, base.max_output_tokens)),
+            max_characters=int(positive(o.max_translation_characters, base.max_characters)),
+            max_cost_usd=float(positive(o.max_cost_usd, base.max_cost_usd)),
+            llm_input_cost_per_million_tokens=float(positive(o.llm_input_cost_per_million_tokens, base.llm_input_cost_per_million_tokens)),
+            llm_output_cost_per_million_tokens=float(positive(o.llm_output_cost_per_million_tokens, base.llm_output_cost_per_million_tokens)),
+            traditional_cost_per_million_characters=float(positive(o.traditional_cost_per_million_characters, base.traditional_cost_per_million_characters)),
+        )
+
+    @staticmethod
+    def _recount(job: JobState) -> None:
+        job.processed_count = sum(1 for item in job.pages if item.status == "ready")
+        job.failed_count = sum(1 for item in job.pages if item.status == "failed")
+
+    def _finalize_cancelled_job(self, job: JobState) -> None:
+        now = time.time()
+        for page in job.pages:
+            if page.status in {"pending", "processing"}:
+                page.status = "cancelled"
+                page.message = "Cancelada por el usuario."
+                page.completed_at = now
+                page.updated_at = now
+        job.status = "cancelled"
+        job.message = "Trabajo cancelado. Las páginas ya terminadas se conservaron."
+        job.cancel_requested = True
+        job.pause_requested = False
+        job.resume_requested = False
+        job.finished_at = now
+        job.updated_at = now
+        self._recount(job)
+
+    @staticmethod
+    def _remove_partial_outputs(page: PageState) -> None:
+        for path_value in (page.clean_path, page.translated_path):
+            path = Path(path_value)
+            if path.exists():
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _cooperative_backoff(control: ExecutionControl, seconds: float) -> None:
+        deadline = time.monotonic() + max(0.0, seconds)
+        while time.monotonic() < deadline:
+            control.checkpoint()
+            time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
 
     def image_path(self, job_id: str, page_index: int, variant: str) -> Path:
         job = self.get_job(job_id)
@@ -545,6 +892,7 @@ class JobManager:
         method = "LLM" if translator == "llm" else "Tradicional"
         traditional_provider = "google" if translator == "google" else config.translation.traditional_provider
         llm = replace(config.translation.llm, provider=config.translation.llm.provider or "groq")
+        limits = self._limits_for_job(job, config.translation.external_limits)
         translation = replace(
             config.translation,
             idioma_entrada=options.source_language or config.translation.idioma_entrada,
@@ -553,13 +901,20 @@ class JobManager:
             traditional_provider=traditional_provider,
             llm=llm,
             project_dir=job.input_dir,
+            external_limits=limits,
         )
         ocr = replace(
             config.ocr,
             detection_engine=normalize_choice(options.detection_engine, "auto"),
             transcription_engine=normalize_choice(options.transcription_engine, "auto"),
         )
-        return replace(config, translation=translation, ocr=ocr)
+        processing = replace(
+            config.processing,
+            ruta_carpeta_entrada=job.input_dir,
+            cache_dir=str(Path(job.root_dir) / ".cache"),
+        )
+        logging = replace(config.logging, file=str(Path(job.root_dir) / "job.log"))
+        return replace(config, translation=translation, ocr=ocr, processing=processing, logging=logging)
 
     def transcribe_manual_region(self, job_id: str, page_index: int, bbox: Sequence[float], translate: bool = True) -> Dict[str, Any]:
         job = self.get_job(job_id)
@@ -586,8 +941,18 @@ class JobManager:
         original_text = ocr.extract_texts([crop])[0] if crop.size else ""
         translated_text = ""
         if translate and original_text.strip():
-            translator = TranslatorManager.from_config(config.translation, config.character_memory)
-            translated_text = translator.traducir_textos([original_text])[0]
+            control = ExecutionControl(
+                limits=config.translation.external_limits,
+                initial_usage=job.usage,
+                on_usage_changed=lambda usage: self._on_usage_changed(job_id, usage),
+            )
+            with execution_control_scope(control):
+                translator = TranslatorManager.from_config(config.translation, config.character_memory)
+                translated_text = translator.traducir_textos([original_text])[0]
+            with self._lock:
+                job.usage = control.usage_snapshot()
+                job.updated_at = time.time()
+                self._save_manifest(job)
         return {
             "bbox": [x, y, bw, bh],
             "original_text": original_text,
@@ -601,93 +966,252 @@ class JobManager:
     def _run_job(self, job_id: str) -> None:
         job = self.get_job(job_id)
         with self._processing_lock:
-            self._mark_job(job, status="processing", message="Preparando modelos y recursos…")
+            if job.status in {"paused", "cancelled", "ready"}:
+                return
+
+            config = self._build_config_for_job(job)
+            control = ExecutionControl(
+                limits=config.translation.external_limits,
+                initial_usage=job.usage,
+                on_paused=lambda: self._on_control_paused(job_id),
+                on_resumed=lambda: self._on_control_resumed(job_id),
+                on_usage_changed=lambda usage: self._on_usage_changed(job_id, usage),
+            )
+            with self._lock:
+                self._controls[job_id] = control
+                job.status = "processing"
+                job.message = "Preparando modelos y recursos…"
+                job.started_at = job.started_at or time.time()
+                job.finished_at = 0.0
+                job.updated_at = time.time()
+                self._save_manifest(job)
+
             try:
-                prepare_runtime()
-                if not self._assets_prepared:
-                    prepare_assets()
-                    self._assets_prepared = True
+                with execution_control_scope(control):
+                    control.checkpoint()
+                    prepare_runtime()
+                    if not self._assets_prepared:
+                        prepare_assets()
+                        self._assets_prepared = True
 
-                config = self._build_config_for_job(job)
-                processing = replace(
-                    config.processing,
-                    ruta_carpeta_entrada=job.input_dir,
-                    batch_size=1,
-                    usar_paralelismo=False,
-                    max_workers=1,
-                )
-                translation = replace(config.translation, project_dir=job.input_dir)
-                config = replace(config, processing=processing, translation=translation)
-                set_active_config(config)
-                configure_logging(log_file=config.logging.file, level=config.logging.level)
+                    processing = replace(
+                        config.processing,
+                        ruta_carpeta_entrada=job.input_dir,
+                        batch_size=1,
+                        usar_paralelismo=False,
+                        max_workers=1,
+                        cache_dir=str(Path(job.root_dir) / ".cache"),
+                    )
+                    translation = replace(config.translation, project_dir=job.input_dir)
+                    config = replace(config, processing=processing, translation=translation)
+                    set_active_config(config)
+                    configure_logging(log_file=config.logging.file, level=config.logging.level)
 
-                output_dir = Path(job.output_dir)
-                clean_dir = output_dir / "limpieza"
-                translation_dir = output_dir / "traduccion"
-                corrected_dir = output_dir / "corregida"
-                corrections_dir = output_dir / "correcciones"
-                for directory in [clean_dir, translation_dir, corrected_dir, corrections_dir]:
-                    directory.mkdir(parents=True, exist_ok=True)
+                    output_dir = Path(job.output_dir)
+                    clean_dir = output_dir / "limpieza"
+                    translation_dir = output_dir / "traduccion"
+                    corrected_dir = output_dir / "corregida"
+                    corrections_dir = output_dir / "correcciones"
+                    for directory in [clean_dir, translation_dir, corrected_dir, corrections_dir]:
+                        directory.mkdir(parents=True, exist_ok=True)
 
-                trans_queue = CapturingJsonQueue(clean_dir / "Transcripción.json")
-                trad_queue = CapturingJsonQueue(translation_dir / "Traducción.json")
-                trans_queue.put({"agregar_entrada": {"Título": job.title, "Páginas": len(job.pages)}})
-                trad_queue.put({"agregar_entrada": {"Título": job.title, "Páginas": len(job.pages)}})
+                    trans_queue = CapturingJsonQueue(clean_dir / "Transcripción.json")
+                    trad_queue = CapturingJsonQueue(translation_dir / "Traducción.json")
+                    trans_queue.put({"agregar_entrada": {"Título": job.title, "Páginas": len(job.pages)}})
+                    trad_queue.put({"agregar_entrada": {"Título": job.title, "Páginas": len(job.pages)}})
 
-                processor = build_image_processor(config)
-                for page in job.pages:
+                    processor = build_image_processor(config)
+                    max_attempts = max(1, int(job.options.page_max_retries) + 1)
+                    retry_backoff = max(0.0, float(job.options.retry_backoff_seconds))
+
+                    for page in job.pages:
+                        control.checkpoint()
+                        if page.status == "ready" and Path(page.clean_path).exists() and Path(page.translated_path).exists():
+                            continue
+                        if page.status == "cancelled":
+                            continue
+                        if page.attempt_count >= max_attempts and page.status == "failed":
+                            continue
+
+                        page_succeeded = False
+                        while page.attempt_count < max_attempts and not page_succeeded:
+                            control.checkpoint()
+                            with self._lock:
+                                page.attempt_count += 1
+                                page.status = "processing"
+                                page.message = (
+                                    f"Procesando OCR, limpieza, traducción y renderizado "
+                                    f"(intento {page.attempt_count}/{max_attempts})…"
+                                )
+                                page.last_error = ""
+                                page.started_at = page.started_at or time.time()
+                                page.updated_at = time.time()
+                                job.active_page = page.index
+                                job.status = "processing"
+                                job.message = f"Procesando página {page.index + 1}/{len(job.pages)}."
+                                job.updated_at = page.updated_at
+                                self._save_manifest(job)
+
+                            self._remove_partial_outputs(page)
+                            try:
+                                processor.procesar(
+                                    job.input_dir,
+                                    str(clean_dir),
+                                    str(translation_dir),
+                                    {page.index: page.source_filename},
+                                    trans_queue,
+                                    trad_queue,
+                                )
+                                control.checkpoint()
+                                trans_queue.put({"ordenar_por_paginas": {"tipo": "Transcripción"}})
+                                trad_queue.put({"ordenar_por_paginas": {"tipo": "Traducción"}})
+                                if not Path(page.translated_path).exists() or not Path(page.clean_path).exists():
+                                    raise RuntimeError("El pipeline terminó sin generar las imágenes esperadas.")
+
+                                with self._lock:
+                                    page.regions = self._merge_page_regions(job, page, trans_queue.data, trad_queue.data)
+                                    saved_payload = read_corrections_payload(page.corrections_path)
+                                    corrections = saved_payload.get("regions", [])
+                                    if corrections:
+                                        page.regions = self._apply_saved_corrections(page.regions, corrections)
+                                    page.brush_strokes = saved_payload.get("brush_strokes", [])
+                                    page.status = "ready"
+                                    page.message = "Lista para revisión."
+                                    page.last_error = ""
+                                    page.completed_at = time.time()
+                                    page.updated_at = page.completed_at
+                                    self._recount(job)
+                                    job.usage = control.usage_snapshot()
+                                    job.updated_at = page.updated_at
+                                    self._save_manifest(job)
+                                page_succeeded = True
+
+                            except JobPausedError:
+                                self._remove_partial_outputs(page)
+                                with self._lock:
+                                    # Una pausa no consume el presupuesto de reintentos de página.
+                                    page.attempt_count = max(0, page.attempt_count - 1)
+                                    page.status = "pending"
+                                    page.message = "Página pausada; se retomará desde el inicio al reanudar."
+                                    page.updated_at = time.time()
+                                    job.updated_at = page.updated_at
+                                    self._save_manifest(job)
+                                raise
+                            except JobCancelledError:
+                                with self._lock:
+                                    page.status = "cancelled"
+                                    page.message = "Cancelada por el usuario."
+                                    page.completed_at = time.time()
+                                    page.updated_at = page.completed_at
+                                    self._save_manifest(job)
+                                raise
+                            except ExternalUsageLimitError as exc:
+                                with self._lock:
+                                    page.status = "failed"
+                                    page.last_error = str(exc)
+                                    page.message = f"Límite de uso externo alcanzado: {exc}"
+                                    page.completed_at = time.time()
+                                    page.updated_at = page.completed_at
+                                    self._recount(job)
+                                    job.usage = control.usage_snapshot()
+                                    job.updated_at = page.updated_at
+                                    self._save_manifest(job)
+                                raise
+                            except Exception as exc:
+                                logger.exception(
+                                    "Error procesando página %s del job %s, intento %s/%s: %s",
+                                    page.index + 1,
+                                    job_id,
+                                    page.attempt_count,
+                                    max_attempts,
+                                    exc,
+                                )
+                                with self._lock:
+                                    page.last_error = str(exc)
+                                    page.updated_at = time.time()
+                                    if page.attempt_count < max_attempts:
+                                        page.status = "pending"
+                                        page.message = (
+                                            f"Intento {page.attempt_count}/{max_attempts} falló; "
+                                            "se reintentará automáticamente."
+                                        )
+                                    else:
+                                        page.status = "failed"
+                                        page.message = f"Falló después de {max_attempts} intentos: {exc}"
+                                        page.completed_at = page.updated_at
+                                    self._recount(job)
+                                    job.updated_at = page.updated_at
+                                    self._save_manifest(job)
+                                if page.attempt_count < max_attempts:
+                                    self._cooperative_backoff(
+                                        control,
+                                        retry_backoff * (2 ** max(0, page.attempt_count - 1)),
+                                    )
+
                     with self._lock:
-                        page.status = "processing"
-                        page.message = "Procesando OCR, limpieza, traducción y renderizado…"
-                        page.updated_at = time.time()
-                        job.active_page = page.index
-                        job.updated_at = page.updated_at
+                        self._recount(job)
+                        job.usage = control.usage_snapshot()
+                        job.finished_at = time.time()
+                        job.updated_at = job.finished_at
+                        job.pause_requested = False
+                        if job.failed_count == 0:
+                            job.status = "ready"
+                            job.message = "Procesamiento finalizado."
+                        else:
+                            job.status = "failed"
+                            job.message = "Finalizado con páginas fallidas."
                         self._save_manifest(job)
-                    try:
-                        processor.procesar(
-                            job.input_dir,
-                            str(clean_dir),
-                            str(translation_dir),
-                            {page.index: page.source_filename},
-                            trans_queue,
-                            trad_queue,
-                        )
-                        trans_queue.put({"ordenar_por_paginas": {"tipo": "Transcripción"}})
-                        trad_queue.put({"ordenar_por_paginas": {"tipo": "Traducción"}})
-                        if not Path(page.translated_path).exists() or not Path(page.clean_path).exists():
-                            raise RuntimeError("El pipeline terminó sin generar las imágenes esperadas.")
-                        with self._lock:
-                            page.regions = self._merge_page_regions(job, page, trans_queue.data, trad_queue.data)
-                            saved_payload = read_corrections_payload(page.corrections_path)
-                            corrections = saved_payload.get("regions", [])
-                            if corrections:
-                                page.regions = self._apply_saved_corrections(page.regions, corrections)
-                            page.brush_strokes = saved_payload.get("brush_strokes", [])
-                            page.status = "ready"
-                            page.message = "Lista para revisión."
-                            page.updated_at = time.time()
-                            job.processed_count = sum(1 for item in job.pages if item.status == "ready")
-                            job.failed_count = sum(1 for item in job.pages if item.status == "failed")
-                            job.updated_at = page.updated_at
-                            self._save_manifest(job)
-                    except Exception as exc:
-                        logger.exception("Error procesando página %s del job %s: %s", page.index + 1, job_id, exc)
-                        with self._lock:
-                            page.status = "failed"
-                            page.message = str(exc)
-                            page.updated_at = time.time()
-                            job.failed_count = sum(1 for item in job.pages if item.status == "failed")
-                            job.updated_at = page.updated_at
-                            self._save_manifest(job)
 
-                status = "ready" if job.failed_count == 0 else "failed"
-                message = "Procesamiento finalizado." if status == "ready" else "Finalizado con páginas fallidas."
-                self._mark_job(job, status=status, message=message)
+            except JobPausedError:
+                requeue = False
+                with self._lock:
+                    if job.cancel_requested or control.cancel_requested:
+                        self._finalize_cancelled_job(job)
+                    elif job.resume_requested:
+                        job.status = "queued"
+                        job.message = "Trabajo reanudado y devuelto a la cola."
+                        job.pause_requested = False
+                        job.resume_requested = False
+                        job.updated_at = time.time()
+                        self._queue.enqueue(job_id, preserve_time=False)
+                        requeue = True
+                    else:
+                        job.status = "paused"
+                        job.message = "Trabajo pausado. Las páginas terminadas se conservaron."
+                        job.pause_requested = True
+                        job.updated_at = time.time()
+                    job.usage = control.usage_snapshot()
+                    self._save_manifest(job)
+                if requeue:
+                    self._wake_worker()
+            except JobCancelledError:
+                with self._lock:
+                    self._finalize_cancelled_job(job)
+                    job.usage = control.usage_snapshot()
+                    self._save_manifest(job)
+            except ExternalUsageLimitError as exc:
+                logger.warning("Trabajo %s detenido por límites externos: %s", job_id, exc)
+                with self._lock:
+                    job.status = "failed"
+                    job.message = f"Trabajo detenido por límite de llamadas/coste: {exc}"
+                    job.usage = control.usage_snapshot()
+                    job.finished_at = time.time()
+                    job.updated_at = job.finished_at
+                    self._save_manifest(job)
             except Exception as exc:
-                logger.exception("Error preparando job %s: %s", job_id, exc)
-                self._mark_job(job, status="failed", message=f"Error general: {exc}")
+                logger.exception("Error preparando o ejecutando job %s: %s", job_id, exc)
+                with self._lock:
+                    job.status = "failed"
+                    job.message = f"Error general: {exc}"
+                    job.usage = control.usage_snapshot()
+                    job.finished_at = time.time()
+                    job.updated_at = job.finished_at
+                    self._save_manifest(job)
                 failure_path = Path(job.root_dir) / "error.log"
                 failure_path.write_text(traceback.format_exc(), encoding="utf-8")
+            finally:
+                with self._lock:
+                    self._controls.pop(job_id, None)
 
     def _merge_page_regions(
         self,
@@ -861,11 +1385,19 @@ class JobManager:
         if not manifest.exists():
             raise FileNotFoundError("No existe ese trabajo de UI.")
         data = json.loads(manifest.read_text(encoding="utf-8"))
-        pages = [PageState(**page) for page in data.get("pages", [])]
+        if not isinstance(data, dict):
+            raise ValueError("El manifiesto del trabajo no es válido.")
+        page_fields = PageState.__dataclass_fields__
+        pages = [
+            PageState(**{k: v for k, v in page.items() if k in page_fields})
+            for page in data.get("pages", [])
+            if isinstance(page, dict)
+        ]
         data["pages"] = pages
         options = data.get("options", {})
         if isinstance(options, dict):
             data["options"] = JobOptions(**{k: v for k, v in options.items() if k in JobOptions.__dataclass_fields__})
         elif not isinstance(options, JobOptions):
             data["options"] = JobOptions()
-        return JobState(**data)
+        job_fields = JobState.__dataclass_fields__
+        return JobState(**{k: v for k, v in data.items() if k in job_fields})

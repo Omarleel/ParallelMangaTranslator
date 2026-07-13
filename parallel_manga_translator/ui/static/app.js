@@ -52,6 +52,18 @@ const targetLanguage = $('targetLanguage');
 const translatorSelect = $('translatorSelect');
 const detectionEngine = $('detectionEngine');
 const transcriptionEngine = $('transcriptionEngine');
+const pageMaxRetries = $('pageMaxRetries');
+const retryBackoffSeconds = $('retryBackoffSeconds');
+const maxExternalCalls = $('maxExternalCalls');
+const maxCostUsd = $('maxCostUsd');
+const maxLlmCalls = $('maxLlmCalls');
+const maxTraditionalCalls = $('maxTraditionalCalls');
+const maxInputTokens = $('maxInputTokens');
+const maxOutputTokens = $('maxOutputTokens');
+const maxTranslationCharacters = $('maxTranslationCharacters');
+const llmInputRate = $('llmInputRate');
+const llmOutputRate = $('llmOutputRate');
+const traditionalCharRate = $('traditionalCharRate');
 const advancedToggle = $('advancedToggle');
 const advancedOptions = $('advancedOptions');
 const continueLastBtn = $('continueLastBtn');
@@ -65,6 +77,10 @@ const jobMessage = $('jobMessage');
 const jobOptionsSummary = $('jobOptionsSummary');
 const progressBar = $('progressBar');
 const progressText = $('progressText');
+const usageText = $('usageText');
+const pauseJobBtn = $('pauseJobBtn');
+const resumeJobBtn = $('resumeJobBtn');
+const cancelJobBtn = $('cancelJobBtn');
 const exportBtn = $('exportBtn');
 const reviewLayout = $('reviewLayout');
 const waitState = $('waitState');
@@ -591,6 +607,18 @@ uploadForm.addEventListener('submit', async (event) => {
   data.append('translator', translatorSelect.value || 'llm');
   data.append('detection_engine', detectionEngine.value || 'auto');
   data.append('transcription_engine', transcriptionEngine.value || 'auto');
+  data.append('page_max_retries', pageMaxRetries.value || '0');
+  data.append('retry_backoff_seconds', retryBackoffSeconds.value || '0');
+  data.append('max_total_external_calls', maxExternalCalls.value || '0');
+  data.append('max_llm_calls', maxLlmCalls.value || '0');
+  data.append('max_traditional_calls', maxTraditionalCalls.value || '0');
+  data.append('max_input_tokens', maxInputTokens.value || '0');
+  data.append('max_output_tokens', maxOutputTokens.value || '0');
+  data.append('max_translation_characters', maxTranslationCharacters.value || '0');
+  data.append('max_cost_usd', maxCostUsd.value || '0');
+  data.append('llm_input_cost_per_million_tokens', llmInputRate.value || '0');
+  data.append('llm_output_cost_per_million_tokens', llmOutputRate.value || '0');
+  data.append('traditional_cost_per_million_characters', traditionalCharRate.value || '0');
   if (zipFile) data.append('zip_file', zipFile, zipFile.name);
   for (const file of folderFiles) {
     data.append('images', file, file.webkitRelativePath || file.name);
@@ -622,7 +650,7 @@ continueLastBtn.addEventListener('click', () => {
   setTool('select');
   showWorkView();
   renderJob(state.lastJob);
-  if (!['ready', 'failed'].includes(state.lastJob.status)) startPolling(state.lastJob.job_id);
+  if (!['ready', 'failed', 'cancelled'].includes(state.lastJob.status)) startPolling(state.lastJob.job_id);
 });
 
 newJobBtn.addEventListener('click', () => {
@@ -668,7 +696,7 @@ function startPolling(jobId) {
       renderJob(job);
       const currentPageAfter = job.pages?.[state.pageIndex]?.updated_at;
       if (currentPageBefore !== currentPageAfter) renderCurrentPage();
-      if (['ready', 'failed'].includes(job.status)) clearInterval(state.polling);
+      if (['ready', 'failed', 'cancelled'].includes(job.status)) clearInterval(state.polling);
     } catch (error) {
       console.warn(error);
     }
@@ -685,6 +713,12 @@ function renderJob(job) {
   jobBadge.className = `badge ${job.status === 'ready' ? 'ready' : job.status === 'failed' ? 'failed' : ''}`;
   progressBar.style.width = `${job.progress || 0}%`;
   progressText.textContent = `${job.processed_count || 0} listas · ${job.failed_count || 0} fallidas · ${job.total_count || 0} total`;
+  const usage = job.usage || {};
+  usageText.textContent = `${usage.total_calls || 0} llamadas externas · USD ${Number(usage.estimated_cost_usd || 0).toFixed(4)}`;
+  const terminal = ['ready', 'failed', 'cancelled'].includes(job.status);
+  pauseJobBtn.disabled = terminal || ['paused', 'pausing', 'resuming', 'cancelling'].includes(job.status);
+  resumeJobBtn.disabled = !['paused', 'pausing', 'resuming'].includes(job.status);
+  cancelJobBtn.disabled = terminal || job.status === 'cancelling';
   const exportablePages = (job.pages || []).filter((page) => page.status === 'ready' || page.has_corrected).length;
   exportBtn.disabled = exportablePages === 0;
   exportBtn.textContent = exportablePages > 0 ? `Exportar ZIP (${exportablePages})` : 'Exportar ZIP';
@@ -697,6 +731,11 @@ function readableStatus(status) {
     queued: 'En cola',
     pending: 'Pendiente',
     processing: 'Procesando',
+    pausing: 'Pausando',
+    paused: 'Pausado',
+    resuming: 'Reanudando',
+    cancelling: 'Cancelando',
+    cancelled: 'Cancelado',
     ready: 'Listo',
     failed: 'Con errores',
     corrected: 'Corregido',
@@ -2342,6 +2381,24 @@ document.addEventListener('keyup', (event) => {
   requestOverlayRender();
   updateCanvasReadout();
 });
+
+async function controlCurrentJob(action) {
+  if (!state.job) return;
+  const labels = { pause: 'Pausando…', resume: 'Reanudando…', cancel: 'Cancelando…' };
+  showToast(labels[action] || 'Actualizando trabajo…');
+  try {
+    const job = await requestJson(`/api/jobs/${state.job.job_id}/${action}`, { method: 'POST' });
+    state.job = job;
+    renderJob(job);
+    if (!['ready', 'failed', 'cancelled'].includes(job.status)) startPolling(job.job_id);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+pauseJobBtn.addEventListener('click', () => controlCurrentJob('pause'));
+resumeJobBtn.addEventListener('click', () => controlCurrentJob('resume'));
+cancelJobBtn.addEventListener('click', () => controlCurrentJob('cancel'));
 
 exportBtn.addEventListener('click', async () => {
   if (!state.job) return;

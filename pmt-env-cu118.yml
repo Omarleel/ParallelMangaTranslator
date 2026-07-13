@@ -1,4 +1,4 @@
-name: ParallelMangaTranslator-cpu
+name: ParallelMangaTranslator-cu118
 channels:
   - conda-forge
   - defaults
@@ -9,13 +9,15 @@ dependencies:
   - wheel
   - git
   - pip:
-      - torch==2.6.0
-      - torchvision==0.21.0
+      - --extra-index-url https://download.pytorch.org/whl/cu118
+      - torch==2.6.0+cu118
+      - torchvision==0.21.0+cu118
       - transformers>=4.30,<4.46
       - easyocr
       - manga-ocr
       - deep-translator
       - Pillow>=10.0
+      - requests>=2.31
       - wget
       - colorama
       - nest-asyncio
@@ -28,7 +30,6 @@ dependencies:
       - ultralytics>=8.3.0
       - huggingface-hub>=0.23.0
       - opencv-python-headless>=4.8
-      - requests>=2.31
       - fastapi>=0.110
       - uvicorn[standard]>=0.27
       - python-multipart>=0.0.9

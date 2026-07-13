@@ -19,14 +19,22 @@ manager = JobManager(config_path=os.getenv("PMT_CONFIG", "config.yaml"))
 app = FastAPI(
     title="Parallel Manga Translator UI",
     description="Asistente local de revisión para traducción, limpieza y corrección manual de páginas de manga.",
-    version="0.1.0",
+    version="0.6.0",
 )
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "PMT_UI_ALLOWED_ORIGINS",
+        "http://127.0.0.1:7860,http://localhost:7860",
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -90,6 +98,18 @@ def create_job(
     detection_engine: str = Form(default="auto"),
     transcription_engine: str = Form(default="auto"),
     translator: str = Form(default="llm"),
+    page_max_retries: int = Form(default=2),
+    retry_backoff_seconds: float = Form(default=2.0),
+    max_total_external_calls: int = Form(default=0),
+    max_llm_calls: int = Form(default=0),
+    max_traditional_calls: int = Form(default=0),
+    max_input_tokens: int = Form(default=0),
+    max_output_tokens: int = Form(default=0),
+    max_translation_characters: int = Form(default=0),
+    max_cost_usd: float = Form(default=0.0),
+    llm_input_cost_per_million_tokens: float = Form(default=0.0),
+    llm_output_cost_per_million_tokens: float = Form(default=0.0),
+    traditional_cost_per_million_characters: float = Form(default=0.0),
 ):
     try:
         options = JobOptions(
@@ -98,6 +118,18 @@ def create_job(
             detection_engine=normalize_choice(detection_engine, "auto"),
             transcription_engine=normalize_choice(transcription_engine, "auto"),
             translator=normalize_choice(translator, "llm"),
+            page_max_retries=max(0, min(20, int(page_max_retries))),
+            retry_backoff_seconds=max(0.0, min(300.0, float(retry_backoff_seconds))),
+            max_total_external_calls=max(0, int(max_total_external_calls)),
+            max_llm_calls=max(0, int(max_llm_calls)),
+            max_traditional_calls=max(0, int(max_traditional_calls)),
+            max_input_tokens=max(0, int(max_input_tokens)),
+            max_output_tokens=max(0, int(max_output_tokens)),
+            max_translation_characters=max(0, int(max_translation_characters)),
+            max_cost_usd=max(0.0, float(max_cost_usd)),
+            llm_input_cost_per_million_tokens=max(0.0, float(llm_input_cost_per_million_tokens)),
+            llm_output_cost_per_million_tokens=max(0.0, float(llm_output_cost_per_million_tokens)),
+            traditional_cost_per_million_characters=max(0.0, float(traditional_cost_per_million_characters)),
         )
         job = manager.create_job_from_uploads(files=images, zip_file=zip_file, title=title, options=options)
         manager.start_job(job.job_id)
@@ -112,6 +144,30 @@ def get_job(job_id: str):
         return job_to_public(manager.get_job(job_id))
     except Exception as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/pause")
+def pause_job(job_id: str):
+    try:
+        return job_to_public(manager.pause_job(job_id))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/resume")
+def resume_job(job_id: str):
+    try:
+        return job_to_public(manager.resume_job(job_id))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    try:
+        return job_to_public(manager.cancel_job(job_id))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/jobs/{job_id}/pages/{page_index}")
@@ -192,6 +248,11 @@ def reset_page(job_id: str, page_index: int):
         return manager.reset_manual_render(job_id, page_index)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.on_event("shutdown")
+def shutdown_job_manager() -> None:
+    manager.shutdown(timeout=2.0)
 
 
 def main() -> None:

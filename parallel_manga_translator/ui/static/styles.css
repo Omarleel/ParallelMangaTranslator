@@ -1078,3 +1078,22 @@ textarea { min-height: 64px; }
 .region-box.live-editing .region-text-editor.ui-live-input {
   cursor: text;
 }
+
+.job-control-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.job-control-row button { min-width: 0; }
+button.danger {
+  border-color: rgba(190, 45, 45, .45);
+  color: #b42d2d;
+  background: rgba(190, 45, 45, .06);
+}
+button.danger:hover:not(:disabled) { background: rgba(190, 45, 45, .12); }
+.budget-details { margin-top: 12px; }
+.budget-details summary { cursor: pointer; font-weight: 650; margin-bottom: 10px; }
+@media (max-width: 640px) {
+  .job-control-row { grid-template-columns: 1fr; }
+}

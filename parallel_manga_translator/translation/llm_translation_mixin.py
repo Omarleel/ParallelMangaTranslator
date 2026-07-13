@@ -18,6 +18,8 @@ except ImportError:  # pragma: no cover
 
 from parallel_manga_translator.translation.translation_response_schema import LLM_TRANSLATION_RESPONSE_SCHEMA, validate_translation_response
 
+from parallel_manga_translator.infrastructure.execution_control import JobControlError, get_execution_control, cooperative_sleep
+
 logger = logging.getLogger(__name__)
 
 
@@ -172,17 +174,42 @@ class LlmTranslationMixin:
         for attempt in range(1, self.max_retries + 1):
             for response_format in self._response_formats_for_llm():
                 try:
-                    resp = self.client.chat.completions.create(
-                        model=self.modelo,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-                        ],
-                        response_format=response_format,
-                        temperature=0.25,
-                        seed=self.seed,
-                        max_completion_tokens=max(384, len(items) * 150),
-                    )
+                    user_content = json.dumps(user_payload, ensure_ascii=False)
+                    max_completion_tokens = max(384, len(items) * 150)
+                    control = get_execution_control()
+                    reservation = None
+                    usage_committed = False
+                    if control is not None:
+                        reservation = control.reserve_external_call(
+                            kind="llm",
+                            provider=getattr(self, "provider_name", "groq"),
+                            estimated_input_tokens=max(1, len((system_prompt + user_content).encode("utf-8"))),
+                            estimated_output_tokens=max_completion_tokens,
+                        )
+                    try:
+                        resp = self.client.chat.completions.create(
+                            model=self.modelo,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_content},
+                            ],
+                            response_format=response_format,
+                            temperature=0.25,
+                            seed=self.seed,
+                            max_completion_tokens=max_completion_tokens,
+                        )
+                        if control is not None and reservation is not None:
+                            usage = getattr(resp, "usage", None)
+                            control.commit_external_call(
+                                reservation,
+                                actual_input_tokens=getattr(usage, "prompt_tokens", None),
+                                actual_output_tokens=getattr(usage, "completion_tokens", None),
+                            )
+                            usage_committed = True
+                    except Exception:
+                        if control is not None and reservation is not None and not usage_committed:
+                            control.commit_external_call(reservation, failed=True)
+                        raise
 
                     content = resp.choices[0].message.content
                     if not content:
@@ -202,6 +229,8 @@ class LlmTranslationMixin:
 
                     return salida
 
+                except JobControlError:
+                    raise
                 except Exception as exc:
                     last_error = exc
                     err_str = str(exc).lower()
@@ -219,7 +248,7 @@ class LlmTranslationMixin:
                     break
 
             if attempt < self.max_retries:
-                time.sleep(2 ** (attempt - 1))
+                cooperative_sleep(2 ** (attempt - 1))
 
         logger.error("LLM agotó reintentos. Último error: %s", last_error)
         return self.traducir_textos_tradicional(textos_actuales)

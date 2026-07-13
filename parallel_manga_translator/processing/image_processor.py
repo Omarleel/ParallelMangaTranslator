@@ -26,6 +26,7 @@ from parallel_manga_translator.infrastructure.error_handling import (
     write_failure_report,
 )
 from parallel_manga_translator.infrastructure.logging_config import get_logger
+from parallel_manga_translator.infrastructure.execution_control import JobControlError, cooperative_sleep, execution_checkpoint
 from parallel_manga_translator.infrastructure.gpu_scheduler import (
     gpu_scheduler_snapshot,
     reset_gpu_scheduler_stats,
@@ -109,6 +110,7 @@ class ImageProcessor:
 
     def procesar(self, ruta_carpeta_entrada, ruta_limpieza_salida, ruta_traduccion_salida, lote, transcripcion_queue, traduccion_queue):
         for indice_imagen, archivo in lote.items():
+            execution_checkpoint()
             nuevo_archivo = normalized_page_output_name(archivo, indice_imagen)
 
             archivo_limpieza_esperado = os.path.join(ruta_limpieza_salida, nuevo_archivo)
@@ -143,6 +145,8 @@ class ImageProcessor:
                     transcripcion_queue=transcripcion_queue,
                     traduccion_queue=traduccion_queue,
                 )
+            except JobControlError:
+                raise
             except Exception as exc:
                 logger.exception("Fallo definitivo al procesar %s: %s", archivo, exc)
                 self._registrar_fallo(ruta_traduccion_salida, indice_imagen, nuevo_archivo, image_path, exc)
@@ -238,6 +242,8 @@ class ImageProcessor:
                         if not publicar(preparada):
                             break
                         prepared_count[0] += 1
+                    except JobControlError:
+                        raise
                     except Exception as exc:
                         logger.exception("Fallo en preparación GPU de %s: %s", archivo, exc)
                         self._registrar_fallo(
@@ -279,6 +285,8 @@ class ImageProcessor:
                             traduccion_queue=traduccion_queue,
                         )
                         finished_count += 1
+                    except JobControlError:
+                        raise
                     except Exception as exc:
                         logger.exception(
                             "Fallo en OCR/traducción/render de %s: %s",
@@ -404,7 +412,7 @@ class ImageProcessor:
                 imagen_actual = self.reducir_imagen(imagen_actual)
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                time.sleep(1)
+                cooperative_sleep(1)
 
         raise RuntimeError(f"No se pudo preparar {output_filename}")
 
@@ -559,6 +567,8 @@ class ImageProcessor:
                 metrics.retries = intento - 1
                 MetricsWriter(output_root).write_page(metrics)
                 return
+            except JobControlError:
+                raise
             except (torch.cuda.OutOfMemoryError, RuntimeError, StageProcessingError) as exc:
                 logger.warning("Error potencial de memoria al procesar %s (intento %s/%s): %s", archivo, intento, max_retries, exc)
                 if intento >= max_retries or not self._is_retryable_memory_error(exc):
@@ -570,7 +580,7 @@ class ImageProcessor:
                 imagen_actual = self.reducir_imagen(imagen_actual)
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                time.sleep(1)
+                cooperative_sleep(1)
             except Exception:
                 raise
 

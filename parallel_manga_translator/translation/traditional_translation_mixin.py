@@ -18,6 +18,8 @@ except ImportError:  # pragma: no cover
 
 from parallel_manga_translator.translation.translation_response_schema import LLM_TRANSLATION_RESPONSE_SCHEMA, validate_translation_response
 
+from parallel_manga_translator.infrastructure.execution_control import JobControlError, get_execution_control, cooperative_sleep
+
 logger = logging.getLogger(__name__)
 
 
@@ -153,16 +155,33 @@ class TraditionalTranslationMixin:
             try:
                 if self.translator is None:
                     raise RuntimeError("deep_translator no está instalado; instala requirements.txt o usa LLM con proveedor configurado.")
-                traducido = self.translator.translate(texto)
+                control = get_execution_control()
+                reservation = None
+                if control is not None:
+                    reservation = control.reserve_external_call(
+                        kind="traditional",
+                        provider=str(self.provider or "traditional"),
+                        characters=len(str(texto or "")),
+                    )
+                try:
+                    traducido = self.translator.translate(texto)
+                    if control is not None and reservation is not None:
+                        control.commit_external_call(reservation)
+                except Exception:
+                    if control is not None and reservation is not None:
+                        control.commit_external_call(reservation, failed=True)
+                    raise
                 salida = self._normalize_translation(traducido) if isinstance(traducido, str) and traducido else texto
                 salida = self.glossary.apply_to_translation(texto, salida)
                 self._translation_cache[cache_key] = salida
                 self.cache.set(self._persistent_key(texto, "traditional"), salida)
                 return salida
+            except JobControlError:
+                raise
             except self.TRADITIONAL_EXCEPTIONS as exc:
                 logger.warning("Fallo en traducción tradicional intento %s/%s: %s", attempt, self.max_retries, exc)
                 if attempt < self.max_retries:
-                    time.sleep(0.5 * attempt)
+                    cooperative_sleep(0.5 * attempt)
         return texto
 
     def traducir_textos_tradicional(self, textos: Sequence[str]) -> List[str]:
@@ -203,7 +222,22 @@ class TraditionalTranslationMixin:
             try:
                 if self.translator is None:
                     raise RuntimeError("deep_translator no está instalado; instala requirements.txt o usa LLM con proveedor configurado.")
-                traducidos = self.translator.translate_batch(payload)
+                control = get_execution_control()
+                reservation = None
+                if control is not None:
+                    reservation = control.reserve_external_call(
+                        kind="traditional",
+                        provider=str(self.provider or "traditional"),
+                        characters=sum(len(str(item or "")) for item in payload),
+                    )
+                try:
+                    traducidos = self.translator.translate_batch(payload)
+                    if control is not None and reservation is not None:
+                        control.commit_external_call(reservation)
+                except Exception:
+                    if control is not None and reservation is not None:
+                        control.commit_external_call(reservation, failed=True)
+                    raise
                 if not isinstance(traducidos, list) or len(traducidos) != len(payload):
                     raise ValueError("translate_batch devolvió un tamaño inesperado.")
 
@@ -216,6 +250,8 @@ class TraditionalTranslationMixin:
                     for original_idx in pendientes_por_texto[original]:
                         salida[original_idx] = salida_normalizada
 
+            except JobControlError:
+                raise
             except self.TRADITIONAL_EXCEPTIONS as exc:
                 logger.warning("Fallo batch tradicional, usando fallback item por item: %s", exc)
                 for local_idx in chunk_indices:

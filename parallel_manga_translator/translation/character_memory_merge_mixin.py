@@ -196,17 +196,42 @@ class CharacterMemoryMergeMixin:
         for attempt in range(1, max(1, int(max_retries)) + 1):
             for response_format in formats:
                 try:
-                    resp = client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-                        ],
-                        response_format=response_format,
-                        temperature=0.15,
-                        seed=seed,
-                        max_completion_tokens=max(512, len(expected_ids) * 160),
-                    )
+                    user_content = json.dumps(user_payload, ensure_ascii=False)
+                    max_completion_tokens = max(512, len(expected_ids) * 160)
+                    control = get_execution_control()
+                    reservation = None
+                    usage_committed = False
+                    if control is not None:
+                        reservation = control.reserve_external_call(
+                            kind="llm",
+                            provider="groq-character-memory",
+                            estimated_input_tokens=max(1, len((system_prompt + user_content).encode("utf-8"))),
+                            estimated_output_tokens=max_completion_tokens,
+                        )
+                    try:
+                        resp = client.chat.completions.create(
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_content},
+                            ],
+                            response_format=response_format,
+                            temperature=0.15,
+                            seed=seed,
+                            max_completion_tokens=max_completion_tokens,
+                        )
+                        if control is not None and reservation is not None:
+                            usage = getattr(resp, "usage", None)
+                            control.commit_external_call(
+                                reservation,
+                                actual_input_tokens=getattr(usage, "prompt_tokens", None),
+                                actual_output_tokens=getattr(usage, "completion_tokens", None),
+                            )
+                            usage_committed = True
+                    except Exception:
+                        if control is not None and reservation is not None and not usage_committed:
+                            control.commit_external_call(reservation, failed=True)
+                        raise
                     content = resp.choices[0].message.content
                     data = _parse_json_object(content)
                     validated = validate_character_memory_response(data, expected_ids)
@@ -217,6 +242,8 @@ class CharacterMemoryMergeMixin:
                     merged = {row["text_id"]: row for row in fallback.values()}
                     merged.update({row["text_id"]: row for row in llm_assignments})
                     return [merged[i] for i in range(len(texts))]
+                except JobControlError:
+                    raise
                 except Exception as exc:
                     last_error = exc
                     # Si json_schema no es soportado por el proveedor, probamos json_object de inmediato.

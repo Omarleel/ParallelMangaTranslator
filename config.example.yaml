@@ -27,7 +27,7 @@ ocr:
   detection_engine: auto
   transcription_engine: auto
   # Para PaddleOCR GPU + YOLO GPU, usa subprocess para aislar Paddle de PyTorch.
-  gpu: false
+  gpu: auto
   paddle_subprocess: auto   # auto | true | false
   fast_mode: false
 
@@ -146,6 +146,25 @@ quality:
   bubble_merge_debug_dir: ""
   bubble_merge_debug_pair_limit: 160
 
+  # Detección fina de texto: usa polígonos OCR como semilla, no solo bboxes rectangulares.
+  fine_text_detection: true
+  fine_text_mask_dilate: 2
+  # Refina clean_mask con componentes conectados anclados a polígonos OCR/text_bbox.
+  ink_mask_refinement: true
+  ink_mask_min_component_area: 3
+  ink_mask_component_anchor_overlap: 0.03
+  ink_mask_component_anchor_max_gap_ratio: 0.45
+  # Orden de lectura por paneles detectados con OpenCV; si falla, cae al orden base de PMT.
+  panel_aware_reading_order: true
+  panel_detection_min_area_ratio: 0.015
+  panel_detection_max_area_ratio: 0.96
+  panel_detection_gutter_px: 10
+  # Render tipográfico: cortes suaves, balance de líneas y espaciado.
+  typography_smart_wrap: true
+  typography_hyphenation: true
+  typography_balance_lines: true
+  typography_line_spacing_factor: 1.0
+
 onomatopoeia:
   # translate | keep | subtitle | auto
   mode: translate
@@ -161,6 +180,21 @@ llm:
   max_retries: 3
   # true intenta response_format json_schema estricto y cae a json_object si el proveedor no lo soporta.
   strict_json_schema: true
+
+external_limits:
+  # Límites globales por trabajo. 0 = sin límite. La UI puede definir valores
+  # específicos para cada manga; cuando el valor de la UI es 0 se usa este valor.
+  max_total_calls: 0
+  max_llm_calls: 0
+  max_traditional_calls: 0
+  max_input_tokens: 0
+  max_output_tokens: 0
+  max_characters: 0
+  max_cost_usd: 0.0
+  # Introduce las tarifas reales del proveedor/modelo para que max_cost_usd sea útil.
+  llm_input_cost_per_million_tokens: 0.0
+  llm_output_cost_per_million_tokens: 0.0
+  traditional_cost_per_million_characters: 0.0
 
 character_memory:
   # Construye automáticamente memoria de personajes/hablantes usando IA en modo LLM.
@@ -182,23 +216,4 @@ export:
 logging:
   level: INFO
   file: debug.log
-
-  # Detección fina de texto: usa polígonos OCR como semilla, no solo bboxes rectangulares.
-  fine_text_detection: true
-  fine_text_mask_dilate: 2
-  # Refina clean_mask con componentes conectados anclados a polígonos OCR/text_bbox.
-  ink_mask_refinement: true
-  ink_mask_min_component_area: 3
-  ink_mask_component_anchor_overlap: 0.03
-  ink_mask_component_anchor_max_gap_ratio: 0.45
-  # Orden de lectura por paneles detectados con OpenCV; si falla, cae al orden base de PMT.
-  panel_aware_reading_order: true
-  panel_detection_min_area_ratio: 0.015
-  panel_detection_max_area_ratio: 0.96
-  panel_detection_gutter_px: 10
-  # Render tipográfico: cortes suaves, balance de líneas y espaciado.
-  typography_smart_wrap: true
-  typography_hyphenation: true
-  typography_balance_lines: true
-  typography_line_spacing_factor: 1.0
 

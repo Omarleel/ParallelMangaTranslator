@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
 
+from parallel_manga_translator.infrastructure.execution_control import JobControlError
+
 
 @dataclass
 class PageFailureReport:
@@ -111,7 +113,7 @@ def processing_stage(
         logger.debug("Iniciando etapa | stage=%s | page=%s | file=%s", stage, page_index, filename)
         yield
         logger.debug("Etapa completada | stage=%s | page=%s | file=%s", stage, page_index, filename)
-    except StageProcessingError:
+    except (StageProcessingError, JobControlError):
         raise
     except Exception as exc:
         logger.exception("Fallo en etapa | stage=%s | page=%s | file=%s | error=%s", stage, page_index, filename, exc)

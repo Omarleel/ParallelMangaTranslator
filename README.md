@@ -26,17 +26,47 @@ Antes de utilizar ParallelMangaTranslator, asegúrate de tener instalados los si
 - Pillow: Una biblioteca para manipulación de imágenes en Python.
 - pydrive2: Una biblioteca de Python que envuelve la API de Google Drive, facilitando las operaciones de carga y descarga de archivos.
 
-## Instalación de CUDA compatible con Torch
-Ejecuta los siguientes comandos:
-```bash
-# Desinstala cualquier versión de Torch que tengas
-pip uninstall torch torchvision torchaudio
-# Limpia la caché de pip para evitar conflictos
-pip cache purge
-# Instala la versión específica de Torch compatible con CUDA 12.4:
-pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
+## Instalación automática según CPU/GPU
+
+La forma recomendada es usar el instalador incluido. Detecta el hardware, crea un
+entorno aislado y verifica que PyTorch realmente pueda usar el backend seleccionado.
+
+**Windows:**
+
+```bat
+install_pmt.bat
 ```
 
+**Linux/macOS:**
+
+```bash
+chmod +x install_pmt.sh
+./install_pmt.sh
+```
+
+Para revisar la selección sin instalar nada:
+
+```bash
+python install_pmt.py --dry-run
+```
+
+Perfiles automáticos incluidos:
+
+- `cu129`: RTX 50/Blackwell con driver compatible; conserva el entorno probado para RTX 5070.
+- `cu124`: perfil NVIDIA conservador; conserva el entorno probado para GTX 1080 Ti.
+- `cu118`: fallback para drivers NVIDIA más antiguos.
+- `rocm64`: GPU AMD con ROCm en Linux.
+- `mps`: Apple Silicon en macOS.
+- `cpu`: fallback universal.
+
+Se puede forzar un perfil o gestor con `--profile` y `--manager`, por ejemplo:
+
+```bash
+python install_pmt.py --profile cu124 --manager conda
+```
+
+`ocr.gpu: auto` activa OCR GPU cuando PyTorch detecta CUDA/ROCm. YOLO e inpainting
+siguen seleccionando automáticamente el dispositivo disponible.
 
 
 ## UI local de revisión humana
@@ -62,6 +92,26 @@ correcciones/   JSON con textos, cajas y flags manuales
 ```
 
 La UI procesa página por página en segundo plano para mejorar la experiencia: una página pendiente muestra un mensaje de espera, pero las páginas ya listas se pueden revisar y corregir inmediatamente. El botón **Exportar ZIP** descarga un paquete con `imagenes_finales/`, usando la versión corregida si existe y, si no, la traducción automática lista; también incluye `correcciones/` y `manifest_export.json` cuando corresponda. Usa la misma configuración funcional de `config.yaml`; puedes apuntar a otro archivo con `PMT_CONFIG=/ruta/config.yaml python ParallelMangaTranslatorUI.py`.
+
+### Cola persistente, pausa, cancelación y recuperación
+
+Los trabajos se registran en `.pmt_ui_jobs/queue.sqlite3` y cada trabajo mantiene un
+`manifest.json` atómico. Al reiniciar la aplicación:
+
+- un trabajo que quedó en `processing` vuelve a la cola;
+- una página con ambas imágenes finales se recupera como lista;
+- una página incompleta vuelve a pendiente conservando sus intentos anteriores;
+- los trabajos pausados continúan pausados hasta que el usuario pulse **Reanudar**.
+
+La pausa y la cancelación son cooperativas: se aplican en el siguiente punto seguro.
+Una llamada API o una operación GPU que ya comenzó puede terminar antes de detenerse.
+La página interrumpida se reinicia desde el principio al reanudar y una pausa no consume
+un intento de página. El worker queda libre para procesar el siguiente trabajo de la cola.
+
+Los reintentos por página usan espera exponencial y se configuran desde la UI. Los
+límites de llamadas, tokens, caracteres y coste estimado también son por trabajo. Para
+que el límite monetario funcione, configura las tarifas reales del proveedor/modelo en
+la UI o en `external_limits` de `config.yaml`; `0` significa sin límite.
 
 ## Contribuciones
 

@@ -16,3 +16,8 @@ credentials.json
 /models/
 
 .pmt_ui_jobs
+# Artefactos de construcción e instaladores locales
+build/
+dist/
+*.egg-info/
+.ParallelMangaTranslator-*/

@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from parallel_manga_translator.config.app_config import CharacterMemoryConfig, LlmConfig, TranslationConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
+from parallel_manga_translator.infrastructure.execution_control import ExternalUsageLimits
 from parallel_manga_translator.translation.providers import TranslationProviderConfig, TranslatorFactory
 from parallel_manga_translator.translation.translation_response_schema import validate_translation_response
 
@@ -95,6 +96,11 @@ class TranslatorManager:
             character_memory_enabled=character_memory_config.enabled,
             character_memory_path=character_memory_config.path,
             character_memory_max_context_pages=character_memory_config.max_context_pages,
+            external_limits=(
+                translation_config.external_limits
+                if translation_config is not None
+                else ExternalUsageLimits()
+            ),
         )
         self.provider = TranslatorFactory.create(self.config)
 

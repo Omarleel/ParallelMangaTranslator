@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Protocol, Sequence
+
+from parallel_manga_translator.infrastructure.execution_control import ExternalUsageLimits
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,7 @@ class TranslationProviderConfig:
     character_memory_enabled: bool = True
     character_memory_path: str = ""
     character_memory_max_context_pages: int = 8
+    external_limits: ExternalUsageLimits = field(default_factory=ExternalUsageLimits)
 
 
 class TranslationProvider(Protocol):

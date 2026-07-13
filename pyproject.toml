@@ -4,10 +4,37 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "parallel-manga-translator"
-version = "0.5.0"
-description = "Pipeline de traducción de manga con detección de globos, OCR, traducción y renderizado."
+version = "0.6.0"
+description = "Pipeline de traducción de manga con detección de globos, OCR, traducción, cola persistente y renderizado."
 requires-python = ">=3.10"
 readme = "README.md"
+dependencies = [
+  "easyocr",
+  "manga-ocr",
+  "deep-translator",
+  "Pillow>=10.0",
+  "requests>=2.31",
+  "wget",
+  "colorama",
+  "nest-asyncio",
+  "python-dotenv",
+  "pydrive2",
+  "groq",
+  "loguru",
+  "numpy<2",
+  "PyYAML>=6.0",
+  "ultralytics>=8.3.0",
+  "huggingface-hub>=0.23.0",
+  "transformers>=4.30,<4.46",
+  "opencv-python-headless>=4.8",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "build>=1.2"]
+paddle = ["paddleocr==2.10.0", "albumentations==1.4.24", "albucore==0.0.23"]
 
 [project.scripts]
 pmt = "parallel_manga_translator.cli:main"
@@ -20,7 +47,13 @@ where = ["."]
 include = ["parallel_manga_translator*"]
 
 [tool.setuptools.package-data]
-parallel_manga_translator = ["resources/**/*.yaml", "resources/**/*.md"]
+parallel_manga_translator = [
+  "resources/**/*.yaml",
+  "resources/**/*.md",
+  "ui/static/*.html",
+  "ui/static/*.js",
+  "ui/static/*.css",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
