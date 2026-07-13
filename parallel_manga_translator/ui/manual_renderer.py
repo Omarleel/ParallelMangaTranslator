@@ -30,6 +30,11 @@ class ManualRegion:
     auto_font_size: bool = True
     font_size: Optional[int] = None
     rotation_angle: float = 0.0
+    text_align: str = "center"
+    vertical_align: str = "middle"
+    line_spacing_factor: float = 1.0
+    text_offset_x: float = 0.0
+    text_offset_y: float = 0.0
     ui_layout: Optional[Dict[str, Any]] = None
 
 
@@ -109,6 +114,34 @@ def _rotation_angle(value: Any) -> float:
     return 0.0 if abs(angle) < 0.65 else round(angle, 3)
 
 
+
+def _text_align(value: Any) -> str:
+    normalized = str(value or "center").strip().lower()
+    aliases = {"izquierda": "left", "centro": "center", "derecha": "right"}
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in {"left", "center", "right"} else "center"
+
+
+def _vertical_align(value: Any) -> str:
+    normalized = str(value or "middle").strip().lower()
+    aliases = {"arriba": "top", "centro": "middle", "medio": "middle", "abajo": "bottom"}
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in {"top", "middle", "bottom"} else "middle"
+
+
+def _line_spacing_factor(value: Any) -> float:
+    try:
+        return max(0.55, min(2.0, float(value if value is not None else 1.0)))
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _text_offset(value: Any) -> float:
+    try:
+        return max(-1000.0, min(1000.0, float(value or 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
+
 def parse_manual_regions(payload: Iterable[Dict[str, Any]], image_width: int, image_height: int) -> List[ManualRegion]:
     regions: List[ManualRegion] = []
     for fallback_index, item in enumerate(payload):
@@ -152,6 +185,11 @@ def parse_manual_regions(payload: Iterable[Dict[str, Any]], image_width: int, im
                 auto_font_size=auto_font_size,
                 font_size=font_size,
                 rotation_angle=_rotation_angle(item.get("rotation_angle", item.get("text_rotation_angle", ui_layout.get("rotation_angle", 0.0) if ui_layout else 0.0))),
+                text_align=_text_align(item.get("text_align", ui_layout.get("text_align", "center") if ui_layout else "center")),
+                vertical_align=_vertical_align(item.get("vertical_align", ui_layout.get("vertical_align", "middle") if ui_layout else "middle")),
+                line_spacing_factor=_line_spacing_factor(item.get("line_spacing_factor", item.get("line_spacing", ui_layout.get("line_spacing_factor", 1.0) if ui_layout else 1.0))),
+                text_offset_x=_text_offset(item.get("text_offset_x", ui_layout.get("text_offset_x", 0.0) if ui_layout else 0.0)),
+                text_offset_y=_text_offset(item.get("text_offset_y", ui_layout.get("text_offset_y", 0.0) if ui_layout else 0.0)),
                 ui_layout=ui_layout,
             )
         )
@@ -439,6 +477,11 @@ def render_manual_page(
             text_styles=[r.style for r in drawable],
             font_sizes=[None if r.auto_font_size else r.font_size for r in drawable],
             rotation_angles=[r.rotation_angle for r in drawable],
+            text_aligns=[r.text_align for r in drawable],
+            vertical_aligns=[r.vertical_align for r in drawable],
+            line_spacing_factors=[r.line_spacing_factor for r in drawable],
+            text_offsets_x=[r.text_offset_x for r in drawable],
+            text_offsets_y=[r.text_offset_y for r in drawable],
             ui_layouts=[r.ui_layout for r in drawable],
         )
 
@@ -481,6 +524,11 @@ def render_manual_region_preview(
             text_styles=[region.style],
             font_sizes=[None if region.auto_font_size else region.font_size],
             rotation_angles=[region.rotation_angle],
+            text_aligns=[region.text_align],
+            vertical_aligns=[region.vertical_align],
+            line_spacing_factors=[region.line_spacing_factor],
+            text_offsets_x=[region.text_offset_x],
+            text_offsets_y=[region.text_offset_y],
             ui_layouts=[region.ui_layout],
         )
 
@@ -489,6 +537,37 @@ def render_manual_region_preview(
         raise ValueError("No se pudo codificar la previsualización de región.")
     return encoded.tobytes()
 
+
+
+def resolve_manual_region_metrics(
+    *,
+    clean_path: str | Path,
+    region: ManualRegion,
+) -> Dict[str, Any]:
+    """Devuelve las métricas exactas que usará el render final para una región."""
+    clean_image = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
+    if clean_image is None:
+        raise ValueError(f"No se pudo leer la imagen limpia: {clean_path}")
+    height, width = clean_image.shape[:2]
+    x, y, w, h = _safe_box(region.bbox, width, height)
+    renderer = TextRenderer(max_font_size=160)
+    resolved = renderer.resolve_manual_layout(
+        (x, y, w, h),
+        region.text,
+        region.style,
+        ui_layout=region.ui_layout,
+        requested_font_size=None if region.auto_font_size else region.font_size,
+        rotation_angle=region.rotation_angle,
+        text_align=region.text_align,
+        vertical_align=region.vertical_align,
+        line_spacing_factor=region.line_spacing_factor,
+        text_offset_x=region.text_offset_x,
+        text_offset_y=region.text_offset_y,
+        image_shape=(height, width),
+    )
+    resolved["font_available"] = Path(renderer.font_path).exists()
+    resolved["font_name"] = Path(renderer.font_path).stem
+    return resolved
 
 def write_corrections(path: str | Path, regions: Sequence[ManualRegion], brush_strokes: Sequence[BrushStroke] | None = None) -> None:
     path = Path(path)
@@ -510,6 +589,11 @@ def write_corrections(path: str | Path, regions: Sequence[ManualRegion], brush_s
                 "auto_font_size": region.auto_font_size,
                 "font_size": region.font_size,
                 "rotation_angle": region.rotation_angle,
+                "text_align": region.text_align,
+                "vertical_align": region.vertical_align,
+                "line_spacing_factor": region.line_spacing_factor,
+                "text_offset_x": region.text_offset_x,
+                "text_offset_y": region.text_offset_y,
                 "ui_layout": region.ui_layout,
             }
             for region in regions

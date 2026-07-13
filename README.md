@@ -73,6 +73,8 @@ siguen seleccionando automáticamente el dispositivo disponible.
 
 Además de la CLI, el proyecto incluye una interfaz web local para revisar páginas a medida que se procesan. Permite cargar una carpeta desde el navegador o un archivo `.zip`, ver la salida automática de traducción y limpieza, alternar entre original/limpieza/traducción/corregida, editar traducciones manualmente, mover o redimensionar regiones de texto y revertir la limpieza por región antes de guardar una nueva imagen corregida. El espacio de revisión sigue un flujo familiar de editor gráfico: herramientas a la izquierda, documento y comandos arriba, lienzo en el centro, propiedades/capas/retoque a la derecha y una barra de estado inferior. En móvil, los paneles se convierten en cajones y las herramientas quedan fijas en la parte inferior.
 
+La edición directa vuelve a usar una previsualización HTML inmediata y estable, sin sustituir el texto editable por una rasterización del backend. El inspector conserva los controles por región para alineación horizontal/vertical, interlineado y desplazamiento interno. También incluye ocho tiradores de redimensionado, rotación directa, centrado, ajuste de caja al texto y duplicado de regiones. El resultado definitivo continúa generándose al guardar mediante el motor de renderizado del proyecto.
+
 Instala las dependencias y lanza la UI:
 
 ```bash
@@ -423,7 +425,7 @@ Abre `http://127.0.0.1:7860` y configura el trabajo antes de procesar:
 
 La UI tiene dos vistas separadas: primero **Configuración** y después **Trabajo/Revisión**. Durante la revisión puedes avanzar por las páginas ya listas mientras el resto se procesa en segundo plano. En cada página hay herramientas para:
 
-- editar el texto traducido **directamente dentro de la región**, en tiempo real y con la tipografía/tamaño de vista previa;
+- editar el texto traducido **directamente dentro de la región**, con una vista HTML inmediata que mantiene estable el cursor y la selección;
 - elegir por región entre **tamaño de fuente automático** o **tamaño manual fijo** con slider/número;
 - mover o redimensionar regiones detectadas o manuales con previsualización del texto en tiempo real;
 - eliminar regiones detectadas o manuales con borrado limpio;
@@ -437,3 +439,7 @@ La UI tiene dos vistas separadas: primero **Configuración** y después **Trabaj
 - exportar un ZIP final.
 
 Los cambios ligeros se guardan solos en `outputs/corregida/` y `outputs/correcciones/`. La escritura dentro del cuadro es instantánea y solo dispara autoguardado después de una pausa, sin esperar al backend para cada tecla. **Aplicar inpaint** actúa sobre la imagen actual sin volver a redibujar regiones, para no recalcular tamaños de fuente. Las regiones con tamaño manual mantienen el valor fijado aunque cambie el área de la caja. Antes de aplicar inpaint se guarda una copia interna de la página actual, de modo que **Restaurar / borrar máscara** pueda recuperar zonas inpainted si te pasas con la máscara. Los botones explícitos quedan reservados para tareas pesadas o destructivas: **OCR + traducir región**, **Aplicar inpaint**, **Restaurar automático** y **Exportar ZIP**. El ZIP final usa la versión corregida cuando existe, o la traducción automática si la página no fue editada.
+
+### Compatibilidad de arrastre en el editor
+
+La selección, movimiento, redimensionamiento y rotación usan captura defensiva del puntero sobre el lienzo. Esto evita errores `InvalidStateError` cuando la interfaz reconstruye una región durante un gesto y también limpia correctamente gestos cancelados por el navegador.

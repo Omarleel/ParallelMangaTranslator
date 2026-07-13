@@ -26,7 +26,7 @@ from parallel_manga_translator.infrastructure.execution_control import (
 )
 from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
-from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, render_manual_region_preview, restore_mask_erased_pixels, write_corrections
+from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, render_manual_region_preview, resolve_manual_region_metrics, restore_mask_erased_pixels, write_corrections
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
 from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
 
@@ -826,6 +826,24 @@ class JobManager:
             original_path=original_path,
             region=regions[0],
         )
+
+    def resolve_region_metrics(self, job_id: str, page_index: int, region_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Resuelve la tipografía y geometría exactas de una región sin guardar cambios."""
+        job = self.get_job(job_id)
+        page = self._page(job, page_index)
+        if page.status != "ready":
+            raise ValueError("La página todavía no está lista para edición.")
+        clean_path = Path(page.clean_path)
+        if not clean_path.exists():
+            raise ValueError("Falta la imagen limpia para medir la región.")
+        image = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("No se pudo leer la imagen limpia.")
+        h, w = image.shape[:2]
+        regions = parse_manual_regions([region_payload], w, h)
+        if not regions:
+            raise ValueError("La región de medición no es válida.")
+        return resolve_manual_region_metrics(clean_path=clean_path, region=regions[0])
 
     def reset_manual_render(self, job_id: str, page_index: int) -> Dict[str, Any]:
         job = self.get_job(job_id)

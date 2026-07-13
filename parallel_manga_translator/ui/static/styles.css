@@ -2055,3 +2055,137 @@ body:has(.work-view:not(.hidden)) {
     min-width: 0;
   }
 }
+
+/* Round 8: herramientas tipográficas y controles de transformación precisos. */
+/* Tiradores de transformación al estilo de un editor gráfico. */
+.resize-handle {
+  width: 12px;
+  height: 12px;
+  right: auto;
+  bottom: auto;
+  border: 2px solid #080b14;
+  border-radius: 2px;
+  background: #f7f8ff;
+  box-shadow: 0 0 0 1px var(--accent), 0 2px 7px rgba(0, 0, 0, .38);
+  z-index: 7;
+  touch-action: none;
+}
+.handle-nw { left: -7px; top: -7px; cursor: nwse-resize; }
+.handle-n  { left: 50%; top: -7px; transform: translateX(-50%); cursor: ns-resize; }
+.handle-ne { right: -7px; top: -7px; cursor: nesw-resize; }
+.handle-e  { right: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.handle-se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.handle-s  { left: 50%; bottom: -7px; transform: translateX(-50%); cursor: ns-resize; }
+.handle-sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.handle-w  { left: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+
+.rotation-handle {
+  position: absolute;
+  left: 50%;
+  top: -39px;
+  width: 16px;
+  height: 16px;
+  transform: translateX(-50%);
+  border: 2px solid #080b14;
+  border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.84), 0 2px 8px rgba(0,0,0,.42);
+  cursor: grab;
+  z-index: 8;
+  touch-action: none;
+}
+.rotation-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  width: 1px;
+  height: 22px;
+  transform: translateX(-50%);
+  background: rgba(247, 248, 255, .9);
+  box-shadow: 0 0 0 1px rgba(8, 11, 20, .3);
+  pointer-events: none;
+}
+.rotation-handle:active { cursor: grabbing; }
+
+/* Inspector tipográfico: grupos reconocibles y controles con objetivos cómodos. */
+.transform-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.transform-quick-actions button {
+  min-width: 0;
+  min-height: 32px;
+  padding-inline: 7px;
+  white-space: normal;
+  line-height: 1.15;
+}
+.typography-heading {
+  align-items: center;
+  margin-top: 12px;
+}
+.text-alignment-card,
+.spacing-card,
+.text-offset-card {
+  padding: 10px;
+  border: 1px solid rgba(42, 51, 85, .78);
+  border-radius: 10px;
+  background: rgba(7, 10, 18, .34);
+}
+.control-title span { color: var(--muted); font-size: 10px; font-weight: 800; }
+.control-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.control-title strong { font-size: 11px; }
+.vertical-title { margin-top: 10px; }
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(42, 51, 85, .78);
+  border-radius: 8px;
+  background: rgba(3, 5, 11, .46);
+}
+.segmented-control button {
+  min-height: 30px;
+  border-color: transparent;
+}
+.segmented-control button.active {
+  border-color: rgba(124, 92, 255, .78);
+  background: rgba(124, 92, 255, .24);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.spacing-card .font-size-row { grid-template-columns: minmax(0, 1fr) 72px; }
+.offset-grid { margin: 0; }
+.text-offset-card .control-title button { min-height: 26px; }
+.typography-reset { min-height: 34px; }
+
+@media (pointer: coarse) {
+  .resize-handle {
+    width: 16px;
+    height: 16px;
+  }
+  .handle-nw { left: -9px; top: -9px; }
+  .handle-n  { top: -9px; }
+  .handle-ne { right: -9px; top: -9px; }
+  .handle-e  { right: -9px; }
+  .handle-se { right: -9px; bottom: -9px; }
+  .handle-s  { bottom: -9px; }
+  .handle-sw { left: -9px; bottom: -9px; }
+  .handle-w  { left: -9px; }
+  .rotation-handle { width: 20px; height: 20px; top: -45px; }
+  .rotation-handle::after { top: 18px; height: 24px; }
+}
+
+@media (max-width: 390px) {
+  .transform-quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .transform-quick-actions #fitRegionToTextBtn { grid-column: 1 / -1; }
+}

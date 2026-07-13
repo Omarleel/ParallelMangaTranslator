@@ -184,10 +184,11 @@ class TextFittingMixin:
         recortadas = [self._ellipsis_line(linea, fuente, box_width) if self._text_width(linea, fuente) > box_width else linea for linea in recortadas]
         return recortadas or [" "]
 
-    def _fit_font(self, texto: str, box_width: int, box_height: int, style: str = "dialogo"):
+    def _fit_font(self, texto: str, box_width: int, box_height: int, style: str = "dialogo", line_spacing_factor: float | None = None):
         box_width = max(1, int(box_width))
         box_height = max(1, int(box_height))
         texto = self._normalize_text(texto)
+        spacing_factor = getattr(self, "line_spacing_factor", 1.0) if line_spacing_factor is None else max(0.55, min(2.0, float(line_spacing_factor)))
 
         if style.startswith("onomatopeya"):
             # Los efectos de sonido suelen ocupar más espacio visual y admiten letras grandes.
@@ -208,7 +209,7 @@ class TextFittingMixin:
             safe_height = max(1, box_height - stroke_width * 2)
             if not self._all_words_fit(texto, fuente, safe_width):
                 continue
-            espacio = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
+            espacio = self._line_spacing(fuente) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
             lineas = self._split_lines(texto, fuente, safe_width)
             if self._fits(lineas, fuente, espacio, safe_width, safe_height):
                 return fuente, lineas, espacio
@@ -220,7 +221,7 @@ class TextFittingMixin:
         stroke_width = int(self._stroke_width_for_style(fuente, style)) if hasattr(self, "_stroke_width_for_style") else 0
         safe_width = max(1, box_width - stroke_width * 2)
         safe_height = max(1, box_height - stroke_width * 2)
-        espacio = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
+        espacio = self._line_spacing(fuente) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
         if self._all_words_fit(texto, fuente, safe_width):
             lineas = self._split_lines(texto, fuente, safe_width)
             if self._fits(lineas, fuente, espacio, safe_width, safe_height):

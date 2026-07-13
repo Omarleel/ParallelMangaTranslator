@@ -363,13 +363,27 @@
                   <label class="field compact"><span>Ancho</span><input id="boxW" type="number" /></label>
                   <label class="field compact"><span>Alto</span><input id="boxH" type="number" /></label>
                 </div>
+                <div class="transform-quick-actions">
+                  <button id="centerRegionHorizontalBtn" class="ghost mini" type="button" title="Centrar la región horizontalmente en la página">Centrar H</button>
+                  <button id="centerRegionVerticalBtn" class="ghost mini" type="button" title="Centrar la región verticalmente en la página">Centrar V</button>
+                  <button id="fitRegionToTextBtn" class="ghost mini" type="button" title="Ajustar la caja al texto renderizado">Ajustar a texto</button>
+                </div>
               </section>
 
-              <div class="property-section-heading compact-property-heading">
+              <div class="property-section-heading compact-property-heading typography-heading">
                 <span>Tipografía</span>
-                <small>Ajuste y rotación del texto</small>
+                <small>Vista editable y controles de composición</small>
               </div>
               <div class="style-controls">
+                <label class="field compact">
+                  <span>Estilo de texto</span>
+                  <select id="regionStyleSelect">
+                    <option value="dialogo">Diálogo</option>
+                    <option value="narracion">Narración</option>
+                    <option value="onomatopeya">Onomatopeya</option>
+                    <option value="onomatopeya_subtitle">Onomatopeya + subtítulo</option>
+                  </select>
+                </label>
                 <div class="font-card">
                   <label class="checkbox-row compact-check">
                     <input id="autoFontSize" type="checkbox" checked />
@@ -384,6 +398,37 @@
                   </label>
                 </div>
 
+                <div class="text-alignment-card">
+                  <div class="control-title"><span>Alineación horizontal</span></div>
+                  <div class="segmented-control alignment-control" role="group" aria-label="Alineación horizontal">
+                    <button id="alignLeftBtn" class="ghost mini" type="button" data-text-align="left" title="Alinear a la izquierda">≡←</button>
+                    <button id="alignCenterBtn" class="ghost mini active" type="button" data-text-align="center" title="Centrar texto">≡</button>
+                    <button id="alignRightBtn" class="ghost mini" type="button" data-text-align="right" title="Alinear a la derecha">→≡</button>
+                  </div>
+                  <div class="control-title vertical-title"><span>Alineación vertical</span></div>
+                  <div class="segmented-control alignment-control" role="group" aria-label="Alineación vertical">
+                    <button id="alignTopBtn" class="ghost mini" type="button" data-vertical-align="top" title="Alinear arriba">↑</button>
+                    <button id="alignMiddleBtn" class="ghost mini active" type="button" data-vertical-align="middle" title="Centrar verticalmente">↕</button>
+                    <button id="alignBottomBtn" class="ghost mini" type="button" data-vertical-align="bottom" title="Alinear abajo">↓</button>
+                  </div>
+                </div>
+
+                <div class="spacing-card">
+                  <div class="control-title"><span>Interlineado</span><strong id="lineSpacingValue">100%</strong></div>
+                  <div class="font-size-row">
+                    <input id="lineSpacing" type="range" min="0.55" max="2" step="0.05" value="1" />
+                    <input id="lineSpacingNumber" type="number" min="0.55" max="2" step="0.05" value="1" />
+                  </div>
+                </div>
+
+                <div class="text-offset-card">
+                  <div class="control-title"><span>Desplazamiento del texto</span><button id="resetTextOffsetBtn" class="ghost mini" type="button">Restablecer</button></div>
+                  <div class="grid-fields two offset-grid">
+                    <label class="field compact"><span>X</span><input id="textOffsetX" type="number" step="1" value="0" /></label>
+                    <label class="field compact"><span>Y</span><input id="textOffsetY" type="number" step="1" value="0" /></label>
+                  </div>
+                </div>
+
                 <div class="rotation-card">
                   <div class="control-title">
                     <span>Inclinación</span>
@@ -394,8 +439,9 @@
                     <input id="rotationAngleNumber" type="number" min="-89" max="89" step="0.5" value="0" />
                     <button id="resetRotationBtn" class="ghost mini" type="button" title="Restablecer inclinación">0°</button>
                   </div>
-                  <p class="hint tiny">Se detecta automáticamente a partir de los polígonos OCR y puede corregirse aquí.</p>
+                  <p class="hint tiny">También puedes arrastrar el control circular sobre la región.</p>
                 </div>
+                <button id="resetTypographyBtn" class="ghost full typography-reset" type="button">Restablecer ajustes tipográficos</button>
               </div>
 
               <div class="visibility-controls">
@@ -496,10 +542,12 @@
         <div><kbd>Ctrl Z</kbd><span>Deshacer</span></div>
         <div><kbd>Ctrl ⇧ Z</kbd><span>Rehacer</span></div>
         <div><kbd>Ctrl S</kbd><span>Guardar página</span></div>
+        <div><kbd>Ctrl J</kbd><span>Duplicar región seleccionada</span></div>
+        <div><kbd>Alt + flechas</kbd><span>Mover solo el texto dentro de la caja</span></div>
         <div><kbd>Supr</kbd><span>Eliminar región</span></div>
         <div><kbd>[ / ]</kbd><span>Cambiar tamaño del pincel</span></div>
       </div>
-      <p class="shortcut-tip">Consejo: haz doble clic sobre el texto de una región para editarlo directamente sobre la página.</p>
+      <p class="shortcut-tip">Consejo: haz doble clic para editar. Usa los ocho tiradores para redimensionar y el control circular superior para girar.</p>
     </section>
   </div>
 

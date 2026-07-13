@@ -105,6 +105,23 @@ const rotationAngle = $('rotationAngle');
 const rotationAngleNumber = $('rotationAngleNumber');
 const rotationAngleValue = $('rotationAngleValue');
 const resetRotationBtn = $('resetRotationBtn');
+const regionStyleSelect = $('regionStyleSelect');
+const lineSpacing = $('lineSpacing');
+const lineSpacingNumber = $('lineSpacingNumber');
+const lineSpacingValue = $('lineSpacingValue');
+const textOffsetX = $('textOffsetX');
+const textOffsetY = $('textOffsetY');
+const resetTextOffsetBtn = $('resetTextOffsetBtn');
+const resetTypographyBtn = $('resetTypographyBtn');
+const centerRegionHorizontalBtn = $('centerRegionHorizontalBtn');
+const centerRegionVerticalBtn = $('centerRegionVerticalBtn');
+const fitRegionToTextBtn = $('fitRegionToTextBtn');
+const alignLeftBtn = $('alignLeftBtn');
+const alignCenterBtn = $('alignCenterBtn');
+const alignRightBtn = $('alignRightBtn');
+const alignTopBtn = $('alignTopBtn');
+const alignMiddleBtn = $('alignMiddleBtn');
+const alignBottomBtn = $('alignBottomBtn');
 const saveBtn = $('saveBtn');
 const resetBtn = $('resetBtn');
 const prevBtn = $('prevBtn');
@@ -305,6 +322,43 @@ function clampRotationAngle(value, fallback = 0) {
   while (parsed > 90) parsed -= 180;
   parsed = Math.max(-89, Math.min(89, parsed));
   return Math.abs(parsed) < 0.65 ? 0 : Math.round(parsed * 10) / 10;
+}
+
+function normalizeTextAlign(value) {
+  const normalized = String(value || 'center').toLowerCase();
+  return ['left', 'center', 'right'].includes(normalized) ? normalized : 'center';
+}
+
+function normalizeVerticalAlign(value) {
+  const normalized = String(value || 'middle').toLowerCase();
+  return ['top', 'middle', 'bottom'].includes(normalized) ? normalized : 'middle';
+}
+
+function clampLineSpacing(value, fallback = 1) {
+  const parsed = Number(value);
+  const safe = Number.isFinite(parsed) ? parsed : Number(fallback) || 1;
+  return Math.round(Math.max(0.55, Math.min(2, safe)) * 100) / 100;
+}
+
+function clampTextOffset(value, fallback = 0) {
+  const parsed = Number(value);
+  const safe = Number.isFinite(parsed) ? parsed : Number(fallback) || 0;
+  return Math.round(Math.max(-1000, Math.min(1000, safe)) * 10) / 10;
+}
+
+function syncLineSpacingControls(value) {
+  const factor = clampLineSpacing(value, 1);
+  if (lineSpacing) lineSpacing.value = String(factor);
+  if (lineSpacingNumber) lineSpacingNumber.value = String(factor);
+  if (lineSpacingValue) lineSpacingValue.textContent = `${Math.round(factor * 100)}%`;
+  return factor;
+}
+
+function syncAlignmentControls(region) {
+  const horizontal = normalizeTextAlign(region?.text_align);
+  const vertical = normalizeVerticalAlign(region?.vertical_align);
+  document.querySelectorAll('[data-text-align]').forEach((button) => button.classList.toggle('active', button.dataset.textAlign === horizontal));
+  document.querySelectorAll('[data-vertical-align]').forEach((button) => button.classList.toggle('active', button.dataset.verticalAlign === vertical));
 }
 
 function syncRotationControls(value) {
@@ -1103,6 +1157,11 @@ function createFullBoxUiLayout(bbox, style = 'dialogo') {
     bbox: [0, 0, Math.max(1, w), Math.max(1, h)],
     style: style || 'dialogo',
     rotation_angle: 0,
+    text_align: 'center',
+    vertical_align: 'middle',
+    line_spacing_factor: 1,
+    text_offset_x: 0,
+    text_offset_y: 0,
     block_count: 1,
     blocks: [{
       slot: [0, 0, Math.max(1, w), Math.max(1, h)],
@@ -1198,6 +1257,11 @@ function cloneRegions(regions) {
       font_size: region.auto_font_size === false ? clampFontSize(region.font_size, null) : null,
       rotation_angle: clampRotationAngle(region.rotation_angle ?? region.text_rotation_angle ?? layoutResult.layout?.rotation_angle ?? 0),
       rotation_confidence: Number(region.rotation_confidence || 0),
+      text_align: normalizeTextAlign(region.text_align ?? layoutResult.layout?.text_align ?? 'center'),
+      vertical_align: normalizeVerticalAlign(region.vertical_align ?? layoutResult.layout?.vertical_align ?? 'middle'),
+      line_spacing_factor: clampLineSpacing(region.line_spacing_factor ?? region.line_spacing ?? layoutResult.layout?.line_spacing_factor ?? 1),
+      text_offset_x: clampTextOffset(region.text_offset_x ?? layoutResult.layout?.text_offset_x ?? 0),
+      text_offset_y: clampTextOffset(region.text_offset_y ?? layoutResult.layout?.text_offset_y ?? 0),
       ui_layout: layoutResult.layout,
       ui_text_region: Boolean(layoutResult.layout?.ui_text_region),
     };
@@ -1448,7 +1512,28 @@ function cachedRasterPreview(key) {
   return entry.url;
 }
 
+async function fetchRegionMetrics(idx) {
+  const page = currentPage();
+  const region = state.regions[idx];
+  if (!page || page.status !== 'ready' || !state.job?.job_id || !isSelectableRegion(region)) return null;
+  const response = await fetch(`/api/jobs/${state.job.job_id}/pages/${page.index}/region-metrics`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ region: regionToRenderPatch(region, idx) }),
+  });
+  if (!response.ok) {
+    let payload = null;
+    try { payload = await response.json(); } catch (_) {}
+    throw new Error(payload?.detail || response.statusText || 'No se pudieron medir las métricas.');
+  }
+  return response.json();
+}
+
 function clearRasterPreviewCache() {
+  // Mantener este reseteo tolerante a estados parciales evita que una recarga
+  // durante la inicialización bloquee la apertura del editor.
+  state.previewCache ??= new Map();
+  state.previewInFlightKeys ??= new Set();
   state.previewCache.forEach((entry) => {
     if (entry?.url) URL.revokeObjectURL(entry.url);
   });
@@ -1702,7 +1787,7 @@ function renderOverlay(options = {}) {
         if (isSelected && hasMultipleSlots) {
           const slotHint = document.createElement('span');
           slotHint.className = 'region-slot-hint';
-          slotHint.textContent = 'Edita este diálogo en el panel derecho; esta vista usa el mismo render final.';
+          slotHint.textContent = 'Edita este diálogo en el panel derecho.';
           box.appendChild(slotHint);
         }
       } else {
@@ -1728,10 +1813,19 @@ function renderOverlay(options = {}) {
       });
     }
 
-    const handle = document.createElement('span');
-    handle.className = 'resize-handle';
-    handle.title = 'Redimensionar';
-    box.appendChild(handle);
+    if (isSelected && state.tool === 'select') {
+      for (const direction of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) {
+        const handle = document.createElement('span');
+        handle.className = `resize-handle handle-${direction}`;
+        handle.dataset.handle = direction;
+        handle.title = `Redimensionar ${direction.toUpperCase()}`;
+        box.appendChild(handle);
+      }
+      const rotateHandle = document.createElement('span');
+      rotateHandle.className = 'rotation-handle';
+      rotateHandle.title = 'Arrastra para girar el texto';
+      box.appendChild(rotateHandle);
+    }
 
     box.addEventListener('pointerdown', onBoxPointerDown);
     box.addEventListener('click', (event) => {
@@ -1857,6 +1951,34 @@ function onInlineTextKeyDown(event) {
   }
 }
 
+function safeSetPointerCapture(element, pointerId) {
+  if (!element?.isConnected || typeof element.setPointerCapture !== 'function') return false;
+  try {
+    element.setPointerCapture(pointerId);
+    return true;
+  } catch (error) {
+    // Chromium can throw InvalidStateError when a render replaces the pointer target.
+    // Dragging still works because movement and release are tracked on document.
+    if (!['InvalidStateError', 'NotFoundError'].includes(error?.name)) {
+      console.warn('No se pudo capturar el puntero.', error);
+    }
+    return false;
+  }
+}
+
+function safeReleasePointerCapture(element, pointerId) {
+  if (!element?.isConnected || typeof element.releasePointerCapture !== 'function') return;
+  try {
+    if (typeof element.hasPointerCapture !== 'function' || element.hasPointerCapture(pointerId)) {
+      element.releasePointerCapture(pointerId);
+    }
+  } catch (error) {
+    if (!['InvalidStateError', 'NotFoundError'].includes(error?.name)) {
+      console.warn('No se pudo liberar el puntero.', error);
+    }
+  }
+}
+
 function onBoxPointerDown(event) {
   if (activeTool() !== 'select') return;
   event.stopPropagation();
@@ -1865,26 +1987,45 @@ function onBoxPointerDown(event) {
   if (!isSelectableRegion(state.regions[idx])) return;
 
   const targetIsResize = event.target.classList.contains('resize-handle');
+  const targetIsRotate = event.target.classList.contains('rotation-handle');
   const targetIsEditor = Boolean(event.target.closest?.('.region-text-editor'));
   const edgeDrag = isNearBoxEdge(event, box);
 
   if (targetIsEditor) return;
 
   event.preventDefault();
-  selectRegion(idx);
+  // Capture on the stable overlay before selection can rerender and detach `box`.
+  safeSetPointerCapture(overlayLayer, event.pointerId);
+  selectRegion(idx, false);
 
-  if (!targetIsResize && !edgeDrag && !event.target.closest?.('.region-label')) return;
+  const canMove = edgeDrag || event.target === box || Boolean(event.target.closest?.('.region-label'));
+  if (!targetIsResize && !targetIsRotate && !canMove) {
+    safeReleasePointerCapture(overlayLayer, event.pointerId);
+    return;
+  }
 
   const region = state.regions[idx];
-  pushUndoSnapshot(targetIsResize ? 'redimensionar región' : 'mover región', { coalesceKey: `drag:${idx}`, coalesceMs: 500 });
+  const mode = targetIsRotate ? 'rotate' : targetIsResize ? 'resize' : 'move';
+  pushUndoSnapshot(mode === 'rotate' ? 'girar texto' : mode === 'resize' ? 'redimensionar región' : 'mover región', { coalesceKey: `drag:${idx}:${mode}`, coalesceMs: 500 });
+  const imageRect = pageImage.getBoundingClientRect();
+  const [rx, ry, rw, rh] = region.bbox;
+  const centerX = imageRect.left + (rx + rw / 2) * (imageRect.width / state.naturalWidth);
+  const centerY = imageRect.top + (ry + rh / 2) * (imageRect.height / state.naturalHeight);
   state.dragging = {
     idx,
-    isResize: targetIsResize,
+    mode,
+    pointerId: event.pointerId,
+    isResize: mode === 'resize',
+    isRotate: mode === 'rotate',
+    handle: event.target.dataset.handle || 'se',
     startX: event.clientX,
     startY: event.clientY,
     startBox: [...region.bbox],
+    startRotation: clampRotationAngle(region.rotation_angle || 0),
+    centerX,
+    centerY,
+    startPointerAngle: Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180 / Math.PI,
   };
-  box.setPointerCapture(event.pointerId);
 }
 
 
@@ -1911,7 +2052,7 @@ overlayLayer.addEventListener('pointerdown', (event) => {
       scrollTop: canvasCard?.scrollTop || 0,
     };
     setCanvasPanning(true);
-    overlayLayer.setPointerCapture(event.pointerId);
+    safeSetPointerCapture(overlayLayer, event.pointerId);
     updateCanvasReadout([x, y]);
     return;
   }
@@ -1919,7 +2060,7 @@ overlayLayer.addEventListener('pointerdown', (event) => {
   if (state.tool === 'region') {
     state.selectedRegion = null;
     state.drawingRegion = { startX: x, startY: y, bbox: [x, y, 1, 1] };
-    overlayLayer.setPointerCapture(event.pointerId);
+    safeSetPointerCapture(overlayLayer, event.pointerId);
     showNoRegion();
     renderOverlay();
     return;
@@ -1929,7 +2070,7 @@ overlayLayer.addEventListener('pointerdown', (event) => {
     state.brushCursor = { x, y, visible: true };
     pushUndoSnapshot('pincel', { coalesceKey: 'brush-stroke', coalesceMs: 250 });
     state.drawingStroke = { points: [[x, y]], radius: Number(brushSize.value || 22), mode: brushMode.value || 'restore_clean', applied: false };
-    overlayLayer.setPointerCapture(event.pointerId);
+    safeSetPointerCapture(overlayLayer, event.pointerId);
     markDirty();
     renderOverlay();
     return;
@@ -1964,14 +2105,31 @@ document.addEventListener('pointermove', (event) => {
     const dx = (event.clientX - drag.startX) / (rect.width / state.naturalWidth);
     const dy = (event.clientY - drag.startY) / (rect.height / state.naturalHeight);
     let [x, y, w, h] = drag.startBox;
-    if (drag.isResize) {
-      w = Math.max(12, Math.min(state.naturalWidth - x, w + dx));
-      h = Math.max(12, Math.min(state.naturalHeight - y, h + dy));
+    if (drag.mode === 'rotate') {
+      const pointerAngle = Math.atan2(event.clientY - drag.centerY, event.clientX - drag.centerX) * 180 / Math.PI;
+      const nextAngle = clampRotationAngle(drag.startRotation + pointerAngle - drag.startPointerAngle);
+      region.rotation_angle = nextAngle;
+      if (region.ui_layout) region.ui_layout.rotation_angle = nextAngle;
+    } else if (drag.mode === 'resize') {
+      let left = x;
+      let top = y;
+      let right = x + w;
+      let bottom = y + h;
+      const handle = drag.handle || 'se';
+      if (handle.includes('w')) left = Math.max(0, Math.min(right - 12, left + dx));
+      if (handle.includes('e')) right = Math.min(state.naturalWidth, Math.max(left + 12, right + dx));
+      if (handle.includes('n')) top = Math.max(0, Math.min(bottom - 12, top + dy));
+      if (handle.includes('s')) bottom = Math.min(state.naturalHeight, Math.max(top + 12, bottom + dy));
+      x = left;
+      y = top;
+      w = right - left;
+      h = bottom - top;
+      region.bbox = [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
     } else {
       x = Math.max(0, Math.min(state.naturalWidth - w, x + dx));
       y = Math.max(0, Math.min(state.naturalHeight - h, y + dy));
+      region.bbox = [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
     }
-    region.bbox = [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
     markRegionModified(region);
     updateEditorFromRegion();
     renderOverlay();
@@ -2004,13 +2162,18 @@ document.addEventListener('pointermove', (event) => {
   }
 });
 
-document.addEventListener('pointerup', () => {
+document.addEventListener('pointerup', (event) => {
+  safeReleasePointerCapture(overlayLayer, event.pointerId);
   if (state.panning) {
     state.panning = null;
     setCanvasPanning(false);
   }
 
-  if (state.dragging) scheduleAutoSave(state.dragging.isResize ? 'redimensionar región' : 'mover región');
+  if (state.dragging) {
+    const reason = state.dragging.mode === 'rotate' ? 'girar texto' : state.dragging.mode === 'resize' ? 'redimensionar región' : 'mover región';
+    scheduleAutoSave(reason);
+    queueInlineRasterPreview(state.dragging.idx, 0);
+  }
   state.dragging = null;
 
   if (state.drawingRegion) {
@@ -2036,6 +2199,11 @@ document.addEventListener('pointerup', () => {
         font_size: null,
         rotation_angle: 0,
         rotation_confidence: 0,
+        text_align: 'center',
+        vertical_align: 'middle',
+        line_spacing_factor: 1,
+        text_offset_x: 0,
+        text_offset_y: 0,
         ui_layout: createFullBoxUiLayout(bbox, 'dialogo'),
         ui_text_region: true,
       };
@@ -2076,6 +2244,16 @@ document.addEventListener('pointerup', () => {
     updateHeavyActions();
     renderOverlay();
   }
+});
+
+document.addEventListener('pointercancel', (event) => {
+  safeReleasePointerCapture(overlayLayer, event.pointerId);
+  state.panning = null;
+  state.dragging = null;
+  state.drawingRegion = null;
+  state.drawingStroke = null;
+  setCanvasPanning(false);
+  renderOverlay();
 });
 window.addEventListener('resize', () => { setFitZoomIfNeeded(false); applyZoom(); renderOverlay(); });
 window.addEventListener('beforeunload', (event) => {
@@ -2236,6 +2414,11 @@ function updateEditorFromRegion() {
   if (autoFontSize) autoFontSize.checked = usesAutoFontSize(region);
   syncFontControlsFromValue(effectiveManualFontSize(region));
   syncRotationControls(region.rotation_angle || 0);
+  if (regionStyleSelect) regionStyleSelect.value = region.style || 'dialogo';
+  syncAlignmentControls(region);
+  syncLineSpacingControls(region.line_spacing_factor || 1);
+  if (textOffsetX) textOffsetX.value = String(clampTextOffset(region.text_offset_x || 0));
+  if (textOffsetY) textOffsetY.value = String(clampTextOffset(region.text_offset_y || 0));
   updateFontControlsDisabled();
   regionTypeBadge.textContent = region.manual ? 'Región manual' : 'Región detectada';
 }
@@ -2252,6 +2435,12 @@ function updateRegionFromEditor(options = {}) {
   const manualFontSize = clampFontSize(fontSizeNumber?.value || fontSize?.value, effectiveManualFontSize(region));
   const nextFontSize = nextAutoFont ? null : manualFontSize;
   const nextRotationAngle = clampRotationAngle(rotationAngleNumber?.value ?? rotationAngle?.value ?? region.rotation_angle ?? 0);
+  const nextStyle = String(regionStyleSelect?.value || region.style || 'dialogo');
+  const nextTextAlign = normalizeTextAlign(document.querySelector('[data-text-align].active')?.dataset?.textAlign || region.text_align);
+  const nextVerticalAlign = normalizeVerticalAlign(document.querySelector('[data-vertical-align].active')?.dataset?.verticalAlign || region.vertical_align);
+  const nextLineSpacing = clampLineSpacing(lineSpacingNumber?.value ?? lineSpacing?.value ?? region.line_spacing_factor ?? 1);
+  const nextTextOffsetX = clampTextOffset(textOffsetX?.value ?? region.text_offset_x ?? 0);
+  const nextTextOffsetY = clampTextOffset(textOffsetY?.value ?? region.text_offset_y ?? 0);
   const currentFontSize = usesAutoFontSize(region) ? null : clampFontSize(region.font_size, null);
   const changed =
     region.original_text !== nextOriginalText ||
@@ -2261,6 +2450,12 @@ function updateRegionFromEditor(options = {}) {
     usesAutoFontSize(region) !== nextAutoFont ||
     currentFontSize !== nextFontSize ||
     clampRotationAngle(region.rotation_angle || 0) !== nextRotationAngle ||
+    String(region.style || 'dialogo') !== nextStyle ||
+    normalizeTextAlign(region.text_align) !== nextTextAlign ||
+    normalizeVerticalAlign(region.vertical_align) !== nextVerticalAlign ||
+    clampLineSpacing(region.line_spacing_factor || 1) !== nextLineSpacing ||
+    clampTextOffset(region.text_offset_x || 0) !== nextTextOffsetX ||
+    clampTextOffset(region.text_offset_y || 0) !== nextTextOffsetY ||
     region.bbox.some((value, index) => value !== nextBox[index]);
 
   if (changed && options.history !== false) {
@@ -2275,8 +2470,24 @@ function updateRegionFromEditor(options = {}) {
   region.auto_font_size = nextAutoFont;
   region.font_size = nextFontSize;
   region.rotation_angle = nextRotationAngle;
-  if (region.ui_layout) region.ui_layout.rotation_angle = nextRotationAngle;
+  region.style = nextStyle;
+  region.text_align = nextTextAlign;
+  region.vertical_align = nextVerticalAlign;
+  region.line_spacing_factor = nextLineSpacing;
+  region.text_offset_x = nextTextOffsetX;
+  region.text_offset_y = nextTextOffsetY;
+  if (region.ui_layout) {
+    region.ui_layout.rotation_angle = nextRotationAngle;
+    region.ui_layout.style = nextStyle;
+    region.ui_layout.text_align = nextTextAlign;
+    region.ui_layout.vertical_align = nextVerticalAlign;
+    region.ui_layout.line_spacing_factor = nextLineSpacing;
+    region.ui_layout.text_offset_x = nextTextOffsetX;
+    region.ui_layout.text_offset_y = nextTextOffsetY;
+  }
   syncRotationControls(nextRotationAngle);
+  syncLineSpacingControls(nextLineSpacing);
+  syncAlignmentControls(region);
   updateFontControlsDisabled();
   if (changed) {
     markRegionModified(region);
@@ -2311,6 +2522,112 @@ function nudgeSelectedRegion(dx, dy, options = {}) {
   renderOverlay({ force: true });
   scheduleAutoSave(resize ? 'redimensionar con teclado' : 'mover con teclado', 650);
   return true;
+}
+
+
+function nudgeSelectedText(dx, dy) {
+  const idx = state.selectedRegion;
+  const region = state.regions[idx];
+  if (!isSelectableRegion(region)) return false;
+  pushUndoSnapshot('mover texto dentro de la región', { coalesceKey: `text-offset:${idx}`, coalesceMs: 700 });
+  region.text_offset_x = clampTextOffset((region.text_offset_x || 0) + dx);
+  region.text_offset_y = clampTextOffset((region.text_offset_y || 0) + dy);
+  if (region.ui_layout) {
+    region.ui_layout.text_offset_x = region.text_offset_x;
+    region.ui_layout.text_offset_y = region.text_offset_y;
+  }
+  markRegionModified(region);
+  updateEditorFromRegion();
+  renderOverlay({ force: true });
+  scheduleAutoSave('mover texto', 650);
+  return true;
+}
+
+function centerSelectedRegion(axis) {
+  const idx = state.selectedRegion;
+  const region = state.regions[idx];
+  if (!isSelectableRegion(region)) return;
+  const [x, y, w, h] = region.bbox;
+  const next = axis === 'horizontal'
+    ? clampBox([(state.naturalWidth - w) / 2, y, w, h])
+    : clampBox([x, (state.naturalHeight - h) / 2, w, h]);
+  if (region.bbox.every((value, index) => value === next[index])) return;
+  pushUndoSnapshot(`centrar región ${axis}`);
+  region.bbox = next;
+  markRegionModified(region);
+  updateEditorFromRegion();
+  renderOverlay({ force: true });
+  scheduleAutoSave(`centrar región ${axis}`, 500);
+}
+
+async function fitSelectedRegionToText() {
+  const idx = state.selectedRegion;
+  const region = state.regions[idx];
+  if (!isSelectableRegion(region)) return showToast('Selecciona una región.');
+  fitRegionToTextBtn.disabled = true;
+  try {
+    const metrics = await fetchRegionMetrics(idx);
+    const blocks = Array.isArray(metrics?.blocks) ? metrics.blocks : [];
+    const lines = blocks.flatMap((block) => (block.lines || []).map((line) => ({ ...line, stroke: Number(block.stroke_width || 0) })));
+    if (!lines.length) return showToast('Escribe texto antes de ajustar la caja.');
+    const minX = Math.min(...lines.map((line) => Number(line.visual_x || 0) - line.stroke));
+    const minY = Math.min(...lines.map((line) => Number(line.visual_y || 0) - line.stroke));
+    const maxX = Math.max(...lines.map((line) => Number(line.visual_x || 0) + Number(line.width || 0) + line.stroke));
+    const maxY = Math.max(...lines.map((line) => Number(line.visual_y || 0) + Number(line.height || 0) + line.stroke));
+    const padding = Math.max(8, Math.round(Math.max(...blocks.map((block) => Number(block.font_size || 12))) * 0.35));
+    const desiredW = Math.max(24, Math.ceil(maxX - minX + padding * 2));
+    const desiredH = Math.max(24, Math.ceil(maxY - minY + padding * 2));
+    const [x, y, w, h] = region.bbox;
+    const centerX = x + w / 2;
+    const centerY = y + h / 2;
+    pushUndoSnapshot('ajustar región al texto');
+    region.bbox = clampBox([centerX - desiredW / 2, centerY - desiredH / 2, desiredW, desiredH]);
+    const exactSize = Number(blocks[0]?.font_size);
+    if (Number.isFinite(exactSize)) {
+      region.auto_font_size = false;
+      region.font_size = clampFontSize(exactSize, region.font_size || 24);
+    }
+    region.text_offset_x = 0;
+    region.text_offset_y = 0;
+    region.ui_layout = createFullBoxUiLayout(region.bbox, region.style || 'dialogo');
+    region.ui_layout.rotation_angle = region.rotation_angle || 0;
+    region.ui_layout.text_align = region.text_align || 'center';
+    region.ui_layout.vertical_align = region.vertical_align || 'middle';
+    region.ui_layout.line_spacing_factor = region.line_spacing_factor || 1;
+    markRegionModified(region);
+    updateEditorFromRegion();
+    renderOverlay({ force: true });
+    scheduleAutoSave('ajustar región al texto', 500);
+    showToast('Caja ajustada al texto.');
+  } catch (error) {
+    showToast(error.message || 'No se pudo ajustar la caja.');
+  } finally {
+    fitRegionToTextBtn.disabled = false;
+  }
+}
+
+function resetSelectedTypography() {
+  const region = selectedRegion();
+  if (!region) return;
+  pushUndoSnapshot('restablecer tipografía');
+  region.text_align = 'center';
+  region.vertical_align = 'middle';
+  region.line_spacing_factor = 1;
+  region.text_offset_x = 0;
+  region.text_offset_y = 0;
+  region.rotation_angle = 0;
+  if (region.ui_layout) {
+    region.ui_layout.text_align = 'center';
+    region.ui_layout.vertical_align = 'middle';
+    region.ui_layout.line_spacing_factor = 1;
+    region.ui_layout.text_offset_x = 0;
+    region.ui_layout.text_offset_y = 0;
+    region.ui_layout.rotation_angle = 0;
+  }
+  markRegionModified(region);
+  updateEditorFromRegion();
+  renderOverlay({ force: true });
+  scheduleAutoSave('restablecer tipografía', 500);
 }
 
 
@@ -2353,6 +2670,42 @@ autoFontSize?.addEventListener('change', () => {
   updateFontControlsDisabled();
   updateRegionFromEditor();
 });
+regionStyleSelect?.addEventListener('change', updateRegionFromEditor);
+[lineSpacing, lineSpacingNumber].filter(Boolean).forEach((control) => {
+  control.addEventListener('input', () => {
+    syncLineSpacingControls(control.value);
+    updateRegionFromEditor();
+  });
+  control.addEventListener('change', () => {
+    syncLineSpacingControls(control.value);
+    updateRegionFromEditor();
+  });
+});
+[textOffsetX, textOffsetY].filter(Boolean).forEach((control) => {
+  control.addEventListener('input', updateRegionFromEditor);
+  control.addEventListener('change', updateRegionFromEditor);
+});
+document.querySelectorAll('[data-text-align]').forEach((button) => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('[data-text-align]').forEach((item) => item.classList.toggle('active', item === button));
+    updateRegionFromEditor();
+  });
+});
+document.querySelectorAll('[data-vertical-align]').forEach((button) => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('[data-vertical-align]').forEach((item) => item.classList.toggle('active', item === button));
+    updateRegionFromEditor();
+  });
+});
+resetTextOffsetBtn?.addEventListener('click', () => {
+  if (textOffsetX) textOffsetX.value = '0';
+  if (textOffsetY) textOffsetY.value = '0';
+  updateRegionFromEditor();
+});
+resetTypographyBtn?.addEventListener('click', resetSelectedTypography);
+centerRegionHorizontalBtn?.addEventListener('click', () => centerSelectedRegion('horizontal'));
+centerRegionVerticalBtn?.addEventListener('click', () => centerSelectedRegion('vertical'));
+fitRegionToTextBtn?.addEventListener('click', fitSelectedRegionToText);
 
 ocrRegionBtn.addEventListener('click', async () => {
   const page = currentPage();
@@ -2523,6 +2876,12 @@ document.addEventListener('keydown', (event) => {
 
   const page = currentPage();
 
+  if (ctrl && key === 'j' && state.selectedRegion != null && page?.status === 'ready') {
+    event.preventDefault();
+    copySelectedRegion(false);
+    pasteRegion();
+    return;
+  }
   if (ctrl && key === 's') {
     event.preventDefault();
     saveCurrentPage({ silent: false, force: true, reason: 'atajo guardar' }).catch(() => {});
@@ -2543,6 +2902,20 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     zoomTo(state.zoom / 1.15);
     return;
+  }
+
+  if (event.altKey && key.startsWith('arrow') && state.selectedRegion != null && page?.status === 'ready') {
+    const step = event.shiftKey ? 10 : 1;
+    const vector = {
+      arrowleft: [-step, 0],
+      arrowright: [step, 0],
+      arrowup: [0, -step],
+      arrowdown: [0, step],
+    }[key];
+    if (vector && nudgeSelectedText(vector[0], vector[1])) {
+      event.preventDefault();
+      return;
+    }
   }
 
   if (key.startsWith('arrow') && state.selectedRegion != null && page?.status === 'ready') {
@@ -2669,6 +3042,11 @@ function regionToRenderPatch(region, idx) {
     auto_font_size: region.auto_font_size !== false,
     font_size: region.auto_font_size === false ? clampFontSize(region.font_size, null) : null,
     rotation_angle: clampRotationAngle(region.rotation_angle || 0),
+    text_align: normalizeTextAlign(region.text_align),
+    vertical_align: normalizeVerticalAlign(region.vertical_align),
+    line_spacing_factor: clampLineSpacing(region.line_spacing_factor || 1),
+    text_offset_x: clampTextOffset(region.text_offset_x || 0),
+    text_offset_y: clampTextOffset(region.text_offset_y || 0),
     ui_layout: region.ui_layout || null,
     ui_text_region: Boolean(region.ui_text_region || region.ui_layout?.ui_text_region),
   };
@@ -2681,8 +3059,8 @@ function inlinePreviewCacheKey(region, idx) {
 function queueInlineRasterPreview(idxOrElement, delay = 120) {
   const idx = typeof idxOrElement === 'number' ? idxOrElement : Number(idxOrElement?.dataset?.index);
   if (!Number.isInteger(idx) || !isSelectableRegion(state.regions[idx])) return;
-  // Mientras el usuario escribe usamos un editor HTML visible. Pedir previews
-  // rasterizadas en cada tecla/clic provoca parpadeos y no aporta precisión al caret.
+  // Durante la edición directa mantenemos visible el textarea HTML para que
+  // el cursor, la selección y la escritura sean estables y predecibles.
   if (state.inlineEditingIndex === idx) return;
   const page = currentPage();
   const img = overlayLayer?.querySelector?.(`.region-raster-preview[data-index="${idx}"]`);
@@ -2699,7 +3077,7 @@ function queueInlineRasterPreview(idxOrElement, delay = 120) {
   if (state.previewInFlightKeys.has(key)) return;
   clearTimeout(inlinePreviewTimers.get(idx));
   inlinePreviewTimers.set(idx, setTimeout(() => updateInlineRasterPreview(idx).catch((error) => {
-    if (error?.name !== 'AbortError') console.warn('No se pudo generar la previsualización exacta:', error);
+    if (error?.name !== 'AbortError') console.warn('No se pudo generar la previsualización rasterizada:', error);
   }), Math.max(0, delay)));
 }
 

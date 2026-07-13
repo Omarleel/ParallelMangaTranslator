@@ -55,6 +55,11 @@ class RegionPatch(BaseModel):
     auto_font_size: bool = True
     font_size: Optional[int] = None
     rotation_angle: float = 0.0
+    text_align: str = "center"
+    vertical_align: str = "middle"
+    line_spacing_factor: float = 1.0
+    text_offset_x: float = 0.0
+    text_offset_y: float = 0.0
     ui_layout: Optional[Dict[str, Any]] = None
 
 
@@ -222,6 +227,18 @@ def render_region_preview(job_id: str, page_index: int, request: RegionPreviewRe
             request.region.model_dump() if hasattr(request.region, "model_dump") else request.region.dict(),
         )
         return Response(content=content, media_type="image/png")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/pages/{page_index}/region-metrics")
+def region_metrics(job_id: str, page_index: int, request: RegionPreviewRequest):
+    try:
+        return manager.resolve_region_metrics(
+            job_id,
+            page_index,
+            request.region.model_dump() if hasattr(request.region, "model_dump") else request.region.dict(),
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

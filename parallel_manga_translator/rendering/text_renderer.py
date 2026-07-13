@@ -174,6 +174,172 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             return max(1, min(2, int(getattr(fuente, "size", self.min_font_size) * 0.045)))
         return max(1, min(3, int(getattr(fuente, "size", self.min_font_size) * 0.07)))
 
+    @staticmethod
+    def _normalize_text_align(value: Any) -> str:
+        normalized = str(value or "center").strip().lower()
+        aliases = {"izquierda": "left", "centro": "center", "derecha": "right"}
+        normalized = aliases.get(normalized, normalized)
+        return normalized if normalized in {"left", "center", "right"} else "center"
+
+    @staticmethod
+    def _normalize_vertical_align(value: Any) -> str:
+        normalized = str(value or "middle").strip().lower()
+        aliases = {"arriba": "top", "centro": "middle", "medio": "middle", "abajo": "bottom"}
+        normalized = aliases.get(normalized, normalized)
+        return normalized if normalized in {"top", "middle", "bottom"} else "middle"
+
+    @staticmethod
+    def _coerce_line_spacing(value: Any) -> float:
+        try:
+            factor = float(value if value is not None else 1.0)
+        except (TypeError, ValueError):
+            factor = 1.0
+        if not math.isfinite(factor):
+            factor = 1.0
+        return max(0.55, min(2.0, factor))
+
+    @staticmethod
+    def _coerce_text_offset(value: Any) -> float:
+        try:
+            offset = float(value or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+        return max(-1000.0, min(1000.0, offset)) if math.isfinite(offset) else 0.0
+
+    def resolve_manual_layout(
+        self,
+        bbox: Sequence[int],
+        texto: str,
+        style: str = "dialogo",
+        *,
+        ui_layout: Optional[Dict[str, Any]] = None,
+        requested_font_size: Optional[int] = None,
+        rotation_angle: Optional[float] = None,
+        text_align: Optional[str] = None,
+        vertical_align: Optional[str] = None,
+        line_spacing_factor: Optional[float] = None,
+        text_offset_x: Optional[float] = None,
+        text_offset_y: Optional[float] = None,
+        image_shape: Optional[Tuple[int, int]] = None,
+    ) -> Dict[str, Any]:
+        """Resuelve las métricas y coordenadas exactas usadas por el render manual.
+
+        Este método es la fuente de verdad compartida por la previsualización de la UI
+        y el guardado final. Las posiciones se expresan dentro de la bbox de la región.
+        """
+        image_height = image_shape[0] if image_shape else None
+        image_width = image_shape[1] if image_shape else None
+        x, y, w, h = self._coerce_box(bbox, image_width, image_height)
+        layout = ui_layout if isinstance(ui_layout, dict) else None
+        style = str(style or (layout or {}).get("style") or "dialogo")
+        rotation_angle = self._coerce_rotation_angle(rotation_angle if rotation_angle is not None else (layout or {}).get("rotation_angle", 0.0))
+        horizontal = self._normalize_text_align(text_align if text_align is not None else (layout or {}).get("text_align", "center"))
+        vertical = self._normalize_vertical_align(vertical_align if vertical_align is not None else (layout or {}).get("vertical_align", "middle"))
+        spacing_factor = self._coerce_line_spacing(line_spacing_factor if line_spacing_factor is not None else (layout or {}).get("line_spacing_factor", 1.0))
+        offset_x = self._coerce_text_offset(text_offset_x if text_offset_x is not None else (layout or {}).get("text_offset_x", 0.0))
+        offset_y = self._coerce_text_offset(text_offset_y if text_offset_y is not None else (layout or {}).get("text_offset_y", 0.0))
+        prepared_text = self._prepare_display_text(texto, style)
+
+        raw_blocks = layout.get("blocks") if layout else None
+        block_specs: List[Tuple[Tuple[int, int, int, int], str]] = []
+        if isinstance(raw_blocks, list) and raw_blocks:
+            _src_x, _src_y, src_w, src_h = self._layout_box_values(layout.get("bbox"), (x, y, w, h))
+            block_texts = self._split_text_for_slots(prepared_text, len(raw_blocks)) if len(raw_blocks) > 1 else [prepared_text]
+            for block, block_text in zip(raw_blocks, block_texts):
+                if not isinstance(block, dict):
+                    continue
+                area = self._scale_local_box(block.get("area") or block.get("slot"), src_w, src_h, w, h)
+                block_specs.append((area, block_text))
+
+        if not block_specs:
+            margin_ratio = self.inner_margin_ratio if not style.startswith("onomatopeya") else max(0.035, self.inner_margin_ratio * 0.45)
+            margin_x = max(2, int(w * margin_ratio))
+            margin_y = max(2, int(h * margin_ratio))
+            block_specs = [((margin_x, margin_y, max(1, w - margin_x * 2), max(1, h - margin_y * 2)), prepared_text)]
+
+        fixed_font_size = self._fixed_font_size(requested_font_size)
+        resolved_blocks: List[Dict[str, Any]] = []
+        for raw_area, block_text in block_specs:
+            area_x, area_y, area_w, area_h = self._rotation_safe_local_box(tuple(raw_area), w, h, rotation_angle)
+            if fixed_font_size is not None:
+                font = self._get_font(fixed_font_size)
+                line_spacing = self._line_spacing(font) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
+                lines = self._split_lines(block_text or " ", font, area_w)
+            else:
+                font, lines, line_spacing = self._fit_font(
+                    block_text or " ",
+                    area_w,
+                    area_h,
+                    style=style,
+                    line_spacing_factor=spacing_factor,
+                )
+
+            stroke_width = self._stroke_width_for_style(font, style)
+            draw_area_x = area_x + stroke_width
+            draw_area_y = area_y + stroke_width
+            draw_area_w = max(1, area_w - stroke_width * 2)
+            draw_area_h = max(1, area_h - stroke_width * 2)
+            paragraph_height = self._paragraph_height(lines, font, line_spacing)
+            if vertical == "top":
+                cursor_y = float(draw_area_y)
+            elif vertical == "bottom":
+                cursor_y = float(draw_area_y + max(0, draw_area_h - paragraph_height))
+            else:
+                cursor_y = float(draw_area_y + max(0, (draw_area_h - paragraph_height) / 2.0))
+            cursor_y += offset_y
+
+            resolved_lines: List[Dict[str, Any]] = []
+            for line in lines:
+                glyph_box = font.getbbox(line or " ")
+                line_height = max(1, glyph_box[3] - glyph_box[1])
+                line_width = max(0, glyph_box[2] - glyph_box[0])
+                if horizontal == "left":
+                    cursor_x = float(draw_area_x)
+                elif horizontal == "right":
+                    cursor_x = float(draw_area_x + max(0, draw_area_w - line_width))
+                else:
+                    cursor_x = float(draw_area_x + max(0, (draw_area_w - line_width) / 2.0))
+                cursor_x += offset_x
+                resolved_lines.append(
+                    {
+                        "text": str(line),
+                        "draw_x": float(cursor_x - glyph_box[0]),
+                        "draw_y": float(cursor_y - glyph_box[1]),
+                        "visual_x": float(cursor_x),
+                        "visual_y": float(cursor_y),
+                        "width": int(line_width),
+                        "height": int(line_height),
+                        "glyph_bbox": [int(v) for v in glyph_box],
+                    }
+                )
+                cursor_y += line_height + line_spacing
+
+            resolved_blocks.append(
+                {
+                    "area": [int(area_x), int(area_y), int(area_w), int(area_h)],
+                    "text": str(block_text),
+                    "font_size": int(getattr(font, "size", fixed_font_size or self.min_font_size)),
+                    "line_spacing": float(line_spacing),
+                    "stroke_width": int(stroke_width),
+                    "paragraph_height": float(paragraph_height),
+                    "lines": resolved_lines,
+                }
+            )
+
+        return {
+            "version": 3,
+            "bbox": [int(x), int(y), int(w), int(h)],
+            "style": style,
+            "rotation_angle": round(float(rotation_angle), 3),
+            "text_align": horizontal,
+            "vertical_align": vertical,
+            "line_spacing_factor": float(spacing_factor),
+            "text_offset_x": float(offset_x),
+            "text_offset_y": float(offset_y),
+            "font_path": str(self.font_path),
+            "blocks": resolved_blocks,
+        }
+
     def build_layout(
         self,
         bbox: Sequence[int],
@@ -185,6 +351,11 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         rotation_angle: float = 0.0,
         image_shape: Optional[Tuple[int, int]] = None,
         reading_order_right_to_left: bool = False,
+        text_align: str = "center",
+        vertical_align: str = "middle",
+        line_spacing_factor: float = 1.0,
+        text_offset_x: float = 0.0,
+        text_offset_y: float = 0.0,
     ) -> Dict[str, Any]:
         """Calcula la distribución de texto que usa el renderizador.
 
@@ -197,6 +368,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         x, y, w, h = self._coerce_box(bbox, image_width, image_height)
         style = style or "dialogo"
         rotation_angle = self._coerce_rotation_angle(rotation_angle)
+        spacing_factor = self._coerce_line_spacing(line_spacing_factor)
         texto = self._prepare_display_text(texto, style)
 
         split_slots = self._connected_lobe_slots_from_mask(
@@ -226,10 +398,12 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
 
             if fixed_font_size is not None:
                 fuente = self._get_font(fixed_font_size)
-                espacio_entre_lineas = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
+                espacio_entre_lineas = self._line_spacing(fuente) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
                 lineas = self._split_lines(block_text or " ", fuente, area_w)
             else:
-                fuente, lineas, espacio_entre_lineas = self._fit_font(block_text or " ", area_w, area_h, style=style)
+                fuente, lineas, espacio_entre_lineas = self._fit_font(
+                    block_text or " ", area_w, area_h, style=style, line_spacing_factor=spacing_factor
+                )
 
             blocks.append(
                 {
@@ -251,6 +425,11 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             "block_count": len(blocks),
             "blocks": blocks,
             "uses_clip_mask": clip_mask is not None,
+            "text_align": self._normalize_text_align(text_align),
+            "vertical_align": self._normalize_vertical_align(vertical_align),
+            "line_spacing_factor": spacing_factor,
+            "text_offset_x": self._coerce_text_offset(text_offset_x),
+            "text_offset_y": self._coerce_text_offset(text_offset_y),
         }
 
     @staticmethod
@@ -289,107 +468,76 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         text_styles: Optional[Sequence[str]] = None,
         font_sizes: Optional[Sequence[Optional[int]]] = None,
         rotation_angles: Optional[Sequence[Optional[float]]] = None,
+        text_aligns: Optional[Sequence[Optional[str]]] = None,
+        vertical_aligns: Optional[Sequence[Optional[str]]] = None,
+        line_spacing_factors: Optional[Sequence[Optional[float]]] = None,
+        text_offsets_x: Optional[Sequence[Optional[float]]] = None,
+        text_offsets_y: Optional[Sequence[Optional[float]]] = None,
     ) -> np.ndarray:
-        """Renderiza usando layouts congelados por la UI cuando existen.
+        """Renderiza regiones manuales con una única fuente de métricas.
 
-        Si una región no trae layout válido se delega en `render`, manteniendo el
-        comportamiento anterior. Con layout válido se respetan ranuras y áreas
-        internas calculadas durante el render automático original.
+        Tanto la vista previa como el guardado final pasan por ``resolve_manual_layout``;
+        así la fuente, el ajuste, las líneas, la alineación y los offsets son idénticos.
         """
-        if text_styles is None:
-            text_styles = ["dialogo"] * len(textos)
-        if font_sizes is None:
-            font_sizes = [None] * len(textos)
-        else:
-            font_sizes = list(font_sizes) + [None] * max(0, len(textos) - len(font_sizes))
-        if ui_layouts is None:
-            ui_layouts = [None] * len(textos)
-        else:
-            ui_layouts = list(ui_layouts) + [None] * max(0, len(textos) - len(ui_layouts))
-        if rotation_angles is None:
-            rotation_angles = [None] * len(textos)
-        else:
-            rotation_angles = list(rotation_angles) + [None] * max(0, len(textos) - len(rotation_angles))
+        count = len(textos)
+        def padded(values, default):
+            if values is None:
+                return [default] * count
+            return list(values) + [default] * max(0, count - len(values))
+
+        text_styles = padded(text_styles, "dialogo")
+        font_sizes = padded(font_sizes, None)
+        ui_layouts = padded(ui_layouts, None)
+        rotation_angles = padded(rotation_angles, None)
+        text_aligns = padded(text_aligns, None)
+        vertical_aligns = padded(vertical_aligns, None)
+        line_spacing_factors = padded(line_spacing_factors, None)
+        text_offsets_x = padded(text_offsets_x, None)
+        text_offsets_y = padded(text_offsets_y, None)
 
         imagen_pil = Image.fromarray(cv2.cvtColor(imagen_limpia, cv2.COLOR_BGR2RGB))
-        ancho_img, alto_img = imagen_pil.size
+        image_width, image_height = imagen_pil.size
 
-        fallback_boxes: List[Tuple[int, int, int, int]] = []
-        fallback_texts: List[str] = []
-        fallback_styles: List[str] = []
-        fallback_sizes: List[Optional[int]] = []
-        fallback_rotations: List[Optional[float]] = []
-
-        for bbox, texto, style, requested_font_size, layout, requested_rotation in zip(cuadros_delimitadores, textos, text_styles, font_sizes, ui_layouts, rotation_angles):
-            x, y, w, h = self._coerce_box(bbox, ancho_img, alto_img)
+        for bbox, text, style, font_size, layout, rotation, h_align, v_align, spacing, offset_x, offset_y in zip(
+            cuadros_delimitadores, textos, text_styles, font_sizes, ui_layouts, rotation_angles,
+            text_aligns, vertical_aligns, line_spacing_factors, text_offsets_x, text_offsets_y,
+        ):
+            x, y, w, h = self._coerce_box(bbox, image_width, image_height)
             if w <= 2 or h <= 2:
                 continue
-            blocks = layout.get("blocks") if isinstance(layout, dict) else None
-            if not isinstance(blocks, list) or not blocks:
-                fallback_boxes.append((x, y, w, h))
-                fallback_texts.append(texto)
-                fallback_styles.append(style or "dialogo")
-                fallback_sizes.append(requested_font_size)
-                fallback_rotations.append(requested_rotation)
-                continue
-
-            style = style or layout.get("style") or "dialogo"
-            rotation_angle = self._coerce_rotation_angle(requested_rotation if requested_rotation is not None else layout.get("rotation_angle", 0.0))
-            prepared_text = self._prepare_display_text(texto, style)
-            src_x, src_y, src_w, src_h = self._layout_box_values(layout.get("bbox"), (x, y, w, h))
-            block_texts = self._split_text_for_slots(prepared_text, len(blocks)) if len(blocks) > 1 else [prepared_text]
-            color_borde, color_texto = self._resolve_text_colors(imagen_limpia, x, y, w, h)
-            capa = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(capa)
-
-            fixed_font_size = self._fixed_font_size(requested_font_size)
-            for block, block_text in zip(blocks, block_texts):
-                area_x, area_y, area_w, area_h = self._scale_local_box(block.get("area") or block.get("slot"), src_w, src_h, w, h)
-                area_x, area_y, area_w, area_h = self._rotation_safe_local_box((area_x, area_y, area_w, area_h), w, h, rotation_angle)
-                if fixed_font_size is not None:
-                    fuente = self._get_font(fixed_font_size)
-                    espacio_entre_lineas = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
-                    lineas = self._split_lines(block_text or " ", fuente, area_w)
-                else:
-                    fuente, lineas, espacio_entre_lineas = self._fit_font(block_text or " ", area_w, area_h, style=style)
-
-                alto_parrafo = self._paragraph_height(lineas, fuente, espacio_entre_lineas)
-                stroke_width = self._stroke_width_for_style(fuente, style)
-                draw_area_x = area_x + stroke_width
-                draw_area_y = area_y + stroke_width
-                draw_area_w = max(1, area_w - stroke_width * 2)
-                draw_area_h = max(1, area_h - stroke_width * 2)
-                y_texto = draw_area_y + max(0, (draw_area_h - alto_parrafo) / 2)
-                for linea in lineas:
-                    glyph_box = fuente.getbbox(linea or " ")
-                    alto_linea = max(1, glyph_box[3] - glyph_box[1])
-                    ancho_linea = max(0, glyph_box[2] - glyph_box[0])
-                    x_texto = draw_area_x + max(0, (draw_area_w - ancho_linea) / 2)
-                    draw.text(
-                        (x_texto - glyph_box[0], y_texto - glyph_box[1]),
-                        linea,
-                        font=fuente,
-                        fill=self._to_rgba(color_texto),
-                        stroke_width=stroke_width,
-                        stroke_fill=self._to_rgba(color_borde),
-                    )
-                    y_texto += alto_linea + espacio_entre_lineas
-
-            del draw
-            capa = self._rotate_text_layer(capa, rotation_angle)
-            imagen_pil.paste(capa, (x, y), capa)
-
-        result = cv2.cvtColor(np.array(imagen_pil), cv2.COLOR_RGB2BGR)
-        if fallback_boxes:
-            result = self.render(
-                result,
-                fallback_boxes,
-                fallback_texts,
-                text_styles=fallback_styles,
-                font_sizes=fallback_sizes,
-                rotation_angles=fallback_rotations,
+            resolved = self.resolve_manual_layout(
+                (x, y, w, h),
+                text,
+                style or "dialogo",
+                ui_layout=layout,
+                requested_font_size=font_size,
+                rotation_angle=rotation if rotation is not None else (layout or {}).get("rotation_angle", 0.0),
+                text_align=h_align if h_align is not None else (layout or {}).get("text_align", "center"),
+                vertical_align=v_align if v_align is not None else (layout or {}).get("vertical_align", "middle"),
+                line_spacing_factor=spacing if spacing is not None else (layout or {}).get("line_spacing_factor", 1.0),
+                text_offset_x=offset_x if offset_x is not None else (layout or {}).get("text_offset_x", 0.0),
+                text_offset_y=offset_y if offset_y is not None else (layout or {}).get("text_offset_y", 0.0),
+                image_shape=(image_height, image_width),
             )
-        return result
+            color_border, color_text = self._resolve_text_colors(imagen_limpia, x, y, w, h)
+            layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(layer)
+            for block in resolved["blocks"]:
+                font = self._get_font(int(block["font_size"]))
+                for line in block["lines"]:
+                    draw.text(
+                        (line["draw_x"], line["draw_y"]),
+                        line["text"],
+                        font=font,
+                        fill=self._to_rgba(color_text),
+                        stroke_width=int(block["stroke_width"]),
+                        stroke_fill=self._to_rgba(color_border),
+                    )
+            del draw
+            layer = self._rotate_text_layer(layer, resolved["rotation_angle"])
+            imagen_pil.paste(layer, (x, y), layer)
+
+        return cv2.cvtColor(np.array(imagen_pil), cv2.COLOR_RGB2BGR)
 
     def render(
         self,
