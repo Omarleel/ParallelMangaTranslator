@@ -346,10 +346,13 @@
 
               <details class="inspector-details">
                 <summary>Texto original OCR</summary>
-                <label class="field">
-                  <span>Texto original OCR</span>
-                  <textarea id="originalText" rows="3"></textarea>
-                </label>
+                <div class="field">
+                  <div class="field-action-row">
+                    <span>Texto original OCR</span>
+                    <button id="translateOriginalBtn" class="ghost mini" type="button" title="Traducir nuevamente usando esta transcripción corregida">Traducir</button>
+                  </div>
+                  <textarea id="originalText" rows="3" aria-label="Texto original OCR"></textarea>
+                </div>
               </details>
 
               <section class="property-section transform-section" aria-label="Transformar región">

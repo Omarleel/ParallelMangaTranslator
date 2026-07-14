@@ -13,7 +13,7 @@ class SourceLanguageFilter:
     japonesa) entren al flujo de limpieza, OCR especializado y traducción.
     """
 
-    CJK_LANGUAGES = {"Japonés", "Chino"}
+    CJK_LANGUAGES = {"Chino", "Japonés", "Coreano"}
     LATIN_LANGUAGES = {"Inglés", "Español", "Francés", "Italiano", "Portugués"}
 
     _RE_KANA = re.compile(r"[\u3041-\u3096\u309d-\u309f\u30a1-\u30fa\u30fc-\u30ff]")

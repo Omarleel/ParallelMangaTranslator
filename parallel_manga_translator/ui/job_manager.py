@@ -26,7 +26,7 @@ from parallel_manga_translator.infrastructure.execution_control import (
 )
 from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
-from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, render_manual_region_preview, resolve_manual_region_metrics, restore_mask_erased_pixels, write_corrections
+from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
 from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
 
@@ -718,6 +718,7 @@ class JobManager:
         brush_strokes = parse_brush_strokes(brush_strokes_payload or [], w, h)
         normalized_operation = (operation or "render").strip().lower()
         current_base = Path(page.corrected_path) if Path(page.corrected_path).exists() else translated_path
+        committed_region_render = False
         if normalized_operation == "inpaint":
             # El inpaint manual debe actuar sobre la imagen actual y no sobre el render
             # completo; así no se vuelven a calcular fuentes ni se redibujan regiones.
@@ -736,17 +737,20 @@ class JobManager:
             # deben quedar como trazos permanentes en la página ni en la UI.
             brush_strokes = self._without_mask_erasers(brush_strokes)
         elif normalized_operation in {"mask_eraser", "erase_mask", "eraser"}:
-            # Si el usuario borra sobre una zona ya inpainted, restaura desde el
-            # manga original. Esta acción funciona como un pincel de "quitar inpaint",
-            # no como un nuevo render de texto, así que no redibuja regiones.
-            restore_source = original_path
-            restore_mask_erased_pixels(
-                base_path=current_base,
-                restore_path=restore_source,
+            # "Restaurar manga original" forma parte del estado persistente de la
+            # página. Se procesa con el render completo para que cualquier cambio de
+            # región pendiente quede guardado en la misma transacción y la restauración
+            # se aplique como última capa, por encima de texto/inpaint anteriores.
+            render_manual_page(
+                clean_path=clean_path,
+                original_path=original_path,
+                translated_path=translated_path,
                 output_path=page.corrected_path,
+                regions=regions,
                 brush_strokes=brush_strokes,
+                base_path=current_base if current_base.exists() else translated_path,
             )
-            brush_strokes = self._without_mask_erasers(brush_strokes)
+            committed_region_render = True
         else:
             # Las ediciones ligeras deben conservar cualquier inpaint ya aplicado.
             # Por eso, si existe imagen corregida, se usa como base en vez de volver
@@ -760,6 +764,16 @@ class JobManager:
                 brush_strokes=brush_strokes,
                 base_path=current_base if current_base.exists() else translated_path,
             )
+            committed_region_render = True
+
+        if committed_region_render:
+            # A partir de este momento la imagen corregida ya contiene la región en su
+            # bbox actual. En el siguiente movimiento, esta posición es la que debe
+            # limpiarse. Mantener para siempre el bbox original provocaba restos de
+            # texto después del segundo (o posteriores) movimientos de una región.
+            for region in regions:
+                region.source_bbox = region.bbox
+
         write_corrections(page.corrections_path, regions, brush_strokes)
         with self._lock:
             previous_by_index = {
@@ -890,6 +904,41 @@ class JobManager:
         logging = replace(config.logging, file=str(Path(job.root_dir) / "job.log"))
         return replace(config, translation=translation, ocr=ocr, processing=processing, logging=logging)
 
+    def translate_manual_text(self, job_id: str, page_index: int, original_text: str) -> Dict[str, Any]:
+        """Traduce una transcripción corregida manualmente sin volver a ejecutar OCR."""
+        job = self.get_job(job_id)
+        page = self._page(job, page_index)
+        if page.status != "ready":
+            raise ValueError("La página todavía no está lista para traducir.")
+
+        source_text = str(original_text or "")
+        if not source_text.strip():
+            return {
+                "original_text": source_text,
+                "translated_text": "",
+            }
+
+        config = self._build_config_for_job(job)
+        set_active_config(config)
+        from parallel_manga_translator.translation.translator_manager import TranslatorManager
+
+        control = ExecutionControl()
+        with execution_control_scope(control):
+            translator = TranslatorManager.from_config(config.translation, config.character_memory)
+            translated_text = translator.traducir_textos([source_text])[0]
+
+        with self._lock:
+            job.updated_at = time.time()
+            self._save_manifest(job)
+
+        return {
+            "original_text": source_text,
+            "translated_text": str(translated_text or ""),
+            "source_language": config.translation.idioma_entrada,
+            "target_language": config.translation.idioma_salida,
+            "translator": normalize_choice(job.options.translator, "llm"),
+        }
+
     def transcribe_manual_region(self, job_id: str, page_index: int, bbox: Sequence[float], translate: bool = True) -> Dict[str, Any]:
         job = self.get_job(job_id)
         page = self._page(job, page_index)
@@ -909,7 +958,6 @@ class JobManager:
         config = self._build_config_for_job(job)
         set_active_config(config)
         from parallel_manga_translator.ocr.ocr_manager import OcrManager
-        from parallel_manga_translator.translation.translator_manager import TranslatorManager
 
         ocr = OcrManager(config.translation.idioma_entrada, config.ocr)
         original_text = ocr.extract_texts([crop])[0] if crop.size else ""
@@ -927,13 +975,7 @@ class JobManager:
             pass
         translated_text = ""
         if translate and original_text.strip():
-            control = ExecutionControl()
-            with execution_control_scope(control):
-                translator = TranslatorManager.from_config(config.translation, config.character_memory)
-                translated_text = translator.traducir_textos([original_text])[0]
-            with self._lock:
-                job.updated_at = time.time()
-                self._save_manifest(job)
+            translated_text = self.translate_manual_text(job_id, page_index, original_text)["translated_text"]
         return {
             "bbox": [x, y, bw, bh],
             "original_text": original_text,

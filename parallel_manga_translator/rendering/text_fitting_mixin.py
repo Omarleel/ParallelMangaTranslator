@@ -18,7 +18,6 @@ class TextFittingMixin:
     def _normalize_text(texto: str) -> str:
         texto = str(texto or " ").replace("\r", "\n")
         texto = re.sub(r"[ \t\f\v]+", " ", texto)
-        texto = re.sub(r"\n{3,}", "\n\n", texto)
         return texto.strip() or " "
 
     @staticmethod

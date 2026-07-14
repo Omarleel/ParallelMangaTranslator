@@ -36,6 +36,8 @@ const state = {
   historyLimit: 80,
   lastHistoryPush: null,
   applyingHistory: false,
+  editRevision: 0,
+  pendingSaveOptions: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -153,6 +155,7 @@ const autosaveStatus = $('autosaveStatus');
 const toolHelpTitle = $('toolHelpTitle');
 const toolHelpText = $('toolHelpText');
 const ocrRegionBtn = $('ocrRegionBtn');
+const translateOriginalBtn = $('translateOriginalBtn');
 const copyRegionBtn = $('copyRegionBtn');
 const deleteRegionBtn = $('deleteRegionBtn');
 const regionList = $('regionList');
@@ -411,7 +414,6 @@ function normalizeRendererText(text) {
   return String(text || ' ')
     .replace(/\r/g, '\n')
     .replace(/[ \t\f\v]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
     .trim() || ' ';
 }
 
@@ -496,6 +498,7 @@ function layoutBlocksForRegion(region) {
       text: region?.translated_text || region?.original_text || '',
       fontSize: null,
       lines: null,
+      writingMode: region?.ui_layout?.writing_mode || 'horizontal',
       source: 'fallback',
     }];
   }
@@ -513,6 +516,7 @@ function layoutBlocksForRegion(region) {
       text: String(block.text || ''),
       fontSize: clampFontSize(block.font_size, null),
       lines: Array.isArray(block.lines) ? block.lines.map((line) => String(line)) : null,
+      writingMode: layout?.writing_mode || 'horizontal',
       source: 'ui_layout',
     };
   });
@@ -611,8 +615,21 @@ function previewFontSizeForBlock(region, block, text) {
   return rendererLikeAutoFontSizeForArea(region, prepared, block || textRenderArea(region));
 }
 
+function verticalCharacterPreviewText(text) {
+  const normalized = normalizeRendererText(text).replace(/\s+/g, ' ').trim() || ' ';
+  return Array.from(normalized).join('\n');
+}
+
+function usesVerticalCharacterPreview(region, block, text, fontSize) {
+  if (Math.abs(clampRotationAngle(region?.rotation_angle || 0)) < 0.65) return false;
+  const prepared = preparedRendererText(region, text || 'Texto');
+  if (block?.writingMode === 'vertical_chars' && sameRendererText(prepared, block.text)) return true;
+  return splitPreviewLines(prepared, fontSize, Math.max(1, block?.width || 1)).length === 1;
+}
+
 function previewLinesForBlock(region, block, text, fontSize) {
   const prepared = preparedRendererText(region, text || 'Texto');
+  if (usesVerticalCharacterPreview(region, block, prepared, fontSize)) return verticalCharacterPreviewText(prepared);
   if (block?.lines?.length && sameRendererText(prepared, block.text)) return block.lines.join('\n');
   return splitPreviewLines(prepared, fontSize, Math.max(1, block?.width || 1)).join('\n');
 }
@@ -621,12 +638,15 @@ function applyRendererTextLayout(element, region, block = null, blockText = null
   if (!element || !region) return;
   const { scaleX, scaleY } = getScale();
   const area = block || textRenderArea(region);
-  const size = previewFontSizeForBlock(region, area, blockText ?? region?.translated_text ?? region?.original_text ?? 'Texto');
+  const text = blockText ?? region?.translated_text ?? region?.original_text ?? 'Texto';
+  const size = previewFontSizeForBlock(region, area, text);
+  const verticalCharacters = usesVerticalCharacterPreview(region, area, text, size);
   element.style.left = `${area.x * scaleX}px`;
   element.style.top = `${area.y * scaleY}px`;
   element.style.width = `${area.width * scaleX}px`;
   element.style.height = `${area.height * scaleY}px`;
   element.style.transformOrigin = `${(region.bbox[2] / 2 - area.x) * scaleX}px ${(region.bbox[3] / 2 - area.y) * scaleY}px`;
+  element.style.transform = verticalCharacters ? 'rotate(0deg)' : '';
   element.style.fontSize = `${Math.max(4, Math.min(240, Math.round(size * ((scaleX + scaleY) / 2))))}px`;
   element.style.lineHeight = regionStyle(region).startsWith('onomatopeya') ? '1' : '1.05';
 }
@@ -645,6 +665,7 @@ function applyInlineEditorLayout(element, region, block = null, blockText = null
   const heightPx = Math.max(1, area.height * scaleY);
   const prepared = preparedRendererText(region, text || 'Texto');
   const lineCount = Math.max(1, splitPreviewLines(prepared, Math.max(1, baseSize), Math.max(1, area.width)).length);
+  const verticalCharacters = Math.abs(clampRotationAngle(region?.rotation_angle || 0)) >= 0.65 && lineCount === 1;
   const padY = Math.max(0, Math.floor((heightPx - lineCount * lineHeightPx) / 2));
   const padX = Math.max(1, Math.round(Math.max(scaleX, scaleY) * 1.5));
 
@@ -653,6 +674,9 @@ function applyInlineEditorLayout(element, region, block = null, blockText = null
   element.style.width = `${widthPx}px`;
   element.style.height = `${heightPx}px`;
   element.style.transformOrigin = `${(region.bbox[2] / 2 - area.x) * scaleX}px ${(region.bbox[3] / 2 - area.y) * scaleY}px`;
+  element.style.transform = verticalCharacters ? 'rotate(0deg)' : '';
+  element.style.writingMode = verticalCharacters ? 'vertical-rl' : '';
+  element.style.textOrientation = verticalCharacters ? 'upright' : '';
   element.style.fontSize = `${fontPx}px`;
   element.style.lineHeight = `${lineHeightPx}px`;
   element.style.padding = `${padY}px ${padX}px`;
@@ -720,6 +744,7 @@ function scheduleAutoSave(reason = 'auto', delay = 1200) {
 }
 
 function markDirty(options = {}) {
+  state.editRevision += 1;
   state.dirty = true;
   updateHeavyActions();
   updateWorkspaceChrome();
@@ -835,6 +860,8 @@ function resetEditorState() {
   state.drawingRegion = null;
   state.drawingStroke = null;
   state.dirty = false;
+  state.editRevision = 0;
+  state.pendingSaveOptions = null;
   state.pageStamp = '';
   state.deletedStack = [];
   clearHistory();
@@ -1046,6 +1073,8 @@ function renderCurrentPage() {
     state.regions = cloneRegions(page.regions || []);
     state.brushStrokes = cloneBrushStrokes(page.brush_strokes || []);
     state.pageStamp = pageStamp;
+    state.editRevision = 0;
+    state.pendingSaveOptions = null;
     clearHistory();
     if (state.selectedRegion != null && !isSelectableRegion(state.regions[state.selectedRegion])) state.selectedRegion = null;
   }
@@ -1255,7 +1284,7 @@ function cloneRegions(regions) {
       deleted: Boolean(region.deleted),
       auto_font_size: region.auto_font_size !== false,
       font_size: region.auto_font_size === false ? clampFontSize(region.font_size, null) : null,
-      rotation_angle: clampRotationAngle(region.rotation_angle ?? region.text_rotation_angle ?? layoutResult.layout?.rotation_angle ?? 0),
+      rotation_angle: clampRotationAngle(region.rotation_angle ?? region.text_rotation_angle ?? layoutResult.layout?.requested_rotation_angle ?? layoutResult.layout?.rotation_angle ?? 0),
       rotation_confidence: Number(region.rotation_confidence || 0),
       text_align: normalizeTextAlign(region.text_align ?? layoutResult.layout?.text_align ?? 'center'),
       vertical_align: normalizeVerticalAlign(region.vertical_align ?? layoutResult.layout?.vertical_align ?? 'middle'),
@@ -2707,6 +2736,38 @@ centerRegionHorizontalBtn?.addEventListener('click', () => centerSelectedRegion(
 centerRegionVerticalBtn?.addEventListener('click', () => centerSelectedRegion('vertical'));
 fitRegionToTextBtn?.addEventListener('click', fitSelectedRegionToText);
 
+translateOriginalBtn?.addEventListener('click', async () => {
+  const page = currentPage();
+  const region = state.regions[state.selectedRegion];
+  if (!page || page.status !== 'ready' || !isSelectableRegion(region)) return showToast('Selecciona una región lista.');
+
+  updateRegionFromEditor({ autosave: false });
+  const sourceText = originalText.value;
+  if (!sourceText.trim()) return showToast('La transcripción está vacía.');
+
+  translateOriginalBtn.disabled = true;
+  try {
+    showToast('Traduciendo la transcripción corregida…');
+    const result = await requestJson(`/api/jobs/${state.job.job_id}/pages/${page.index}/translate-region`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ original_text: sourceText }),
+    });
+    pushUndoSnapshot('retraducir transcripción');
+    region.original_text = sourceText;
+    region.translated_text = result.translated_text || '';
+    markRegionModified(region);
+    updateEditorFromRegion();
+    renderOverlay({ force: true });
+    scheduleAutoSave('retraducir transcripción', 180);
+    showToast(region.translated_text ? 'Traducción actualizada desde la transcripción corregida.' : 'El traductor no devolvió texto.');
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    translateOriginalBtn.disabled = false;
+  }
+});
+
 ocrRegionBtn.addEventListener('click', async () => {
   const page = currentPage();
   const region = state.regions[state.selectedRegion];
@@ -3151,6 +3212,48 @@ function buildRenderPayload(operation = 'render') {
   };
 }
 
+function syncCommittedRegionSources(updatedRegions = []) {
+  const committedByIndex = new Map(
+    (updatedRegions || []).map((region, idx) => [Number(region?.index ?? idx), region]),
+  );
+  state.regions.forEach((region, idx) => {
+    const committed = committedByIndex.get(Number(region?.index ?? idx));
+    const sourceBox = committed?.source_bbox || committed?.bbox;
+    if (!region || !Array.isArray(sourceBox) || sourceBox.length < 4) return;
+    // Aunque haya cambios más nuevos en bbox/texto, la posición que acaba de quedar
+    // rasterizada en el servidor sí debe convertirse en el nuevo origen a limpiar.
+    region.source_bbox = normalizeBox(sourceBox);
+  });
+}
+
+function queuePendingSave(options = {}) {
+  const pageKey = currentHistoryPageKey();
+  if (!pageKey) return;
+  const next = {
+    pageKey,
+    silent: options.silent !== false,
+    force: true,
+    reason: options.reason || 'cambios durante guardado',
+    markInpaintApplied: Boolean(options.markInpaintApplied),
+    operation: options.operation || null,
+  };
+  const previous = state.pendingSaveOptions;
+  if (!previous || previous.pageKey !== pageKey) {
+    state.pendingSaveOptions = next;
+    return;
+  }
+  state.pendingSaveOptions = {
+    ...previous,
+    silent: previous.silent && next.silent,
+    force: true,
+    reason: next.reason || previous.reason,
+    markInpaintApplied: previous.markInpaintApplied || next.markInpaintApplied,
+    // Una operación explícita (restaurar original/inpaint) no debe perderse si
+    // llega otro autosave genérico mientras el guardado actual sigue en curso.
+    operation: next.operation || previous.operation || null,
+  };
+}
+
 async function saveCurrentPage({ silent = false, force = false, reason = 'manual', markInpaintApplied = false, operation = null } = {}) {
   const page = currentPage();
   if (!page || page.status !== 'ready') {
@@ -3165,7 +3268,18 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
     updateHeavyActions();
     return null;
   }
+
+  if (state.autosaveInFlight) {
+    queuePendingSave({ silent, force, reason, markInpaintApplied, operation });
+    setAutosaveStatus('pending', 'Hay cambios nuevos pendientes de guardar…');
+    return null;
+  }
+
   clearTimeout(state.autosaveTimer);
+  const pageKey = currentHistoryPageKey();
+  const saveRevision = state.editRevision;
+  const resolvedOperation = operation || (markInpaintApplied ? 'inpaint' : 'render');
+  const payload = buildRenderPayload(resolvedOperation);
   saveBtn.disabled = true;
   state.autosaveInFlight = true;
   updateWorkspaceChrome();
@@ -3174,25 +3288,42 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
     const updatedPage = await requestJson(`/api/jobs/${state.job.job_id}/pages/${page.index}/render`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildRenderPayload(operation || (markInpaintApplied ? 'inpaint' : 'render'))),
+      body: JSON.stringify(payload),
     });
     state.job.pages[page.index] = updatedPage;
-    state.dirty = false;
-    state.pageStamp = `${state.job.job_id}:${page.index}:${updatedPage.updated_at || ''}`;
-    updateWorkspaceChrome();
-    state.variant = 'current';
-    state.deletedStack = [];
-    state.brushStrokes = cloneBrushStrokes(updatedPage.brush_strokes || []);
-    markActiveVariant();
-    setAutosaveStatus('saved', markInpaintApplied ? 'Inpaint aplicado y guardado.' : 'Cambios guardados automáticamente.');
-    if (!silent || markInpaintApplied) showToast(markInpaintApplied ? 'Inpaint aplicado.' : 'Corrección guardada.');
-    if (activeInlineTextEditor()) {
-      state.deferredOverlayRender = true;
-      updateHeavyActions();
-    } else {
-      renderCurrentPage();
-      updateHeavyActions();
+    const stillOnSavedPage = currentHistoryPageKey() === pageKey;
+    if (stillOnSavedPage) {
+      syncCommittedRegionSources(updatedPage.regions || []);
+      const hasNewerChanges = state.editRevision !== saveRevision;
+      state.pageStamp = `${state.job.job_id}:${page.index}:${updatedPage.updated_at || ''}`;
+      state.variant = 'current';
+      markActiveVariant();
+
+      if (hasNewerChanges) {
+        // No reemplazar el estado local con una respuesta que representa una versión
+        // anterior. Ese comportamiento era la causa intermitente de pinceladas que
+        // desaparecían cuando el usuario seguía editando durante un autosave.
+        state.dirty = true;
+        queuePendingSave({ silent: true, force: true, reason: 'cambios durante guardado' });
+        setAutosaveStatus('pending', 'Cambios nuevos pendientes… se guardarán a continuación.');
+        setPageImageSource(updatedPage);
+        renderOverlay({ force: true });
+      } else {
+        state.dirty = false;
+        state.deletedStack = [];
+        state.brushStrokes = cloneBrushStrokes(updatedPage.brush_strokes || []);
+        setAutosaveStatus('saved', markInpaintApplied ? 'Inpaint aplicado y guardado.' : 'Cambios guardados automáticamente.');
+        if (!silent || markInpaintApplied) showToast(markInpaintApplied ? 'Inpaint aplicado.' : 'Corrección guardada.');
+        if (activeInlineTextEditor()) {
+          state.deferredOverlayRender = true;
+          updateHeavyActions();
+        } else {
+          renderCurrentPage();
+          updateHeavyActions();
+        }
+      }
     }
+    updateWorkspaceChrome();
     return updatedPage;
   } catch (error) {
     setAutosaveStatus('error', error.message || 'No se pudo guardar.');
@@ -3202,6 +3333,13 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
     state.autosaveInFlight = false;
     saveBtn.disabled = false;
     updateWorkspaceChrome();
+    const pending = state.pendingSaveOptions;
+    if (pending && pending.pageKey === currentHistoryPageKey()) {
+      state.pendingSaveOptions = null;
+      setTimeout(() => {
+        saveCurrentPage(pending).catch(() => {});
+      }, 0);
+    }
   }
 }
 
@@ -3222,6 +3360,8 @@ resetBtn.addEventListener('click', async () => {
     const updatedPage = await requestJson(`/api/jobs/${state.job.job_id}/pages/${page.index}/reset`, { method: 'POST' });
     state.job.pages[page.index] = updatedPage;
     state.dirty = false;
+    state.editRevision = 0;
+    state.pendingSaveOptions = null;
     state.pageStamp = `${state.job.job_id}:${page.index}:${updatedPage.updated_at || ''}`;
     state.variant = 'translated';
     state.selectedRegion = null;

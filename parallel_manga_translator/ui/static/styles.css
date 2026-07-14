@@ -107,6 +107,9 @@ code { color: #d9d2ff; }
 
 .field { display: grid; gap: 7px; margin-bottom: 12px; }
 .field span { color: var(--muted); font-size: 13px; font-weight: 700; }
+.field-action-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.field-action-row > span { min-width: 0; }
+.field-action-row button { flex: 0 0 auto; }
 input[type="text"], input[type="number"], textarea, select {
   width: 100%;
   border: 1px solid var(--line);

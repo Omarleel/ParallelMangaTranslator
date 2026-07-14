@@ -85,6 +85,10 @@ class OcrRegionRequest(BaseModel):
     translate: bool = True
 
 
+class TranslateRegionRequest(BaseModel):
+    original_text: str = ""
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
@@ -214,6 +218,14 @@ def render_page(job_id: str, page_index: int, request: RenderRequest):
 def ocr_manual_region(job_id: str, page_index: int, request: OcrRegionRequest):
     try:
         return manager.transcribe_manual_region(job_id, page_index, request.bbox, translate=request.translate)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/pages/{page_index}/translate-region")
+def translate_manual_region(job_id: str, page_index: int, request: TranslateRegionRequest):
+    try:
+        return manager.translate_manual_text(job_id, page_index, request.original_text)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

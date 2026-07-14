@@ -136,19 +136,22 @@ class TextRotationPersistenceTests(unittest.TestCase):
         self.assertEqual(len(regions), 1)
         self.assertEqual(regions[0].rotation_angle, -17.5)
 
-    def test_renderer_layout_and_pixels_change_with_rotation(self):
+    def test_single_line_with_rotation_is_written_vertically_without_rotating(self):
         renderer = TextRenderer(absolute_min_font_size=7, inner_margin_ratio=0.03)
-        image = np.full((150, 220, 3), 255, dtype=np.uint8)
-        bbox = (35, 45, 150, 58)
+        image = np.full((190, 220, 3), 255, dtype=np.uint8)
+        bbox = (70, 20, 80, 150)
 
         plain = renderer.render(image.copy(), [bbox], ["ANGLE"], font_sizes=[28], rotation_angles=[0])
-        rotated = renderer.render(image.copy(), [bbox], ["ANGLE"], font_sizes=[28], rotation_angles=[19])
+        vertical = renderer.render(image.copy(), [bbox], ["ANGLE"], font_sizes=[28], rotation_angles=[19])
         layout = renderer.build_layout(bbox, "ANGLE", requested_font_size=28, rotation_angle=19)
 
         self.assertEqual(layout["version"], 2)
-        self.assertEqual(layout["rotation_angle"], 19.0)
-        self.assertFalse(np.array_equal(plain, rotated))
-        changed = np.any(rotated != 255, axis=2)
+        self.assertEqual(layout["requested_rotation_angle"], 19.0)
+        self.assertEqual(layout["rotation_angle"], 0.0)
+        self.assertEqual(layout["writing_mode"], "vertical_chars")
+        self.assertEqual(layout["blocks"][0]["lines"], list("ANGLE"))
+        self.assertFalse(np.array_equal(plain, vertical))
+        changed = np.any(vertical != 255, axis=2)
         ys, xs = np.where(changed)
         self.assertTrue(len(xs) > 0)
         x, y, width, height = bbox
@@ -156,6 +159,22 @@ class TextRotationPersistenceTests(unittest.TestCase):
         self.assertLess(xs.max(), x + width)
         self.assertGreaterEqual(ys.min(), y)
         self.assertLess(ys.max(), y + height)
+
+    def test_two_or_more_lines_keep_normal_rotation(self):
+        renderer = TextRenderer(absolute_min_font_size=7, inner_margin_ratio=0.03)
+        image = np.full((180, 260, 3), 255, dtype=np.uint8)
+        bbox = (35, 35, 190, 105)
+        text = "ANGLE\nTEXT"
+
+        plain = renderer.render(image.copy(), [bbox], [text], font_sizes=[26], rotation_angles=[0])
+        rotated = renderer.render(image.copy(), [bbox], [text], font_sizes=[26], rotation_angles=[19])
+        layout = renderer.build_layout(bbox, text, requested_font_size=26, rotation_angle=19)
+
+        self.assertEqual(layout["requested_rotation_angle"], 19.0)
+        self.assertEqual(layout["rotation_angle"], 19.0)
+        self.assertEqual(layout["writing_mode"], "horizontal")
+        self.assertGreaterEqual(sum(len(block["lines"]) for block in layout["blocks"]), 2)
+        self.assertFalse(np.array_equal(plain, rotated))
 
 
 if __name__ == "__main__":
@@ -232,7 +251,7 @@ class ManualTypographyLayoutTests(unittest.TestCase):
         }
         resolved = self.renderer.resolve_manual_layout(
             self.bbox,
-            "TEXTO",
+            "TEXTO\nDOS",
             ui_layout=ui_layout,
             requested_font_size=24,
             image_shape=(180, 260),
@@ -244,6 +263,33 @@ class ManualTypographyLayoutTests(unittest.TestCase):
         self.assertEqual(resolved["line_spacing_factor"], 1.35)
         self.assertEqual(resolved["text_offset_x"], 4.0)
         self.assertEqual(resolved["text_offset_y"], -3.0)
+
+    def test_manual_layout_preserves_every_internal_line_break(self):
+        resolved = self.renderer.resolve_manual_layout(
+            (20, 20, 180, 140),
+            "UNO\n\n\nDOS",
+            requested_font_size=20,
+            image_shape=(220, 260),
+        )
+
+        self.assertEqual(
+            [line["text"] for line in resolved["blocks"][0]["lines"]],
+            ["UNO", "", "", "DOS"],
+        )
+
+    def test_manual_single_line_keeps_requested_angle_but_uses_vertical_characters(self):
+        resolved = self.renderer.resolve_manual_layout(
+            self.bbox,
+            "HOLA",
+            requested_font_size=24,
+            rotation_angle=-17.5,
+            image_shape=(180, 260),
+        )
+
+        self.assertEqual(resolved["requested_rotation_angle"], -17.5)
+        self.assertEqual(resolved["rotation_angle"], 0.0)
+        self.assertEqual(resolved["writing_mode"], "vertical_chars")
+        self.assertEqual([line["text"] for line in resolved["blocks"][0]["lines"]], list("HOLA"))
 
     def test_manual_region_persists_precise_typography_controls(self):
         regions = parse_manual_regions(

@@ -7,17 +7,12 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 
 
-_CJK_LANGUAGE_ALIASES = {
-    "ja",
-    "japanese",
-    "japones",
-    "zh",
-    "chinese",
-    "chino",
-    "ko",
-    "korean",
-    "coreano",
-}
+_CJK_SOURCE_LANGUAGES = {"japones", "chino", "coreano"}
+
+_CJK_TEXT_VERTICAL_MIN_ANGLE = 60.0
+_CJK_LANGUAGE_VERTICAL_MIN_ANGLE = 78.0
+_VERTICAL_MIN_ASPECT_RATIO = 1.20
+_VERTICAL_STACK_MIN_RATIO = 1.35
 
 
 def _normalized_language_name(language: Any) -> str:
@@ -26,17 +21,8 @@ def _normalized_language_name(language: Any) -> str:
 
 
 def is_cjk_source_language(language: Any) -> bool:
-    """Indica si el idioma de origen usa habitualmente escritura CJK."""
-    normalized = _normalized_language_name(language)
-    if not normalized:
-        return False
-    return any(
-        normalized == alias
-        or normalized.startswith(f"{alias} ")
-        or normalized.startswith(f"{alias}-")
-        or normalized.startswith(f"{alias}_")
-        for alias in _CJK_LANGUAGE_ALIASES
-    )
+    """Indica si el idioma configurado en la aplicación es CJK."""
+    return _normalized_language_name(language) in _CJK_SOURCE_LANGUAGES
 
 
 def _detection_text(detection: Any) -> str:
@@ -244,78 +230,93 @@ def is_vertical_cjk_layout(
     source_language: Any = "",
     layout_hint: Any = "",
 ) -> bool:
-    """Detecta columnas CJK verticales para no girar la traducción horizontal.
-
-    Una inclinación cercana a 90° puede significar dos cosas diferentes: texto
-    decorativo realmente rotado o una columna japonesa/china/coreana escrita de
-    arriba abajo. En el segundo caso, heredar ese ángulo hace que la traducción
-    latina quede tumbada. Se exige una señal CJK y geometría vertical para evitar
-    neutralizar onomatopeyas oblicuas normales.
-    """
+    """Detecta texto CJK vertical que no debe transferir su giro a la traducción."""
     normalized_hint = str(layout_hint or "").strip().casefold().replace("-", "_")
-    if normalized_hint in {"vertical_cjk", "cjk_vertical", "vertical_asian"}:
+    if normalized_hint == "vertical_cjk":
         return True
 
     rows = list(detections or [])
     if not rows:
         return False
 
-    combined_text = "".join(_detection_text(row) for row in rows)
-    cjk_chars = _cjk_character_count(combined_text)
-    if not is_cjk_source_language(source_language) and cjk_chars == 0:
+    source_is_cjk = is_cjk_source_language(source_language)
+    cjk_chars = _cjk_character_count("".join(_detection_text(row) for row in rows))
+    if not source_is_cjk and cjk_chars == 0:
         return False
 
     quads: List[np.ndarray] = []
-    steep_vertical_polygons = 0
+    cjk_vertical_polygons = 0
+    language_vertical_polygons = 0
+
     for row in rows:
         box, _confidence = _detection_box_and_confidence(row)
         quad = _ordered_quad(box)
         if quad is None:
             continue
+
         quads.append(quad)
         angle = polygon_text_angle(quad)
+        if angle is None:
+            continue
+
         edge_lengths = [
             float(np.linalg.norm(quad[(index + 1) % 4] - quad[index]))
             for index in range(4)
         ]
-        long_side = max(edge_lengths)
-        short_side = max(1.0, min(edge_lengths))
-        if angle is not None and abs(angle) >= 60.0 and long_side / short_side >= 1.20:
-            steep_vertical_polygons += 1
+        aspect_ratio = max(edge_lengths) / max(1.0, min(edge_lengths))
+        if aspect_ratio < _VERTICAL_MIN_ASPECT_RATIO:
+            continue
+
+        absolute_angle = abs(angle)
+        if absolute_angle >= _CJK_TEXT_VERTICAL_MIN_ANGLE:
+            cjk_vertical_polygons += 1
+        if absolute_angle >= _CJK_LANGUAGE_VERTICAL_MIN_ANGLE:
+            language_vertical_polygons += 1
 
     if not quads:
         return False
 
+    # Si el OCR reconoció suficiente texto CJK, 60° ya es una señal fuerte.
+    if cjk_chars >= 2 and cjk_vertical_polygons:
+        return True
+
+    # Si el OCR falló, el idioma configurado solo actúa como fallback cuando la
+    # geometría es casi vertical. Así no se aplastan SFX oblicuas de 60°-70°.
+    if source_is_cjk and language_vertical_polygons:
+        return True
+
     all_points = np.concatenate(quads, axis=0)
     span_x = float(all_points[:, 0].max() - all_points[:, 0].min())
     span_y = float(all_points[:, 1].max() - all_points[:, 1].min())
-    vertically_stacked = len(quads) >= 2 and span_y >= max(1.0, span_x) * 1.35
-
-    # Una columna OCR completa suele llegar como un único polígono alto y con
-    # varios caracteres CJK. Si llega fragmentada, la pila vertical de dos o más
-    # polígonos también es una señal suficiente.
-    if steep_vertical_polygons and cjk_chars >= 2:
-        return True
-    if vertically_stacked and (cjk_chars >= 2 or is_cjk_source_language(source_language)):
-        return True
-    return False
+    vertically_stacked = (
+        len(quads) >= 2
+        and span_y >= max(1.0, span_x) * _VERTICAL_STACK_MIN_RATIO
+    )
+    return vertically_stacked and (cjk_chars >= 2 or source_is_cjk)
 
 
 def effective_text_rotation_angle(metadata: Any, *, source_language: Any = "") -> float:
-    """Devuelve el ángulo que debe usar el renderizador.
+    """Devuelve el ángulo efectivo que debe usar el renderizador.
 
-    También protege trabajos antiguos que ya tengan ``layout_hint=vertical_cjk``
-    aunque hayan sido generados antes de guardar el ángulo neutralizado.
+    También reevalúa la geometría guardada de trabajos antiguos donde la supresión
+    CJK pudo no haberse marcado correctamente.
     """
     data = metadata if isinstance(metadata, dict) else {}
     layout_hint = data.get("source_text_layout") or data.get("layout_hint")
-    suppressed = bool(data.get("text_rotation_suppressed"))
-    if suppressed or str(layout_hint or "").strip().casefold().replace("-", "_") in {
-        "vertical_cjk",
-        "cjk_vertical",
-        "vertical_asian",
-    }:
+    normalized_hint = str(layout_hint or "").strip().casefold().replace("-", "_")
+
+    if bool(data.get("text_rotation_suppressed")) or normalized_hint == "vertical_cjk":
         return 0.0
+
+    polygons = data.get("text_polygons") or []
+    if is_cjk_source_language(source_language) and polygons:
+        saved_detections = [{"box": polygon} for polygon in polygons]
+        if is_vertical_cjk_layout(
+            saved_detections,
+            source_language=source_language,
+        ):
+            return 0.0
+
     return normalize_rotation_angle(data.get("text_rotation_angle", 0.0))
 
 

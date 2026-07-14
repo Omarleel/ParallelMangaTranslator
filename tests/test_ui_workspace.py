@@ -41,6 +41,7 @@ def test_editor_html_has_unique_ids_and_workspace_controls() -> None:
         "lineSpacing",
         "textOffsetX",
         "resetTypographyBtn",
+        "translateOriginalBtn",
     ):
         assert element_id in parser.ids
 
@@ -111,3 +112,34 @@ def test_pointer_capture_survives_overlay_rerenders() -> None:
     assert "box.setPointerCapture(event.pointerId);" not in javascript
     assert "document.addEventListener('pointercancel'" in javascript
     assert javascript.count(".setPointerCapture(") == 1
+
+
+def test_autosave_serializes_requests_and_keeps_committed_region_origin() -> None:
+    javascript = (STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert "function queuePendingSave(options = {})" in javascript
+    assert "if (state.autosaveInFlight) {" in javascript
+    assert "const saveRevision = state.editRevision;" in javascript
+    assert "const hasNewerChanges = state.editRevision !== saveRevision;" in javascript
+    assert "function syncCommittedRegionSources(updatedRegions = [])" in javascript
+    assert "syncCommittedRegionSources(updatedPage.regions || []);" in javascript
+    assert javascript.index("syncCommittedRegionSources(updatedPage.regions || []);") < javascript.index(
+        "const hasNewerChanges = state.editRevision !== saveRevision;"
+    )
+
+
+def test_transcription_retranslate_button_is_wired_to_corrected_source_text() -> None:
+    javascript = (STATIC / "app.js").read_text(encoding="utf-8")
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="translateOriginalBtn"' in html
+    assert "const translateOriginalBtn = $('translateOriginalBtn');" in javascript
+    assert "/translate-region" in javascript
+    assert "body: JSON.stringify({ original_text: sourceText })" in javascript
+    assert "region.translated_text = result.translated_text || '';" in javascript
+
+
+def test_renderer_preview_does_not_collapse_repeated_line_breaks() -> None:
+    javascript = (STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert ".replace(/\n{3,}/g, '\n\n')" not in javascript

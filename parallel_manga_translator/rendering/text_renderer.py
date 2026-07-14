@@ -167,6 +167,73 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             center=(layer.width / 2.0, layer.height / 2.0),
         )
 
+    @staticmethod
+    def _vertical_character_lines(text: Any) -> List[str]:
+        """Convierte una única línea en una columna de caracteres legibles."""
+        normalized = re.sub(r"\s+", " ", str(text or " ").strip()) or " "
+        return [char for char in normalized]
+
+    def _layout_text_for_area(
+        self,
+        text: str,
+        area_width: int,
+        area_height: int,
+        style: str,
+        fixed_font_size: Optional[int],
+        spacing_factor: float,
+    ):
+        if fixed_font_size is not None:
+            font = self._get_font(fixed_font_size)
+            spacing = self._line_spacing(font) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
+            lines = self._split_lines(text or " ", font, area_width)
+            return font, lines, spacing
+        return self._fit_font(
+            text or " ",
+            area_width,
+            area_height,
+            style=style,
+            line_spacing_factor=spacing_factor,
+        )
+
+    def _fit_vertical_character_stack(
+        self,
+        text: str,
+        area_width: int,
+        area_height: int,
+        style: str,
+        spacing_factor: float,
+        *,
+        fixed_font_size: Optional[int],
+        initial_font_size: int,
+    ):
+        """Ajusta una línea como caracteres apilados sin girar los glifos."""
+        lines = self._vertical_character_lines(text)
+        if fixed_font_size is not None:
+            font = self._get_font(fixed_font_size)
+            spacing = self._line_spacing(font) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
+            return font, lines, spacing
+
+        start_size = max(self.absolute_min_font_size, min(self.max_font_size, int(initial_font_size)))
+        for size in range(start_size, self.absolute_min_font_size - 1, -1):
+            font = self._get_font(size)
+            stroke_width = self._stroke_width_for_style(font, style)
+            safe_width = max(1, area_width - stroke_width * 2)
+            safe_height = max(1, area_height - stroke_width * 2)
+            spacing = self._line_spacing(font) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
+            if self._fits(lines, font, spacing, safe_width, safe_height):
+                return font, lines, spacing
+
+        font = self._get_font(self.absolute_min_font_size)
+        spacing = self._line_spacing(font) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
+        return font, lines, spacing
+
+    @staticmethod
+    def _uses_vertical_character_mode(rotation_angle: float, line_groups: Sequence[Sequence[str]]) -> bool:
+        """Una sola línea inclinada se escribe vertical; dos o más sí se rotan."""
+        if abs(float(rotation_angle or 0.0)) < 0.65:
+            return False
+        return sum(len(lines) for lines in line_groups) == 1
+
     def _stroke_width_for_style(self, fuente, style: str) -> int:
         if style.startswith("onomatopeya"):
             return max(1, min(5, int(getattr(fuente, "size", self.min_font_size) * 0.11)))
@@ -222,22 +289,34 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         text_offset_y: Optional[float] = None,
         image_shape: Optional[Tuple[int, int]] = None,
     ) -> Dict[str, Any]:
-        """Resuelve las métricas y coordenadas exactas usadas por el render manual.
-
-        Este método es la fuente de verdad compartida por la previsualización de la UI
-        y el guardado final. Las posiciones se expresan dentro de la bbox de la región.
-        """
+        """Resuelve las métricas exactas usadas por la UI y el guardado manual."""
         image_height = image_shape[0] if image_shape else None
         image_width = image_shape[1] if image_shape else None
         x, y, w, h = self._coerce_box(bbox, image_width, image_height)
         layout = ui_layout if isinstance(ui_layout, dict) else None
         style = str(style or (layout or {}).get("style") or "dialogo")
-        rotation_angle = self._coerce_rotation_angle(rotation_angle if rotation_angle is not None else (layout or {}).get("rotation_angle", 0.0))
-        horizontal = self._normalize_text_align(text_align if text_align is not None else (layout or {}).get("text_align", "center"))
-        vertical = self._normalize_vertical_align(vertical_align if vertical_align is not None else (layout or {}).get("vertical_align", "middle"))
-        spacing_factor = self._coerce_line_spacing(line_spacing_factor if line_spacing_factor is not None else (layout or {}).get("line_spacing_factor", 1.0))
-        offset_x = self._coerce_text_offset(text_offset_x if text_offset_x is not None else (layout or {}).get("text_offset_x", 0.0))
-        offset_y = self._coerce_text_offset(text_offset_y if text_offset_y is not None else (layout or {}).get("text_offset_y", 0.0))
+        stored_rotation = (layout or {}).get(
+            "requested_rotation_angle",
+            (layout or {}).get("rotation_angle", 0.0),
+        )
+        requested_rotation = self._coerce_rotation_angle(
+            rotation_angle if rotation_angle is not None else stored_rotation
+        )
+        horizontal = self._normalize_text_align(
+            text_align if text_align is not None else (layout or {}).get("text_align", "center")
+        )
+        vertical = self._normalize_vertical_align(
+            vertical_align if vertical_align is not None else (layout or {}).get("vertical_align", "middle")
+        )
+        spacing_factor = self._coerce_line_spacing(
+            line_spacing_factor if line_spacing_factor is not None else (layout or {}).get("line_spacing_factor", 1.0)
+        )
+        offset_x = self._coerce_text_offset(
+            text_offset_x if text_offset_x is not None else (layout or {}).get("text_offset_x", 0.0)
+        )
+        offset_y = self._coerce_text_offset(
+            text_offset_y if text_offset_y is not None else (layout or {}).get("text_offset_y", 0.0)
+        )
         prepared_text = self._prepare_display_text(texto, style)
 
         raw_blocks = layout.get("blocks") if layout else None
@@ -258,21 +337,61 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             block_specs = [((margin_x, margin_y, max(1, w - margin_x * 2), max(1, h - margin_y * 2)), prepared_text)]
 
         fixed_font_size = self._fixed_font_size(requested_font_size)
-        resolved_blocks: List[Dict[str, Any]] = []
+        base_blocks: List[Dict[str, Any]] = []
         for raw_area, block_text in block_specs:
-            area_x, area_y, area_w, area_h = self._rotation_safe_local_box(tuple(raw_area), w, h, rotation_angle)
-            if fixed_font_size is not None:
-                font = self._get_font(fixed_font_size)
-                line_spacing = self._line_spacing(font) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
-                lines = self._split_lines(block_text or " ", font, area_w)
-            else:
-                font, lines, line_spacing = self._fit_font(
-                    block_text or " ",
+            area_x, area_y, area_w, area_h = raw_area
+            font, lines, line_spacing = self._layout_text_for_area(
+                block_text,
+                area_w,
+                area_h,
+                style,
+                fixed_font_size,
+                spacing_factor,
+            )
+            base_blocks.append({
+                "raw_area": tuple(raw_area),
+                "text": block_text,
+                "font": font,
+                "lines": list(lines),
+                "line_spacing": float(line_spacing),
+            })
+
+        vertical_character_mode = self._uses_vertical_character_mode(
+            requested_rotation,
+            [block["lines"] for block in base_blocks],
+        )
+        effective_rotation = 0.0 if vertical_character_mode else requested_rotation
+
+        resolved_blocks: List[Dict[str, Any]] = []
+        for base in base_blocks:
+            raw_area = base["raw_area"]
+            block_text = base["text"]
+            if vertical_character_mode:
+                area_x, area_y, area_w, area_h = raw_area
+                font, lines, line_spacing = self._fit_vertical_character_stack(
+                    base["lines"][0],
                     area_w,
                     area_h,
-                    style=style,
-                    line_spacing_factor=spacing_factor,
+                    style,
+                    spacing_factor,
+                    fixed_font_size=fixed_font_size,
+                    initial_font_size=int(getattr(base["font"], "size", self.min_font_size)),
                 )
+            elif abs(requested_rotation) >= 0.65:
+                area_x, area_y, area_w, area_h = self._rotation_safe_local_box(raw_area, w, h, requested_rotation)
+                font, lines, line_spacing = self._layout_text_for_area(
+                    block_text,
+                    area_w,
+                    area_h,
+                    style,
+                    fixed_font_size,
+                    spacing_factor,
+                )
+            else:
+                area_x, area_y, area_w, area_h = raw_area
+                font = base["font"]
+                lines = base["lines"]
+                line_spacing = base["line_spacing"]
 
             stroke_width = self._stroke_width_for_style(font, style)
             draw_area_x = area_x + stroke_width
@@ -300,37 +419,35 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                 else:
                     cursor_x = float(draw_area_x + max(0, (draw_area_w - line_width) / 2.0))
                 cursor_x += offset_x
-                resolved_lines.append(
-                    {
-                        "text": str(line),
-                        "draw_x": float(cursor_x - glyph_box[0]),
-                        "draw_y": float(cursor_y - glyph_box[1]),
-                        "visual_x": float(cursor_x),
-                        "visual_y": float(cursor_y),
-                        "width": int(line_width),
-                        "height": int(line_height),
-                        "glyph_bbox": [int(v) for v in glyph_box],
-                    }
-                )
+                resolved_lines.append({
+                    "text": str(line),
+                    "draw_x": float(cursor_x - glyph_box[0]),
+                    "draw_y": float(cursor_y - glyph_box[1]),
+                    "visual_x": float(cursor_x),
+                    "visual_y": float(cursor_y),
+                    "width": int(line_width),
+                    "height": int(line_height),
+                    "glyph_bbox": [int(v) for v in glyph_box],
+                })
                 cursor_y += line_height + line_spacing
 
-            resolved_blocks.append(
-                {
-                    "area": [int(area_x), int(area_y), int(area_w), int(area_h)],
-                    "text": str(block_text),
-                    "font_size": int(getattr(font, "size", fixed_font_size or self.min_font_size)),
-                    "line_spacing": float(line_spacing),
-                    "stroke_width": int(stroke_width),
-                    "paragraph_height": float(paragraph_height),
-                    "lines": resolved_lines,
-                }
-            )
+            resolved_blocks.append({
+                "area": [int(area_x), int(area_y), int(area_w), int(area_h)],
+                "text": str(block_text),
+                "font_size": int(getattr(font, "size", fixed_font_size or self.min_font_size)),
+                "line_spacing": float(line_spacing),
+                "stroke_width": int(stroke_width),
+                "paragraph_height": float(paragraph_height),
+                "lines": resolved_lines,
+            })
 
         return {
             "version": 3,
             "bbox": [int(x), int(y), int(w), int(h)],
             "style": style,
-            "rotation_angle": round(float(rotation_angle), 3),
+            "requested_rotation_angle": round(float(requested_rotation), 3),
+            "rotation_angle": round(float(effective_rotation), 3),
+            "writing_mode": "vertical_chars" if vertical_character_mode else "horizontal",
             "text_align": horizontal,
             "vertical_align": vertical,
             "line_spacing_factor": float(spacing_factor),
@@ -357,17 +474,12 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         text_offset_x: float = 0.0,
         text_offset_y: float = 0.0,
     ) -> Dict[str, Any]:
-        """Calcula la distribución de texto que usa el renderizador.
-
-        La UI guarda este resultado como `ui_layout` para que la edición manual parta
-        de la imagen renderizada como fuente de verdad. En especial conserva las
-        ranuras internas cuando una sola región lógica contiene dos globos unidos.
-        """
+        """Calcula la distribución usada por el render automático y la UI."""
         image_height = image_shape[0] if image_shape else None
         image_width = image_shape[1] if image_shape else None
         x, y, w, h = self._coerce_box(bbox, image_width, image_height)
         style = style or "dialogo"
-        rotation_angle = self._coerce_rotation_angle(rotation_angle)
+        requested_rotation = self._coerce_rotation_angle(rotation_angle)
         spacing_factor = self._coerce_line_spacing(line_spacing_factor)
         texto = self._prepare_display_text(texto, style)
 
@@ -386,42 +498,88 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             render_blocks = [((safe_x, safe_y, safe_w, safe_h), texto)]
 
         fixed_font_size = self._fixed_font_size(requested_font_size)
-        blocks: List[Dict[str, Any]] = []
-        for (safe_x, safe_y, safe_w, safe_h), block_text in render_blocks:
+
+        def resolve_slot(slot, block_text):
+            safe_x, safe_y, safe_w, safe_h = slot
             margin_ratio = self.inner_margin_ratio if not style.startswith("onomatopeya") else max(0.035, self.inner_margin_ratio * 0.45)
-            margen_x = max(2, int(safe_w * margin_ratio))
-            margen_y = max(2, int(safe_h * margin_ratio))
-            area_x = safe_x + margen_x
-            area_y = safe_y + margen_y
-            area_w = max(1, safe_w - 2 * margen_x)
-            area_h = max(1, safe_h - 2 * margen_y)
-
-            if fixed_font_size is not None:
-                fuente = self._get_font(fixed_font_size)
-                espacio_entre_lineas = self._line_spacing(fuente) * spacing_factor * (0.82 if style.startswith("onomatopeya") else 1.0)
-                lineas = self._split_lines(block_text or " ", fuente, area_w)
-            else:
-                fuente, lineas, espacio_entre_lineas = self._fit_font(
-                    block_text or " ", area_w, area_h, style=style, line_spacing_factor=spacing_factor
-                )
-
-            blocks.append(
-                {
-                    "slot": [int(safe_x), int(safe_y), int(safe_w), int(safe_h)],
-                    "area": [int(area_x), int(area_y), int(area_w), int(area_h)],
-                    "text": block_text,
-                    "lines": list(lineas),
-                    "font_size": int(getattr(fuente, "size", fixed_font_size or self.min_font_size)),
-                    "line_spacing": float(espacio_entre_lineas),
-                    "stroke_width": int(self._stroke_width_for_style(fuente, style)),
-                }
+            margin_x = max(2, int(safe_w * margin_ratio))
+            margin_y = max(2, int(safe_h * margin_ratio))
+            area_x = safe_x + margin_x
+            area_y = safe_y + margin_y
+            area_w = max(1, safe_w - 2 * margin_x)
+            area_h = max(1, safe_h - 2 * margin_y)
+            font, lines, line_spacing = self._layout_text_for_area(
+                block_text,
+                area_w,
+                area_h,
+                style,
+                fixed_font_size,
+                spacing_factor,
             )
+            return {
+                "slot": tuple(slot),
+                "area": (area_x, area_y, area_w, area_h),
+                "text": block_text,
+                "font": font,
+                "lines": list(lines),
+                "line_spacing": float(line_spacing),
+            }
+
+        base_blocks = [resolve_slot(slot, block_text) for slot, block_text in render_blocks]
+        vertical_character_mode = self._uses_vertical_character_mode(
+            requested_rotation,
+            [block["lines"] for block in base_blocks],
+        )
+        effective_rotation = 0.0 if vertical_character_mode else requested_rotation
+
+        blocks: List[Dict[str, Any]] = []
+        for base in base_blocks:
+            slot = base["slot"]
+            block_text = base["text"]
+            if vertical_character_mode:
+                safe_x, safe_y, safe_w, safe_h = slot
+                area_x, area_y, area_w, area_h = base["area"]
+                font, lines, line_spacing = self._fit_vertical_character_stack(
+                    base["lines"][0],
+                    area_w,
+                    area_h,
+                    style,
+                    spacing_factor,
+                    fixed_font_size=fixed_font_size,
+                    initial_font_size=int(getattr(base["font"], "size", self.min_font_size)),
+                )
+            elif abs(requested_rotation) >= 0.65:
+                rotated_slot = self._rotation_safe_local_box(tuple(slot), w, h, requested_rotation)
+                resolved = resolve_slot(rotated_slot, block_text)
+                safe_x, safe_y, safe_w, safe_h = resolved["slot"]
+                area_x, area_y, area_w, area_h = resolved["area"]
+                font = resolved["font"]
+                lines = resolved["lines"]
+                line_spacing = resolved["line_spacing"]
+            else:
+                safe_x, safe_y, safe_w, safe_h = slot
+                area_x, area_y, area_w, area_h = base["area"]
+                font = base["font"]
+                lines = base["lines"]
+                line_spacing = base["line_spacing"]
+
+            blocks.append({
+                "slot": [int(safe_x), int(safe_y), int(safe_w), int(safe_h)],
+                "area": [int(area_x), int(area_y), int(area_w), int(area_h)],
+                "text": block_text,
+                "lines": list(lines),
+                "font_size": int(getattr(font, "size", fixed_font_size or self.min_font_size)),
+                "line_spacing": float(line_spacing),
+                "stroke_width": int(self._stroke_width_for_style(font, style)),
+            })
 
         return {
             "version": 2,
             "bbox": [int(x), int(y), int(w), int(h)],
             "style": style,
-            "rotation_angle": round(float(rotation_angle), 3),
+            "requested_rotation_angle": round(float(requested_rotation), 3),
+            "rotation_angle": round(float(effective_rotation), 3),
+            "writing_mode": "vertical_chars" if vertical_character_mode else "horizontal",
             "block_count": len(blocks),
             "blocks": blocks,
             "uses_clip_mask": clip_mask is not None,
@@ -511,7 +669,9 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                 style or "dialogo",
                 ui_layout=layout,
                 requested_font_size=font_size,
-                rotation_angle=rotation if rotation is not None else (layout or {}).get("rotation_angle", 0.0),
+                rotation_angle=rotation if rotation is not None else (layout or {}).get(
+                    "requested_rotation_angle", (layout or {}).get("rotation_angle", 0.0)
+                ),
                 text_align=h_align if h_align is not None else (layout or {}).get("text_align", "center"),
                 vertical_align=v_align if v_align is not None else (layout or {}).get("vertical_align", "middle"),
                 line_spacing_factor=spacing if spacing is not None else (layout or {}).get("line_spacing_factor", 1.0),
@@ -551,16 +711,13 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         *,
         reading_order_right_to_left: bool = False,
     ) -> np.ndarray:
-        # OpenCV trabaja en BGR; PIL trabaja en RGB. Convertir explícitamente evita
-        # desplazamientos de color en páginas a color.
+        # OpenCV trabaja en BGR; PIL trabaja en RGB.
         imagen_pil = Image.fromarray(cv2.cvtColor(imagen_limpia, cv2.COLOR_BGR2RGB))
         ancho_img, alto_img = imagen_pil.size
         if text_styles is None:
             text_styles = ["dialogo"] * len(textos)
-
         if clip_masks is None:
             clip_masks = [None] * len(textos)
-
         if font_sizes is None:
             font_sizes = [None] * len(textos)
         else:
@@ -570,73 +727,47 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         else:
             rotation_angles = list(rotation_angles) + [None] * max(0, len(textos) - len(rotation_angles))
 
-        for (x, y, w, h), texto, style, clip_mask, requested_font_size, requested_rotation in zip(cuadros_delimitadores, textos, text_styles, clip_masks, font_sizes, rotation_angles):
+        for raw_bbox, texto, style, clip_mask, requested_font_size, requested_rotation in zip(
+            cuadros_delimitadores,
+            textos,
+            text_styles,
+            clip_masks,
+            font_sizes,
+            rotation_angles,
+        ):
             style = style or "dialogo"
-            rotation_angle = self._coerce_rotation_angle(requested_rotation)
-            texto = self._prepare_display_text(texto, style)
-            x = int(max(0, x))
-            y = int(max(0, y))
-            w = int(min(max(1, w), ancho_img - x))
-            h = int(min(max(1, h), alto_img - y))
+            x, y, w, h = self._coerce_box(raw_bbox, ancho_img, alto_img)
             if w <= 2 or h <= 2:
                 continue
 
-            split_slots = self._connected_lobe_slots_from_mask(
-                clip_mask,
-                w,
-                h,
+            layout = self.build_layout(
+                (x, y, w, h),
+                texto,
                 style,
-                right_to_left=reading_order_right_to_left,
+                clip_mask=clip_mask,
+                requested_font_size=requested_font_size,
+                rotation_angle=self._coerce_rotation_angle(requested_rotation),
+                image_shape=(alto_img, ancho_img),
+                reading_order_right_to_left=reading_order_right_to_left,
+                line_spacing_factor=self.line_spacing_factor,
             )
-            if split_slots:
-                slot_texts = self._split_text_for_slots(texto, len(split_slots))
-                render_blocks = list(zip(split_slots, slot_texts))
-            else:
-                safe_x, safe_y, safe_w, safe_h = self._safe_text_area_from_mask(clip_mask, w, h, style)
-                render_blocks = [((safe_x, safe_y, safe_w, safe_h), texto)]
-            if abs(rotation_angle) >= 0.65:
-                render_blocks = [
-                    (self._rotation_safe_local_box(tuple(slot), w, h, rotation_angle), block_text)
-                    for slot, block_text in render_blocks
-                ]
-
             color_borde, color_texto = self._resolve_text_colors(imagen_limpia, x, y, w, h)
-
-            # Dibujamos en una capa del tamaño exacto del globo/caja y la pegamos con máscara.
-            # Así se garantiza que ningún píxel de texto quede fuera de la región asignada.
             capa = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             draw = ImageDraw.Draw(capa)
 
-            for (safe_x, safe_y, safe_w, safe_h), block_text in render_blocks:
-                # Margen interno: en diálogos protege esquinas de globos ovalados; en SFX se reduce
-                # para que el efecto pueda ocupar más del espacio detectado. Con clip_mask, el margen
-                # se aplica sobre la caja interior real del globo, no sobre la bbox rectangular completa.
-                margin_ratio = self.inner_margin_ratio if not style.startswith("onomatopeya") else max(0.035, self.inner_margin_ratio * 0.45)
-                margen_x = max(2, int(safe_w * margin_ratio))
-                margen_y = max(2, int(safe_h * margin_ratio))
-                area_x = safe_x + margen_x
-                area_y = safe_y + margen_y
-                area_w = max(1, safe_w - 2 * margen_x)
-                area_h = max(1, safe_h - 2 * margen_y)
-
-                fixed_font_size = self._fixed_font_size(requested_font_size)
-
-                if fixed_font_size is not None:
-                    fuente = self._get_font(fixed_font_size)
-                    espacio_entre_lineas = self._line_spacing(fuente) * getattr(self, "line_spacing_factor", 1.0) * (0.82 if style.startswith("onomatopeya") else 1.0)
-                    # En modo manual no se reduce la fuente para que quepa: el usuario
-                    # decide el tamaño y la capa recorta de forma segura dentro de la región.
-                    lineas = self._split_lines(block_text or " ", fuente, area_w)
-                else:
-                    fuente, lineas, espacio_entre_lineas = self._fit_font(block_text or " ", area_w, area_h, style=style)
-
-                alto_parrafo = self._paragraph_height(lineas, fuente, espacio_entre_lineas)
-                stroke_width = self._stroke_width_for_style(fuente, style)
+            for block in layout["blocks"]:
+                area_x, area_y, area_w, area_h = [int(value) for value in block["area"]]
+                fuente = self._get_font(int(block["font_size"]))
+                lineas = list(block["lines"])
+                espacio_entre_lineas = float(block["line_spacing"])
+                stroke_width = int(block["stroke_width"])
                 draw_area_x = area_x + stroke_width
                 draw_area_y = area_y + stroke_width
                 draw_area_w = max(1, area_w - stroke_width * 2)
                 draw_area_h = max(1, area_h - stroke_width * 2)
+                alto_parrafo = self._paragraph_height(lineas, fuente, espacio_entre_lineas)
                 y_texto = draw_area_y + max(0, (draw_area_h - alto_parrafo) / 2)
+
                 for linea in lineas:
                     glyph_box = fuente.getbbox(linea or " ")
                     alto_linea = max(1, glyph_box[3] - glyph_box[1])
@@ -653,12 +784,11 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                     y_texto += alto_linea + espacio_entre_lineas
 
             del draw
-            capa = self._rotate_text_layer(capa, rotation_angle)
+            capa = self._rotate_text_layer(capa, layout["rotation_angle"])
 
             paste_mask = capa
             if clip_mask is not None and not style.startswith("onomatopeya"):
                 local = self._normalize_clip_mask(clip_mask, w, h)
-                # Suaviza un poco el recorte para que el texto no quede serruchado cerca del borde.
                 local = cv2.GaussianBlur(local, (0, 0), sigmaX=0.8, sigmaY=0.8)
                 alpha = np.array(capa.getchannel("A"), dtype=np.float32)
                 clipped_alpha = np.minimum(alpha, local.astype(np.float32))

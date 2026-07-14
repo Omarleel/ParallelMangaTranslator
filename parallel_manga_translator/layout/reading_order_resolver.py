@@ -37,7 +37,7 @@ class ReadingOrderResolver:
     """
 
     RTL_VERTICAL_LANGS = {"Japonés", "Chino"}
-    CJK_LANGS = {"Japonés", "Chino", "Coreano"}
+    CJK_LANGS = {"Chino", "Japonés", "Coreano"}
     WESTERN_LANGS = {"Inglés", "Español"}
 
     def __init__(self, language: str = "Japonés", config: ReadingOrderConfig | None = None) -> None:

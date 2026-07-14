@@ -184,7 +184,13 @@ def parse_manual_regions(payload: Iterable[Dict[str, Any]], image_width: int, im
                 deleted=deleted,
                 auto_font_size=auto_font_size,
                 font_size=font_size,
-                rotation_angle=_rotation_angle(item.get("rotation_angle", item.get("text_rotation_angle", ui_layout.get("rotation_angle", 0.0) if ui_layout else 0.0))),
+                rotation_angle=_rotation_angle(item.get(
+                    "rotation_angle",
+                    item.get(
+                        "text_rotation_angle",
+                        ui_layout.get("requested_rotation_angle", ui_layout.get("rotation_angle", 0.0)) if ui_layout else 0.0,
+                    ),
+                )),
                 text_align=_text_align(item.get("text_align", ui_layout.get("text_align", "center") if ui_layout else "center")),
                 vertical_align=_vertical_align(item.get("vertical_align", ui_layout.get("vertical_align", "middle") if ui_layout else "middle")),
                 line_spacing_factor=_line_spacing_factor(item.get("line_spacing_factor", item.get("line_spacing", ui_layout.get("line_spacing_factor", 1.0) if ui_layout else 1.0))),
@@ -274,6 +280,25 @@ def _global_mask_eraser(strokes: Sequence[BrushStroke], height: int, width: int)
     return erase_mask
 
 
+def _original_restore_mask(strokes: Sequence[BrushStroke], height: int, width: int) -> np.ndarray:
+    """Combina las pinceladas que deben prevalecer como manga original.
+
+    ``mask_eraser`` es el modo expuesto en la UI como "Restaurar manga original".
+    También se conserva compatibilidad con el antiguo modo ``restore_original``.
+    La máscara se dilata igual que en la ruta de guardado inmediato para que un
+    render posterior no vuelva a introducir halos de texto/inpaint en el borde.
+    """
+    restore_mask = np.zeros((height, width), dtype=np.uint8)
+    for stroke in strokes:
+        mode = (stroke.mode or "restore_clean").strip().lower()
+        if mode not in {"mask_eraser", "erase_mask", "eraser", "restore_original", "original"}:
+            continue
+        restore_mask = cv2.bitwise_or(restore_mask, _stroke_mask(stroke, height, width))
+    if cv2.countNonZero(restore_mask) == 0:
+        return restore_mask
+    return cv2.dilate(restore_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
+
+
 def _subtract_eraser(mask: np.ndarray, erase_mask: np.ndarray) -> np.ndarray:
     if cv2.countNonZero(mask) == 0 or cv2.countNonZero(erase_mask) == 0:
         return mask
@@ -297,11 +322,14 @@ def _apply_brush_strokes(base: np.ndarray, *, original_image: np.ndarray, clean_
     if not strokes:
         return base
     height, width = base.shape[:2]
-    erase_mask = _global_mask_eraser(strokes, height, width)
+    # El restaurador de original tiene prioridad final. También se usa para restar
+    # cualquier máscara previa que, de otro modo, podría reaparecer en un guardado
+    # posterior y sobrescribir la restauración ya horneada en la imagen corregida.
+    erase_mask = _original_restore_mask(strokes, height, width)
     inpaint_mask = np.zeros((height, width), dtype=np.uint8)
     for stroke in strokes:
         mode = (stroke.mode or "restore_clean").strip().lower()
-        if mode in {"mask_eraser", "erase_mask", "eraser"}:
+        if mode in {"mask_eraser", "erase_mask", "eraser", "restore_original", "original"}:
             continue
         mask = _subtract_eraser(_stroke_mask(stroke, height, width), erase_mask)
         if cv2.countNonZero(mask) == 0:
@@ -321,6 +349,27 @@ def _apply_brush_strokes(base: np.ndarray, *, original_image: np.ndarray, clean_
         # puntuales sin volver a ejecutar todo el pipeline.
         padded = cv2.dilate(inpaint_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
         base[:] = cv2.inpaint(base, padded, 3, cv2.INPAINT_TELEA)
+    return base
+
+
+def _apply_original_restore_strokes(
+    base: np.ndarray,
+    *,
+    original_image: np.ndarray,
+    strokes: Sequence[BrushStroke],
+) -> np.ndarray:
+    """Aplica restauraciones del manga original como última capa del render.
+
+    Debe ejecutarse después de dibujar el texto. De lo contrario, una región
+    modificada podría volver a rasterizarse encima de un área que el usuario ya
+    restauró explícitamente con el pincel.
+    """
+    if not strokes:
+        return base
+    height, width = base.shape[:2]
+    restore_mask = _original_restore_mask(strokes, height, width)
+    if cv2.countNonZero(restore_mask) > 0:
+        base[restore_mask > 0] = original_image[restore_mask > 0]
     return base
 
 
@@ -484,6 +533,14 @@ def render_manual_page(
             text_offsets_y=[r.text_offset_y for r in drawable],
             ui_layouts=[r.ui_layout for r in drawable],
         )
+
+    # La restauración del manga original es una edición destructiva intencional
+    # del usuario y debe prevalecer incluso sobre el texto de una región modificada.
+    base = _apply_original_restore_strokes(
+        base,
+        original_image=original_image,
+        strokes=brush_strokes or [],
+    )
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
