@@ -169,3 +169,18 @@ def test_polling_cannot_roll_back_a_newer_manual_background_revision() -> None:
     assert "const job = mergePolledJob(state.job, incomingJob);" in javascript
     assert "state.job = job;" in javascript
 
+
+def test_new_manual_region_focuses_inline_text_editor_immediately() -> None:
+    javascript = (STATIC / "app.js").read_text(encoding="utf-8")
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+
+    creation_start = javascript.index("pushUndoSnapshot('nueva región');")
+    creation_end = javascript.index("if (state.drawingStroke)", creation_start)
+    creation_block = javascript[creation_start:creation_end]
+
+    assert "setTool('select');" in creation_block
+    assert "selectRegion(state.selectedRegion, false);" in creation_block
+    assert "renderOverlay();" in creation_block
+    assert "focusInlineEditorForRegion(state.selectedRegion);" in creation_block
+    assert creation_block.index("renderOverlay();") < creation_block.index("focusInlineEditorForRegion(state.selectedRegion);")
+    assert '<script src="/static/app.js?v=6"></script>' in html

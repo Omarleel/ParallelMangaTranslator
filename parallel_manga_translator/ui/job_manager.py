@@ -742,6 +742,16 @@ class JobManager:
 
                 return asyncio.run(infer())
 
+        # Perfil de recorte conservador. No cambia modelo, precisión ni pesos: solo
+        # evita ejecutar la red sobre partes lejanas de la página que el pincel no
+        # puede modificar. LaMa Large conserva una ventana mínima de 1024x1024 y
+        # 384 px de contexto alrededor de trazos mayores; sigue en fp32.
+        crop_profiles = {
+            "lama_large_512px": {"enabled": True, "min_side": 1024, "context_px": 384, "alignment": 64, "max_model_side": 1536},
+            "lama_mpe": {"enabled": True, "min_side": 896, "context_px": 320, "alignment": 64, "max_model_side": 1024},
+            "aot": {"enabled": True, "min_side": 768, "context_px": 256, "alignment": 64, "max_model_side": 1024},
+        }
+        run._pmt_crop_profile = crop_profiles.get(model_name, {"enabled": False})
         return run
 
     def _inpaint_backup_path(self, job: JobState, page: PageState) -> Path:

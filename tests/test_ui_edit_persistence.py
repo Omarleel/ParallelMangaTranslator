@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from parallel_manga_translator.ui import manual_renderer
+from parallel_manga_translator.inpainting import LamaLarge
 from parallel_manga_translator.ui.job_manager import JobManager, JobState, PageState
 from parallel_manga_translator.ui.manual_renderer import BrushStroke, ManualRegion, render_manual_page
 
@@ -557,3 +558,93 @@ def test_two_consecutive_inpaint_commits_accumulate(monkeypatch, tmp_path: Path)
     assert rendered is not None
     assert np.all(rendered[12, 28] == 205), "El primer inpaint debe sobrevivir al segundo commit."
     assert np.all(rendered[30, 28] == 205), "El segundo inpaint debe aplicarse sobre la revisión ya modificada."
+
+
+def test_manual_neural_inpaint_uses_large_context_crop_and_preserves_pixels_outside_mask(tmp_path: Path) -> None:
+    """El pincel neural procesa una ventana local, pero solo puede modificar su máscara."""
+    base_path = tmp_path / "large_base.png"
+    output_path = tmp_path / "large_out.png"
+    image = np.full((1800, 2200, 3), 100, dtype=np.uint8)
+    # Marcadores fuera de la máscara para detectar cualquier contaminación del crop.
+    image[500:520, 700:720] = 77
+    image[1250:1270, 1450:1470] = 133
+    assert cv2.imwrite(str(base_path), image)
+
+    seen_shapes: list[tuple[int, int]] = []
+
+    def fake_heavy_inpaint(crop: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        seen_shapes.append(crop.shape[:2])
+        # Deliberadamente cambia TODO el crop. El wrapper de producción debe aceptar
+        # únicamente los píxeles cubiertos por la máscara para impedir costuras.
+        return np.full_like(crop, 205)
+
+    fake_heavy_inpaint._pmt_crop_profile = {
+        "enabled": True,
+        "min_side": 1024,
+        "context_px": 384,
+        "alignment": 64,
+        "max_model_side": 1536,
+    }
+    changed = manual_renderer.apply_pending_inpaint_only(
+        base_path=base_path,
+        output_path=output_path,
+        brush_strokes=[BrushStroke(points=[(1100, 900)], radius=5, mode="inpaint")],
+        inpaint_fn=fake_heavy_inpaint,
+    )
+
+    assert changed is True
+    assert seen_shapes == [(1024, 1024)], "Una pincelada pequeña no debe ejecutar LaMa sobre la página 1800x2200 completa."
+    rendered = cv2.imread(str(output_path), cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[900, 1100] == 205)
+    assert np.all(rendered[500, 700] == 77), "Fuera de la máscara el fondo debe conservarse bit a bit."
+    assert np.all(rendered[1260, 1460] == 133), "El recorte no puede introducir costuras ni cambios colaterales."
+    assert np.all(rendered[900, 900] == 100), "Incluso dentro del crop, fuera de la máscara no se copia la salida del modelo."
+
+
+def test_manual_inpaint_profiles_keep_lama_large_fp32_and_generous_context(tmp_path: Path) -> None:
+    """La optimización no reduce precisión ni cambia el modelo seleccionado."""
+    manager = JobManager(jobs_root=tmp_path / "jobs", start_worker=False)
+    large_callable = manager._manual_inpaint_callable("lama_large_512px")
+    mpe_callable = manager._manual_inpaint_callable("lama_mpe")
+    aot_callable = manager._manual_inpaint_callable("aot")
+
+    assert large_callable._pmt_crop_profile == {
+        "enabled": True,
+        "min_side": 1024,
+        "context_px": 384,
+        "alignment": 64,
+        "max_model_side": 1536,
+    }
+    assert mpe_callable._pmt_crop_profile["min_side"] == 896
+    assert aot_callable._pmt_crop_profile["min_side"] == 768
+    assert LamaLarge().precision == "fp32", "La ruta optimizada no debe bajar LaMa Large a fp16/bf16."
+
+
+def test_large_inpaint_area_falls_back_to_full_page_context(tmp_path: Path) -> None:
+    """Si el crop ya costaría lo mismo que el modelo completo, se conserva la ruta histórica."""
+    base_path = tmp_path / "fallback_base.png"
+    output_path = tmp_path / "fallback_out.png"
+    image = np.full((1800, 2200, 3), 100, dtype=np.uint8)
+    assert cv2.imwrite(str(base_path), image)
+    seen_shapes: list[tuple[int, int]] = []
+
+    def fake_heavy_inpaint(input_image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        seen_shapes.append(input_image.shape[:2])
+        return input_image.copy()
+
+    fake_heavy_inpaint._pmt_crop_profile = {
+        "enabled": True,
+        "min_side": 1024,
+        "context_px": 384,
+        "alignment": 64,
+        "max_model_side": 1536,
+    }
+    manual_renderer.apply_pending_inpaint_only(
+        base_path=base_path,
+        output_path=output_path,
+        brush_strokes=[BrushStroke(points=[(700, 900), (1500, 900)], radius=8, mode="inpaint")],
+        inpaint_fn=fake_heavy_inpaint,
+    )
+
+    assert seen_shapes == [(1800, 2200)], "Una máscara extensa debe conservar todo el contexto global de la ruta anterior."

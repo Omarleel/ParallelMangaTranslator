@@ -383,6 +383,131 @@ def _apply_original_restore_strokes(
     return base
 
 
+def _ceil_to_multiple(value: int, multiple: int) -> int:
+    multiple = max(1, int(multiple))
+    return ((max(1, int(value)) + multiple - 1) // multiple) * multiple
+
+
+def _centered_interval(center: float, length: int, limit: int) -> tuple[int, int]:
+    """Devuelve un intervalo de ``length`` dentro de [0, limit), centrado si es posible."""
+    if limit <= 0:
+        return 0, 0
+    length = max(1, min(int(length), int(limit)))
+    start = int(round(float(center) - (length / 2.0)))
+    start = max(0, min(start, limit - length))
+    return start, start + length
+
+
+def _quality_safe_inpaint_crop(
+    mask: np.ndarray,
+    *,
+    context_px: int,
+    min_side: int,
+    alignment: int = 64,
+    max_model_side: int | None = None,
+) -> tuple[int, int, int, int]:
+    """Calcula un recorte amplio alrededor de la máscara sin tocar su escala.
+
+    Los modelos LaMa/AOT rellenan/padean internamente hasta una entrada cuadrada.
+    Darles una ventana aproximadamente cuadrada evita procesar una página completa
+    cuando el pincel ocupa una zona pequeña, pero conserva un contexto generoso.
+
+    El recorte *solo* reduce contexto lejano: los píxeles de la zona de trabajo se
+    mantienen a resolución nativa. Para LaMa Large esto suele proporcionar incluso
+    más detalle efectivo que reducir una página grande completa a 1536 px.
+    """
+    height, width = mask.shape[:2]
+    ys, xs = np.nonzero(mask > 0)
+    if xs.size == 0 or ys.size == 0:
+        return 0, 0, width, height
+
+    x0 = int(xs.min())
+    x1 = int(xs.max()) + 1
+    y0 = int(ys.min())
+    y1 = int(ys.max()) + 1
+    mask_w = max(1, x1 - x0)
+    mask_h = max(1, y1 - y0)
+
+    # Un lado mínimo grande conserva contexto semántico/local. Si el trazo ya es
+    # grande, añadimos contexto a ambos lados antes de alinear a la granularidad
+    # natural de estas redes (64 px).
+    target_side = max(
+        int(min_side),
+        max(mask_w, mask_h) + (2 * max(0, int(context_px))),
+    )
+    target_side = _ceil_to_multiple(target_side, alignment)
+
+    # Si la ventana local ya alcanzaría el tamaño máximo que procesa el modelo,
+    # no hay ahorro de inferencia. En ese caso conservamos exactamente la ruta
+    # histórica de página completa y todo su contexto global.
+    if max_model_side is not None and target_side >= max(1, int(max_model_side)):
+        return 0, 0, width, height
+
+    crop_w = min(width, target_side)
+    crop_h = min(height, target_side)
+    center_x = (x0 + x1) / 2.0
+    center_y = (y0 + y1) / 2.0
+    crop_x0, crop_x1 = _centered_interval(center_x, crop_w, width)
+    crop_y0, crop_y1 = _centered_interval(center_y, crop_h, height)
+
+    # Si el centrado contra un borde dejara la máscara sin el margen solicitado en
+    # el lado donde sí hay espacio, expandimos hacia ese lado hasta target_side.
+    # _centered_interval ya garantiza contener la máscara cuando target_side >= bbox.
+    return crop_x0, crop_y0, crop_x1, crop_y1
+
+
+def _run_inpaint_with_optional_crop(
+    base: np.ndarray,
+    mask: np.ndarray,
+    inpaint_fn: Callable[[np.ndarray, np.ndarray], np.ndarray],
+) -> np.ndarray:
+    """Ejecuta inpaint local cuando el callable declara un perfil seguro.
+
+    Por compatibilidad, callables externos/tests sin perfil siguen recibiendo la
+    página completa. La recomposición modifica exclusivamente la máscara solicitada,
+    por lo que no puede introducir costuras ni alterar píxeles ajenos al pincel.
+    """
+    profile = getattr(inpaint_fn, "_pmt_crop_profile", None)
+    if not isinstance(profile, dict) or not profile.get("enabled", False):
+        return inpaint_fn(base, mask)
+
+    height, width = base.shape[:2]
+    x0, y0, x1, y1 = _quality_safe_inpaint_crop(
+        mask,
+        context_px=int(profile.get("context_px", 384)),
+        min_side=int(profile.get("min_side", 1024)),
+        alignment=int(profile.get("alignment", 64)),
+        max_model_side=(
+            int(profile["max_model_side"])
+            if profile.get("max_model_side") is not None
+            else None
+        ),
+    )
+
+    # Para páginas pequeñas o máscaras extensas evitamos una copia innecesaria.
+    if x0 <= 0 and y0 <= 0 and x1 >= width and y1 >= height:
+        return inpaint_fn(base, mask)
+
+    crop_image = base[y0:y1, x0:x1].copy()
+    crop_mask = mask[y0:y1, x0:x1].copy()
+    crop_result = inpaint_fn(crop_image, crop_mask)
+    if crop_result is None or not isinstance(crop_result, np.ndarray):
+        raise ValueError("El modelo de inpainting manual no devolvió una imagen válida.")
+    if crop_result.shape[:2] != crop_image.shape[:2]:
+        crop_result = cv2.resize(
+            crop_result,
+            (crop_image.shape[1], crop_image.shape[0]),
+            interpolation=cv2.INTER_LINEAR,
+        )
+
+    result = base.copy()
+    target = result[y0:y1, x0:x1]
+    # Incluso si un modelo modifica valores fuera de la máscara durante su forward,
+    # esos cambios no se copian. Esto hace la optimización visualmente hermética.
+    target[crop_mask > 0] = crop_result[crop_mask > 0]
+    return result
+
+
 def apply_pending_inpaint_only(
     *,
     base_path: str | Path,
@@ -406,7 +531,11 @@ def apply_pending_inpaint_only(
         cv2.imwrite(str(output), base)
         return False
     padded = cv2.dilate(inpaint_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
-    result = inpaint_fn(base, padded) if inpaint_fn is not None else cv2.inpaint(base, padded, 3, cv2.INPAINT_TELEA)
+    result = (
+        _run_inpaint_with_optional_crop(base, padded, inpaint_fn)
+        if inpaint_fn is not None
+        else cv2.inpaint(base, padded, 3, cv2.INPAINT_TELEA)
+    )
     if result is None or not isinstance(result, np.ndarray):
         raise ValueError("El modelo de inpainting manual no devolvió una imagen válida.")
     if result.shape[:2] != base.shape[:2]:

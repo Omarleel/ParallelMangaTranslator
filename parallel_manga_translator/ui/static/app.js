@@ -2350,9 +2350,15 @@ document.addEventListener('pointerup', (event) => {
       markDirty({ autosave: true, reason: 'nueva región' });
       setTool('select');
       selectRegion(state.selectedRegion, false);
-      showToast('Región manual creada. Puedes ejecutar OCR sobre ella.');
+      showToast('Región manual creada. Escribe directamente en ella o ejecuta OCR.');
     }
     renderOverlay();
+    if (state.selectedRegion != null) {
+      // Una región creada con la herramienta R debe quedar lista para escribir
+      // inmediatamente. El helper espera a que terminen los repintados ya
+      // programados por setTool/setPageImageSource y enfoca el textarea inline.
+      focusInlineEditorForRegion(state.selectedRegion);
+    }
   }
 
   if (state.drawingStroke) {
