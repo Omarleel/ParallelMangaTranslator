@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import cv2
 
 from parallel_manga_translator.cli import build_default_config, build_image_processor, prepare_assets, prepare_runtime
 from parallel_manga_translator.config.constants import normalizar_modelo_inpaint
+from parallel_manga_translator.inpainting import AOTInpainter, LamaInpainterMPE, LamaLarge, OpenCVInpainter
 from parallel_manga_translator.config.runtime_config import set_active_config
 from parallel_manga_translator.infrastructure.execution_control import (
     ExecutionControl,
@@ -25,8 +27,9 @@ from parallel_manga_translator.infrastructure.execution_control import (
     execution_control_scope,
 )
 from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
+from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
-from parallel_manga_translator.ui.manual_renderer import apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_page, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
+from parallel_manga_translator.ui.manual_renderer import apply_background_brush_strokes, apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_composite, render_manual_page, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
 from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
 
@@ -67,6 +70,8 @@ class PageState:
     translated_path: str = ""
     corrected_path: str = ""
     corrections_path: str = ""
+    manual_background_path: str = ""
+    background_revision: str = "base"
     regions: List[Dict[str, Any]] = field(default_factory=list)
     brush_strokes: List[Dict[str, Any]] = field(default_factory=list)
     attempt_count: int = 0
@@ -176,6 +181,7 @@ def page_to_public(page: PageState, job_id: str) -> Dict[str, Any]:
         "completed_at": page.completed_at,
         "regions": page.regions,
         "brush_strokes": page.brush_strokes,
+        "background_revision": page.background_revision or "base",
         "has_corrected": corrected_exists,
         "images": {
             "original": f"/api/jobs/{job_id}/pages/{page.index}/image/original",
@@ -229,6 +235,8 @@ class JobManager:
         # garantiza aislamiento entre trabajos y evita duplicar memoria de GPU.
         self._processing_lock = threading.Lock()
         self._assets_prepared = False
+        self._manual_inpainters: Dict[str, Any] = {}
+        self._manual_inpaint_lock = threading.Lock()
         self._queue = PersistentJobQueue(self.jobs_root / "queue.sqlite3")
         self._queue_condition = threading.Condition(threading.RLock())
         self._controls: Dict[str, ExecutionControl] = {}
@@ -688,6 +696,54 @@ class JobManager:
 
         return export_path
 
+    def _resolve_manual_inpaint_model(self, job: JobState, requested: str | None) -> str:
+        raw = str(requested or "job").strip().lower()
+        if raw in {"job", "configured", "config", "default"}:
+            raw = str(getattr(job.options, "inpaint_model", "auto") or "auto")
+        model = normalizar_modelo_inpaint(raw, "auto")
+        # El pincel manual siempre trabaja con una máscara raster. B/N necesita cajas
+        # de detección, así que para este flujo se usa LaMa como opción automática
+        # de calidad y OpenCV solo cuando el usuario lo selecciona explícitamente.
+        if model in {"auto", "B/N"}:
+            return "lama_mpe"
+        return model
+
+    def _manual_inpaint_callable(self, model_name: str):
+        factories = {
+            "opencv-tela": OpenCVInpainter,
+            "lama_mpe": LamaInpainterMPE,
+            "lama_large_512px": LamaLarge,
+            "aot": AOTInpainter,
+        }
+        factory = factories.get(model_name)
+        if factory is None:
+            raise ValueError(f"Modelo de inpainting manual no soportado: {model_name}")
+
+        def run(image, mask):
+            if model_name == "opencv-tela":
+                return OpenCVInpainter().inpaint(image, mask)
+            with self._manual_inpaint_lock:
+                inpainter = self._manual_inpainters.get(model_name)
+                if inpainter is None:
+                    inpainter = factory()
+                    self._manual_inpainters[model_name] = inpainter
+
+                async def infer():
+                    if getattr(inpainter, "model", None) is None and hasattr(inpainter, "_load"):
+                        await inpainter._load()
+                    with gpu_slot("ui.manual_inpaint", enabled=True):
+                        if hasattr(inpainter, "_inpaint"):
+                            result = inpainter._inpaint(image, mask)
+                        else:
+                            result = inpainter.inpaint(image, mask)
+                        if asyncio.iscoroutine(result):
+                            result = await result
+                        return result
+
+                return asyncio.run(infer())
+
+        return run
+
     def _inpaint_backup_path(self, job: JobState, page: PageState) -> Path:
         backup_dir = Path(job.output_dir) / ".ui_backups" / "before_inpaint"
         return backup_dir / page.output_filename
@@ -700,7 +756,65 @@ class JobManager:
             if (stroke.mode or "").strip().lower() not in {"mask_eraser", "erase_mask", "eraser"}
         ]
 
-    def save_manual_render(self, job_id: str, page_index: int, regions_payload: Sequence[Dict[str, Any]], brush_strokes_payload: Sequence[Dict[str, Any]] | None = None, operation: str = "render") -> Dict[str, Any]:
+    def _manual_background_dir(self, job: JobState, page: PageState) -> Path:
+        return Path(job.output_dir) / ".ui_backgrounds" / f"page_{page.index:04d}"
+
+    def _background_revision_path(self, job: JobState, page: PageState, revision: str) -> Path:
+        safe_revision = re.sub(r"[^A-Za-z0-9_-]+", "", str(revision or ""))
+        if not safe_revision:
+            raise ValueError("La revisión de fondo no es válida.")
+        return self._manual_background_dir(job, page) / f"{safe_revision}.png"
+
+    def _resolve_background_revision(
+        self,
+        job: JobState,
+        page: PageState,
+        requested_revision: str | None,
+    ) -> tuple[str, Path]:
+        revision = str(requested_revision or page.background_revision or "base").strip() or "base"
+        if revision == "base":
+            clean_path = Path(page.clean_path)
+            if not clean_path.exists():
+                raise ValueError("Falta la imagen limpia para reconstruir el fondo.")
+            return "base", clean_path
+
+        revision_path = self._background_revision_path(job, page, revision)
+        if revision_path.exists():
+            return revision, revision_path
+
+        # Compatibilidad con manifiestos creados por versiones intermedias: si la
+        # revisión actual apunta a un archivo explícito, se acepta y se archiva para
+        # que desde este momento también pueda participar en deshacer/rehacer.
+        legacy_path = Path(page.manual_background_path) if page.manual_background_path else None
+        if revision == page.background_revision and legacy_path and legacy_path.exists():
+            revision_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy_path, revision_path)
+            return revision, revision_path
+        raise ValueError("La revisión de fondo solicitada ya no está disponible.")
+
+    def _new_background_revision_path(self, job: JobState, page: PageState) -> tuple[str, Path]:
+        revision = uuid.uuid4().hex
+        path = self._background_revision_path(job, page, revision)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return revision, path
+
+    @staticmethod
+    def _has_background_brush_strokes(brush_strokes) -> bool:
+        return any(
+            (stroke.mode or "restore_clean").strip().lower() != "inpaint"
+            for stroke in brush_strokes
+        )
+
+    def save_manual_render(
+        self,
+        job_id: str,
+        page_index: int,
+        regions_payload: Sequence[Dict[str, Any]],
+        brush_strokes_payload: Sequence[Dict[str, Any]] | None = None,
+        operation: str = "render",
+        inpaint_model: str | None = None,
+        background_revision: str | None = None,
+    ) -> Dict[str, Any]:
         job = self.get_job(job_id)
         page = self._page(job, page_index)
         if page.status != "ready":
@@ -717,62 +831,68 @@ class JobManager:
         regions = parse_manual_regions(regions_payload, w, h)
         brush_strokes = parse_brush_strokes(brush_strokes_payload or [], w, h)
         normalized_operation = (operation or "render").strip().lower()
-        current_base = Path(page.corrected_path) if Path(page.corrected_path).exists() else translated_path
-        committed_region_render = False
+
+        # El historial de la UI guarda esta revisión junto con bbox/texto. Al
+        # deshacer/rehacer, el servidor vuelve exactamente a la capa de limpieza
+        # correspondiente y después recompone las regiones, sin reutilizar texto
+        # rasterizado de una versión posterior.
+        active_revision, active_background = self._resolve_background_revision(
+            job, page, background_revision
+        )
+        next_revision = active_revision
+        next_background = active_background
+
         if normalized_operation == "inpaint":
-            # El inpaint manual debe actuar sobre la imagen actual y no sobre el render
-            # completo; así no se vuelven a calcular fuentes ni se redibujan regiones.
-            backup_path = self._inpaint_backup_path(job, page)
-            backup_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(current_base, backup_path)
-            apply_pending_inpaint_only(
-                base_path=current_base,
-                output_path=page.corrected_path,
+            target_revision, target_path = self._new_background_revision_path(job, page)
+            selected_manual_model = self._resolve_manual_inpaint_model(job, inpaint_model)
+            changed = apply_pending_inpaint_only(
+                base_path=active_background,
+                output_path=target_path,
                 brush_strokes=brush_strokes,
+                inpaint_fn=self._manual_inpaint_callable(selected_manual_model),
             )
+            if changed:
+                next_revision, next_background = target_revision, target_path
+            else:
+                target_path.unlink(missing_ok=True)
             for stroke in brush_strokes:
                 if (stroke.mode or "").strip().lower() == "inpaint":
                     stroke.applied = True
-            # Los borradores solo sirven para restar la máscara antes de aplicar; no
-            # deben quedar como trazos permanentes en la página ni en la UI.
             brush_strokes = self._without_mask_erasers(brush_strokes)
-        elif normalized_operation in {"mask_eraser", "erase_mask", "eraser"}:
-            # "Restaurar manga original" forma parte del estado persistente de la
-            # página. Se procesa con el render completo para que cualquier cambio de
-            # región pendiente quede guardado en la misma transacción y la restauración
-            # se aplique como última capa, por encima de texto/inpaint anteriores.
-            render_manual_page(
+        elif self._has_background_brush_strokes(brush_strokes):
+            target_revision, target_path = self._new_background_revision_path(job, page)
+            changed = apply_background_brush_strokes(
+                base_path=active_background,
                 clean_path=clean_path,
                 original_path=original_path,
-                translated_path=translated_path,
-                output_path=page.corrected_path,
-                regions=regions,
+                output_path=target_path,
                 brush_strokes=brush_strokes,
-                base_path=current_base if current_base.exists() else translated_path,
             )
-            committed_region_render = True
-        else:
-            # Las ediciones ligeras deben conservar cualquier inpaint ya aplicado.
-            # Por eso, si existe imagen corregida, se usa como base en vez de volver
-            # a reconstruir toda la página desde la traducción automática.
-            render_manual_page(
-                clean_path=clean_path,
-                original_path=original_path,
-                translated_path=translated_path,
-                output_path=page.corrected_path,
-                regions=regions,
-                brush_strokes=brush_strokes,
-                base_path=current_base if current_base.exists() else translated_path,
-            )
-            committed_region_render = True
+            if changed:
+                next_revision, next_background = target_revision, target_path
+            else:
+                target_path.unlink(missing_ok=True)
 
-        if committed_region_render:
-            # A partir de este momento la imagen corregida ya contiene la región en su
-            # bbox actual. En el siguiente movimiento, esta posición es la que debe
-            # limpiarse. Mantener para siempre el bbox original provocaba restos de
-            # texto después del segundo (o posteriores) movimientos de una región.
-            for region in regions:
-                region.source_bbox = region.bbox
+        # La salida final se reconstruye siempre como dos capas: fondo/limpieza y
+        # regiones de texto. Nunca parte de corrected_path, que puede contener una
+        # posición de texto ya rasterizada y causar fantasmas al deshacer un movimiento.
+        render_manual_composite(
+            background_path=next_background,
+            original_path=original_path,
+            output_path=page.corrected_path,
+            regions=regions,
+        )
+
+        # Las pinceladas ya quedaron incorporadas en una revisión inmutable del fondo.
+        # El identificador de esa revisión sí permanece en el historial del navegador.
+        brush_strokes = []
+
+        # Conservamos source_bbox como metadato de compatibilidad. Ya no se necesita
+        # para borrar texto previo porque la composición nunca usa una imagen que tenga
+        # texto editable rasterizado, pero avanzar el origen sigue siendo útil para
+        # proyectos y pruebas creados con versiones anteriores.
+        for region in regions:
+            region.source_bbox = region.bbox
 
         write_corrections(page.corrections_path, regions, brush_strokes)
         with self._lock:
@@ -808,10 +928,9 @@ class JobManager:
                 }
                 for region in regions
             ]
-            page.brush_strokes = [
-                {"points": [list(point) for point in stroke.points], "radius": stroke.radius, "mode": stroke.mode, "applied": stroke.applied}
-                for stroke in brush_strokes
-            ]
+            page.brush_strokes = []
+            page.background_revision = next_revision
+            page.manual_background_path = "" if next_revision == "base" else str(next_background)
             page.updated_at = time.time()
             job.updated_at = page.updated_at
             self._save_manifest(job)
@@ -866,9 +985,14 @@ class JobManager:
             path = Path(raw)
             if path.exists():
                 path.unlink()
+        background_dir = self._manual_background_dir(job, page)
+        if background_dir.exists():
+            shutil.rmtree(background_dir, ignore_errors=True)
         # Restaurar regiones desde JSON del pipeline si existe.
         page.regions = self._merge_page_regions(job, page)
         page.brush_strokes = []
+        page.background_revision = "base"
+        page.manual_background_path = ""
         page.updated_at = time.time()
         job.updated_at = page.updated_at
         self._save_manifest(job)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -269,6 +269,18 @@ def _stroke_mask(stroke: BrushStroke, height: int, width: int) -> np.ndarray:
     return mask
 
 
+def _stroke_intersects_box(stroke: BrushStroke, bbox: Box) -> bool:
+    if not stroke.points:
+        return False
+    x, y, w, h = bbox
+    radius = max(1, int(stroke.radius))
+    sx1 = min(point[0] for point in stroke.points) - radius
+    sy1 = min(point[1] for point in stroke.points) - radius
+    sx2 = max(point[0] for point in stroke.points) + radius
+    sy2 = max(point[1] for point in stroke.points) + radius
+    return sx1 < x + w and sx2 >= x and sy1 < y + h and sy2 >= y
+
+
 def _global_mask_eraser(strokes: Sequence[BrushStroke], height: int, width: int) -> np.ndarray:
     """Máscara global que resta zonas de cualquier máscara/pincel dibujado por el usuario."""
     erase_mask = np.zeros((height, width), dtype=np.uint8)
@@ -306,49 +318,47 @@ def _subtract_eraser(mask: np.ndarray, erase_mask: np.ndarray) -> np.ndarray:
 
 
 def _pending_inpaint_mask(strokes: Sequence[BrushStroke], height: int, width: int) -> np.ndarray:
-    erase_mask = _global_mask_eraser(strokes, height, width)
+    """Construye la máscara pendiente respetando el orden cronológico de los trazos.
+
+    Un borrador/restauración solo cancela máscaras dibujadas *antes* de él. Esto evita
+    que una restauración histórica bloquee para siempre un nuevo inpaint en la misma zona.
+    """
     inpaint_mask = np.zeros((height, width), dtype=np.uint8)
     for stroke in strokes:
         mode = (stroke.mode or "restore_clean").strip().lower()
-        if mode != "inpaint" or stroke.applied:
+        stroke_mask = _stroke_mask(stroke, height, width)
+        if cv2.countNonZero(stroke_mask) == 0:
             continue
-        mask = _subtract_eraser(_stroke_mask(stroke, height, width), erase_mask)
-        if cv2.countNonZero(mask) > 0:
-            inpaint_mask = cv2.bitwise_or(inpaint_mask, mask)
+        if mode == "inpaint" and not stroke.applied:
+            inpaint_mask = cv2.bitwise_or(inpaint_mask, stroke_mask)
+        elif mode in {"mask_eraser", "erase_mask", "eraser", "restore_original", "original"}:
+            inpaint_mask = cv2.bitwise_and(inpaint_mask, cv2.bitwise_not(stroke_mask))
     return inpaint_mask
 
 
 def _apply_brush_strokes(base: np.ndarray, *, original_image: np.ndarray, clean_image: np.ndarray, strokes: Sequence[BrushStroke]) -> np.ndarray:
+    """Aplica acciones raster en orden cronológico.
+
+    Cada trazo nuevo puede sobrescribir el resultado de trazos previos en la misma zona.
+    Los inpaints ya aplicados están horneados en ``base`` y se omiten. Los inpaints
+    pendientes se dejan para la ruta explícita de ``apply_pending_inpaint_only``.
+    """
     if not strokes:
         return base
     height, width = base.shape[:2]
-    # El restaurador de original tiene prioridad final. También se usa para restar
-    # cualquier máscara previa que, de otro modo, podría reaparecer en un guardado
-    # posterior y sobrescribir la restauración ya horneada en la imagen corregida.
-    erase_mask = _original_restore_mask(strokes, height, width)
-    inpaint_mask = np.zeros((height, width), dtype=np.uint8)
     for stroke in strokes:
         mode = (stroke.mode or "restore_clean").strip().lower()
-        if mode in {"mask_eraser", "erase_mask", "eraser", "restore_original", "original"}:
-            continue
-        mask = _subtract_eraser(_stroke_mask(stroke, height, width), erase_mask)
+        mask = _stroke_mask(stroke, height, width)
         if cv2.countNonZero(mask) == 0:
             continue
         if mode == "inpaint":
-            # Los trazos de inpaint ya aplicados quedan registrados solo para auditoría.
-            # No se vuelven a ejecutar porque inpaint no es una operación idempotente.
-            if not stroke.applied:
-                inpaint_mask = cv2.bitwise_or(inpaint_mask, mask)
             continue
-        source = clean_image if mode in {"restore_clean", "clean"} else original_image
-        base[mask > 0] = source[mask > 0]
-
-    if cv2.countNonZero(inpaint_mask) > 0:
-        # Inpaint manual ligero para correcciones dibujadas a pulso. Se aplica sobre
-        # la imagen base actual para que el usuario pueda eliminar restos o manchas
-        # puntuales sin volver a ejecutar todo el pipeline.
-        padded = cv2.dilate(inpaint_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
-        base[:] = cv2.inpaint(base, padded, 3, cv2.INPAINT_TELEA)
+        if mode in {"restore_clean", "clean"}:
+            base[mask > 0] = clean_image[mask > 0]
+        elif mode in {"mask_eraser", "erase_mask", "eraser", "restore_original", "original"}:
+            # La restauración es una edición de fondo. El texto se compone después.
+            padded = cv2.dilate(mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
+            base[padded > 0] = original_image[padded > 0]
     return base
 
 
@@ -378,6 +388,7 @@ def apply_pending_inpaint_only(
     base_path: str | Path,
     output_path: str | Path,
     brush_strokes: Sequence[BrushStroke],
+    inpaint_fn: Optional[Callable[[np.ndarray, np.ndarray], np.ndarray]] = None,
 ) -> bool:
     """Aplica únicamente máscaras nuevas de inpaint sobre la imagen actual.
 
@@ -395,7 +406,11 @@ def apply_pending_inpaint_only(
         cv2.imwrite(str(output), base)
         return False
     padded = cv2.dilate(inpaint_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
-    result = cv2.inpaint(base, padded, 3, cv2.INPAINT_TELEA)
+    result = inpaint_fn(base, padded) if inpaint_fn is not None else cv2.inpaint(base, padded, 3, cv2.INPAINT_TELEA)
+    if result is None or not isinstance(result, np.ndarray):
+        raise ValueError("El modelo de inpainting manual no devolvió una imagen válida.")
+    if result.shape[:2] != base.shape[:2]:
+        result = cv2.resize(result, (base.shape[1], base.shape[0]))
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(output), result)
@@ -462,6 +477,110 @@ def restore_mask_erased_pixels(
     return True
 
 
+
+def apply_background_brush_strokes(
+    *,
+    base_path: str | Path,
+    clean_path: str | Path,
+    original_path: str | Path,
+    output_path: str | Path,
+    brush_strokes: Sequence[BrushStroke],
+) -> bool:
+    """Aplica pinceladas de fondo sin rasterizar ninguna región de texto.
+
+    La UI mantiene el fondo/limpieza como una capa independiente de las regiones.
+    Esto permite que deshacer/rehacer cambie de revisión de fondo y que el texto se
+    componga siempre al final, evitando restos rasterizados al mover una región.
+    """
+    base = cv2.imread(str(base_path), cv2.IMREAD_COLOR)
+    clean_image = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
+    original_image = cv2.imread(str(original_path), cv2.IMREAD_COLOR)
+    if base is None:
+        raise ValueError(f"No se pudo leer la capa de fondo: {base_path}")
+    if clean_image is None:
+        raise ValueError(f"No se pudo leer la imagen limpia: {clean_path}")
+    if original_image is None:
+        raise ValueError(f"No se pudo leer la imagen original: {original_path}")
+    height, width = base.shape[:2]
+    if clean_image.shape[:2] != (height, width):
+        clean_image = cv2.resize(clean_image, (width, height))
+    if original_image.shape[:2] != (height, width):
+        original_image = cv2.resize(original_image, (width, height))
+
+    effective = [
+        stroke
+        for stroke in brush_strokes
+        if (stroke.mode or "restore_clean").strip().lower() != "inpaint"
+    ]
+    result = _apply_brush_strokes(
+        base.copy(),
+        original_image=original_image,
+        clean_image=clean_image,
+        strokes=effective,
+    )
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output), result)
+    return bool(effective)
+
+
+def render_manual_composite(
+    *,
+    background_path: str | Path,
+    original_path: str | Path,
+    output_path: str | Path,
+    regions: Sequence[ManualRegion],
+) -> None:
+    """Compone todas las regiones sobre una capa de fondo libre de texto editable.
+
+    A diferencia del render incremental legado, este render nunca parte de una imagen
+    que ya contenga texto manual rasterizado. Por ello una región puede moverse,
+    deshacerse o rehacerse indefinidamente sin dejar copias en posiciones anteriores.
+    """
+    background = cv2.imread(str(background_path), cv2.IMREAD_COLOR)
+    original_image = cv2.imread(str(original_path), cv2.IMREAD_COLOR)
+    if background is None:
+        raise ValueError(f"No se pudo leer la capa de fondo: {background_path}")
+    if original_image is None:
+        raise ValueError(f"No se pudo leer la imagen original: {original_path}")
+    height, width = background.shape[:2]
+    if original_image.shape[:2] != (height, width):
+        original_image = cv2.resize(original_image, (width, height))
+
+    base = background.copy()
+    # Restaurar original por región también pertenece a la capa de fondo. El texto
+    # se dibuja después para mantener la regla: regiones siempre por encima del pincel.
+    for region in regions:
+        if region.deleted or not region.restore_original:
+            continue
+        _paste_patch(base, original_image, region.bbox)
+
+    drawable = [
+        region
+        for region in regions
+        if (not region.deleted) and region.visible and str(region.text).strip()
+    ]
+    if drawable:
+        renderer = TextRenderer(max_font_size=160)
+        base = renderer.render_with_layouts(
+            base,
+            [r.bbox for r in drawable],
+            [r.text for r in drawable],
+            text_styles=[r.style for r in drawable],
+            font_sizes=[None if r.auto_font_size else r.font_size for r in drawable],
+            rotation_angles=[r.rotation_angle for r in drawable],
+            text_aligns=[r.text_align for r in drawable],
+            vertical_aligns=[r.vertical_align for r in drawable],
+            line_spacing_factors=[r.line_spacing_factor for r in drawable],
+            text_offsets_x=[r.text_offset_x for r in drawable],
+            text_offsets_y=[r.text_offset_y for r in drawable],
+            ui_layouts=[r.ui_layout for r in drawable],
+        )
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output), base)
+
 def render_manual_page(
     *,
     clean_path: str | Path,
@@ -516,7 +635,20 @@ def render_manual_page(
         background = clean_image if region.deleted else (original_image if region.restore_original else clean_image)
         _paste_patch(base, background, region.bbox)
 
-    drawable = [r for r in modified_regions if (not r.deleted) and r.visible and str(r.text).strip()]
+    brush_strokes = list(brush_strokes or [])
+    brush_touched_indices = {
+        region.index
+        for region in regions
+        if any(_stroke_intersects_box(stroke, region.bbox) for stroke in brush_strokes)
+    }
+    drawable = [
+        region
+        for region in regions
+        if (region.modified or region.index in brush_touched_indices)
+        and (not region.deleted)
+        and region.visible
+        and str(region.text).strip()
+    ]
     if drawable:
         renderer = TextRenderer(max_font_size=160)
         base = renderer.render_with_layouts(
@@ -533,14 +665,6 @@ def render_manual_page(
             text_offsets_y=[r.text_offset_y for r in drawable],
             ui_layouts=[r.ui_layout for r in drawable],
         )
-
-    # La restauración del manga original es una edición destructiva intencional
-    # del usuario y debe prevalecer incluso sobre el texto de una región modificada.
-    base = _apply_original_restore_strokes(
-        base,
-        original_image=original_image,
-        strokes=brush_strokes or [],
-    )
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

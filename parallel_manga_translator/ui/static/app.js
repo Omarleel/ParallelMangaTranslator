@@ -6,6 +6,7 @@ const state = {
   tool: 'select',
   regions: [],
   brushStrokes: [],
+  backgroundRevision: 'base',
   naturalWidth: 1,
   naturalHeight: 1,
   polling: null,
@@ -140,6 +141,7 @@ const dockPanTool = $('dockPanTool');
 const dockFitBtn = $('dockFitBtn');
 const brushMode = $('brushMode');
 const brushSize = $('brushSize');
+const brushInpaintModel = $('brushInpaintModel');
 const brushSizeValue = $('brushSizeValue');
 const undoBrushBtn = $('undoBrushBtn');
 const undoDeleteBtn = $('undoDeleteBtn');
@@ -856,6 +858,7 @@ function resetEditorState() {
   state.variant = 'current';
   state.regions = [];
   state.brushStrokes = [];
+  state.backgroundRevision = 'base';
   state.dragging = null;
   state.drawingRegion = null;
   state.drawingStroke = null;
@@ -877,16 +880,57 @@ function resetEditorState() {
   markActiveVariant();
 }
 
+function pageUpdatedAtValue(page) {
+  const value = Number(page?.updated_at || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function mergePolledJob(currentJob, incomingJob) {
+  if (!incomingJob) return currentJob;
+  if (!currentJob || currentJob.job_id !== incomingJob.job_id) return incomingJob;
+
+  const currentByIndex = new Map(
+    (currentJob.pages || []).map((page) => [Number(page?.index), page]),
+  );
+  const seen = new Set();
+  const mergedPages = (incomingJob.pages || []).map((incomingPage) => {
+    const index = Number(incomingPage?.index);
+    seen.add(index);
+    const currentPage = currentByIndex.get(index);
+    if (!currentPage) return incomingPage;
+
+    // Una respuesta de polling puede haber sido generada antes de que terminara un
+    // guardado manual y llegar después. Nunca permitimos que esa copia atrasada haga
+    // retroceder background_revision, regiones o la imagen corregida de la página.
+    if (pageUpdatedAtValue(currentPage) > pageUpdatedAtValue(incomingPage)) {
+      return currentPage;
+    }
+    return incomingPage;
+  });
+
+  // Defensa para respuestas parciales/transitorias: no perder páginas que el cliente
+  // ya conoce si una instantánea de polling todavía no las incluyó.
+  for (const currentPage of currentJob.pages || []) {
+    const index = Number(currentPage?.index);
+    if (!seen.has(index)) mergedPages.push(currentPage);
+  }
+
+  return {
+    ...currentJob,
+    ...incomingJob,
+    pages: mergedPages,
+  };
+}
+
 function startPolling(jobId) {
   if (state.polling) clearInterval(state.polling);
   state.polling = setInterval(async () => {
     try {
-      const job = await requestJson(`/api/jobs/${jobId}`);
-      const currentPageBefore = state.job?.pages?.[state.pageIndex]?.updated_at;
+      const incomingJob = await requestJson(`/api/jobs/${jobId}`);
+      if (state.job?.job_id && state.job.job_id !== jobId) return;
+      const job = mergePolledJob(state.job, incomingJob);
       state.job = job;
       renderJob(job);
-      const currentPageAfter = job.pages?.[state.pageIndex]?.updated_at;
-      if (currentPageBefore !== currentPageAfter) renderCurrentPage();
       if (['ready', 'failed', 'cancelled'].includes(job.status)) clearInterval(state.polling);
     } catch (error) {
       console.warn(error);
@@ -1060,6 +1104,7 @@ function renderCurrentPage() {
     overlayLayer.innerHTML = '';
     state.regions = [];
     state.brushStrokes = [];
+    state.backgroundRevision = 'base';
     showNoRegion();
     renderRegionList();
     return;
@@ -1072,6 +1117,7 @@ function renderCurrentPage() {
     clearRasterPreviewCache();
     state.regions = cloneRegions(page.regions || []);
     state.brushStrokes = cloneBrushStrokes(page.brush_strokes || []);
+    state.backgroundRevision = page.background_revision || 'base';
     state.pageStamp = pageStamp;
     state.editRevision = 0;
     state.pendingSaveOptions = null;
@@ -1310,6 +1356,66 @@ function cloneBrushStrokes(strokes) {
     mode: stroke.mode || 'restore_clean',
     applied: Boolean(stroke.applied),
   })).filter((stroke) => stroke.points.length);
+}
+
+function brushStrokeFingerprint(stroke) {
+  const normalized = cloneBrushStrokes([stroke])[0];
+  return normalized ? JSON.stringify(normalized) : '';
+}
+
+function stripCommittedBrushPrefix(currentStrokes, committedStrokes) {
+  const current = cloneBrushStrokes(currentStrokes || []);
+  const committed = cloneBrushStrokes(committedStrokes || []);
+  if (!committed.length || current.length < committed.length) {
+    return { matched: false, remaining: current };
+  }
+  for (let idx = 0; idx < committed.length; idx += 1) {
+    if (brushStrokeFingerprint(current[idx]) !== brushStrokeFingerprint(committed[idx])) {
+      return { matched: false, remaining: current };
+    }
+  }
+  return { matched: true, remaining: current.slice(committed.length) };
+}
+
+function rebaseHistoryAfterBackgroundCommit({ pageKey, parentRevision, nextRevision, committedStrokes }) {
+  if (!pageKey || !nextRevision || nextRevision === parentRevision) return;
+  const rebaseSnapshot = (snapshot) => {
+    if (!snapshot || snapshot.pageKey !== pageKey) return;
+    if ((snapshot.backgroundRevision || 'base') !== parentRevision) return;
+    const stripped = stripCommittedBrushPrefix(snapshot.brushStrokes || [], committedStrokes || []);
+    // Una instantánea anterior a la pincelada no contiene esos trazos y debe seguir
+    // apuntando al padre: esa es precisamente la entrada que permite deshacer el inpaint.
+    if (!stripped.matched) return;
+    snapshot.backgroundRevision = nextRevision;
+    snapshot.brushStrokes = stripped.remaining;
+  };
+  state.undoStack.forEach(rebaseSnapshot);
+  state.redoStack.forEach(rebaseSnapshot);
+}
+
+function reconcileCommittedBackgroundRevision(payload, updatedPage, pageKey) {
+  const parentRevision = payload?.background_revision || 'base';
+  const nextRevision = updatedPage?.background_revision || parentRevision;
+  if (nextRevision === parentRevision) return false;
+
+  // Si el usuario siguió pintando mientras el inpaint estaba calculándose, la respuesta
+  // representa un prefijo de los trazos locales. Hay que avanzar la revisión de fondo a
+  // la recién creada y quitar SOLO ese prefijo ya horneado, conservando los trazos nuevos.
+  // Si el prefijo ya no existe (por ejemplo, el usuario pulsó Deshacer durante el cálculo),
+  // no rebasamos el estado local: el historial elegido por el usuario tiene prioridad.
+  if ((state.backgroundRevision || 'base') !== parentRevision) return false;
+  const stripped = stripCommittedBrushPrefix(state.brushStrokes || [], payload?.brush_strokes || []);
+  if (!stripped.matched) return false;
+
+  state.backgroundRevision = nextRevision;
+  state.brushStrokes = stripped.remaining;
+  rebaseHistoryAfterBackgroundCommit({
+    pageKey,
+    parentRevision,
+    nextRevision,
+    committedStrokes: payload?.brush_strokes || [],
+  });
+  return true;
 }
 
 function markRegionModified(region) {
@@ -1589,6 +1695,7 @@ function createHistorySnapshot(label = 'cambio') {
     pageKey: currentHistoryPageKey(),
     regions: cloneRegions(state.regions || []),
     brushStrokes: cloneBrushStrokes(state.brushStrokes || []),
+    backgroundRevision: state.backgroundRevision || 'base',
     selectedRegion: state.selectedRegion,
     dirty: Boolean(state.dirty),
     timestamp: Date.now(),
@@ -1598,8 +1705,8 @@ function createHistorySnapshot(label = 'cambio') {
 function snapshotsAreEquivalent(a, b) {
   if (!a || !b) return false;
   try {
-    return JSON.stringify({ regions: a.regions, brushStrokes: a.brushStrokes, selectedRegion: a.selectedRegion }) ===
-      JSON.stringify({ regions: b.regions, brushStrokes: b.brushStrokes, selectedRegion: b.selectedRegion });
+    return JSON.stringify({ regions: a.regions, brushStrokes: a.brushStrokes, backgroundRevision: a.backgroundRevision, selectedRegion: a.selectedRegion }) ===
+      JSON.stringify({ regions: b.regions, brushStrokes: b.brushStrokes, backgroundRevision: b.backgroundRevision, selectedRegion: b.selectedRegion });
   } catch (_) {
     return false;
   }
@@ -1637,6 +1744,7 @@ function restoreHistorySnapshot(snapshot, reason = 'historial') {
     clearRasterPreviewCache();
     state.regions = cloneRegions(snapshot.regions || []);
     state.brushStrokes = cloneBrushStrokes(snapshot.brushStrokes || []);
+    state.backgroundRevision = snapshot.backgroundRevision || 'base';
     state.selectedRegion = Number.isInteger(snapshot.selectedRegion) && isSelectableRegion(state.regions[snapshot.selectedRegion]) ? snapshot.selectedRegion : null;
     state.deletedStack = [];
     state.drawingRegion = null;
@@ -3202,6 +3310,8 @@ async function updateInlineRasterPreview(idx) {
 function buildRenderPayload(operation = 'render') {
   return {
     operation,
+    inpaint_model: brushInpaintModel?.value || 'job',
+    background_revision: state.backgroundRevision || 'base',
     regions: state.regions.map((region, idx) => regionToRenderPatch(region, idx)),
     brush_strokes: state.brushStrokes.map((stroke) => ({
       points: stroke.points,
@@ -3295,6 +3405,9 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
     if (stillOnSavedPage) {
       syncCommittedRegionSources(updatedPage.regions || []);
       const hasNewerChanges = state.editRevision !== saveRevision;
+      const rebasedBackground = hasNewerChanges
+        ? reconcileCommittedBackgroundRevision(payload, updatedPage, pageKey)
+        : false;
       state.pageStamp = `${state.job.job_id}:${page.index}:${updatedPage.updated_at || ''}`;
       state.variant = 'current';
       markActiveVariant();
@@ -3304,11 +3417,17 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
         // anterior. Ese comportamiento era la causa intermitente de pinceladas que
         // desaparecían cuando el usuario seguía editando durante un autosave.
         state.dirty = true;
-        queuePendingSave({ silent: true, force: true, reason: 'cambios durante guardado' });
-        setAutosaveStatus('pending', 'Cambios nuevos pendientes… se guardarán a continuación.');
+        queuePendingSave({ silent: true, force: true, reason: rebasedBackground ? 'continuar sobre fondo actualizado' : 'cambios durante guardado' });
+        setAutosaveStatus(
+          'pending',
+          rebasedBackground
+            ? 'Inpaint confirmado; guardando las pinceladas posteriores sobre ese resultado…'
+            : 'Cambios nuevos pendientes… se guardarán a continuación.',
+        );
         setPageImageSource(updatedPage);
         renderOverlay({ force: true });
       } else {
+        state.backgroundRevision = updatedPage.background_revision || state.backgroundRevision || 'base';
         state.dirty = false;
         state.deletedStack = [];
         state.brushStrokes = cloneBrushStrokes(updatedPage.brush_strokes || []);
@@ -3365,8 +3484,11 @@ resetBtn.addEventListener('click', async () => {
     state.pageStamp = `${state.job.job_id}:${page.index}:${updatedPage.updated_at || ''}`;
     state.variant = 'translated';
     state.selectedRegion = null;
+    state.regions = cloneRegions(updatedPage.regions || []);
     state.brushStrokes = [];
+    state.backgroundRevision = updatedPage.background_revision || 'base';
     state.deletedStack = [];
+    clearHistory();
     cleanupInlinePreviewResources();
     clearRasterPreviewCache();
     markActiveVariant();

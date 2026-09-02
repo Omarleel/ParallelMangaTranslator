@@ -99,7 +99,7 @@ def _region_payload(*, bbox, source_bbox, text="texto") -> dict:
     }
 
 
-def test_original_restore_brush_is_composited_after_text(monkeypatch, tmp_path: Path) -> None:
+def test_text_region_is_composited_above_original_restore_brush(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
 
     original = tmp_path / "original.png"
@@ -124,8 +124,8 @@ def test_original_restore_brush_is_composited_after_text(monkeypatch, tmp_path: 
 
     rendered = cv2.imread(str(output), cv2.IMREAD_COLOR)
     assert rendered is not None
-    assert np.all(rendered[18, 18] == 40), "La restauración original debe prevalecer sobre el texto rasterizado."
-    assert np.all(rendered[10, 10] == 220), "Fuera de la pincelada, la región sigue renderizando su texto."
+    assert np.all(rendered[18, 18] == 220), "El texto de región debe quedar siempre por encima de cualquier trazo de fondo."
+    assert np.all(rendered[10, 10] == 220), "Toda la región modificada conserva su texto rasterizado."
 
 
 def test_saved_region_advances_source_bbox_so_second_move_clears_previous_position(monkeypatch, tmp_path: Path) -> None:
@@ -165,13 +165,14 @@ def test_saved_region_advances_source_bbox_so_second_move_clears_previous_positi
     assert second["regions"][0]["source_bbox"] == box_c
 
 
-def test_restore_original_stroke_survives_later_regular_save(monkeypatch, tmp_path: Path) -> None:
+def test_baked_brush_stroke_does_not_replay_on_later_regular_save(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
     manager, _job, page = _build_ready_manager(tmp_path)
 
     bbox = [8, 8, 20, 20]
+    # Primera acción: restaurar original fuera de la caja de texto.
     stroke = {
-        "points": [[18, 18]],
+        "points": [[32, 32]],
         "radius": 3,
         "mode": "mask_eraser",
         "applied": False,
@@ -184,22 +185,32 @@ def test_restore_original_stroke_survives_later_regular_save(monkeypatch, tmp_pa
         operation="mask_eraser",
     )
 
-    assert restored["brush_strokes"], "La restauración debe conservarse como parte del estado persistente."
-    assert restored["brush_strokes"][0]["mode"] == "mask_eraser"
+    assert restored["brush_strokes"] == [], "Los trazos ya horneados no deben quedar como reglas persistentes."
+    first = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert first is not None
+    assert np.all(first[32, 32] == 40)
 
-    # Un guardado posterior de texto/región no debe volver a pintar encima de la zona restaurada.
-    manager.save_manual_render(
+    # Segunda acción en la misma zona: limpiar. Debe ganar la acción nueva y no
+    # reaparecer el restaurador histórico en un guardado posterior.
+    clean_stroke = {
+        "points": [[32, 32]],
+        "radius": 3,
+        "mode": "restore_clean",
+        "applied": False,
+    }
+    cleaned = manager.save_manual_render(
         "job-test",
         0,
         [_region_payload(bbox=bbox, source_bbox=bbox, text="texto actualizado")],
-        restored["brush_strokes"],
+        [clean_stroke],
         operation="render",
     )
+    assert cleaned["brush_strokes"] == []
 
     rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
     assert rendered is not None
-    assert np.all(rendered[18, 18] == 40)
-    assert np.all(rendered[10, 10] == 220)
+    assert np.all(rendered[32, 32] == 100), "La acción más reciente debe prevalecer en una zona reutilizada."
+    assert np.all(rendered[18, 18] == 220), "El texto de región permanece como capa superior."
 
 
 def test_corrected_transcription_can_be_retranslated_without_running_ocr(monkeypatch, tmp_path: Path) -> None:
@@ -228,3 +239,321 @@ def test_corrected_transcription_can_be_retranslated_without_running_ocr(monkeyp
     assert result["translated_text"] == "TRADUCIDO: texto fuente corregido"
     assert result["source_language"] == "Japonés"
     assert result["target_language"] == "Español"
+
+
+def test_history_can_restore_translation_position_without_raster_ghost(monkeypatch, tmp_path: Path) -> None:
+    """Una instantánea del historial debe reconstruirse desde fondo, no desde texto horneado."""
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+
+    box_a = [4, 4, 8, 8]
+    box_b = [20, 4, 8, 8]
+
+    moved = manager.save_manual_render(
+        "job-test",
+        0,
+        [_region_payload(bbox=box_b, source_bbox=box_a)],
+        [],
+        operation="render",
+        background_revision="base",
+    )
+    assert moved["background_revision"] == "base"
+
+    # Simula Ctrl+Z: la instantánea previa tenía la región en A. Incluso si la
+    # región histórica no estaba marcada como modificada, debe dibujarse desde la
+    # capa de fondo y desaparecer por completo el texto rasterizado de B.
+    undo_payload = _region_payload(bbox=box_a, source_bbox=box_a)
+    undo_payload["modified"] = False
+    undone = manager.save_manual_render(
+        "job-test",
+        0,
+        [undo_payload],
+        [],
+        operation="render",
+        background_revision="base",
+    )
+    assert undone["background_revision"] == "base"
+
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[8, 8] == 220), "Deshacer debe devolver el texto a la caja histórica."
+    assert np.all(rendered[8, 24] == 100), "La posición movida no puede quedar rasterizada como fantasma."
+
+    # Simula Ctrl+Y sobre la misma revisión de fondo.
+    redone = manager.save_manual_render(
+        "job-test",
+        0,
+        [_region_payload(bbox=box_b, source_bbox=box_a)],
+        [],
+        operation="render",
+        background_revision="base",
+    )
+    assert redone["background_revision"] == "base"
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[8, 8] == 100)
+    assert np.all(rendered[8, 24] == 220), "Rehacer debe volver a mover la región sin duplicar texto."
+
+
+def test_background_revision_makes_brush_cleanup_undoable_and_redoable(monkeypatch, tmp_path: Path) -> None:
+    """El historial de UI puede cambiar entre revisiones inmutables de limpieza."""
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+
+    bbox = [8, 8, 20, 20]
+    region = _region_payload(bbox=bbox, source_bbox=bbox)
+    stroke = {
+        "points": [[32, 32]],
+        "radius": 3,
+        "mode": "mask_eraser",
+        "applied": False,
+    }
+    brushed = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [stroke],
+        operation="mask_eraser",
+        background_revision="base",
+    )
+    brushed_revision = brushed["background_revision"]
+    assert brushed_revision != "base"
+    assert Path(page.manual_background_path).exists()
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None and np.all(rendered[32, 32] == 40)
+
+    # Ctrl+Z: seleccionar la revisión de fondo que estaba en la instantánea previa.
+    undone = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [],
+        operation="render",
+        background_revision="base",
+    )
+    assert undone["background_revision"] == "base"
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None and np.all(rendered[32, 32] == 100)
+
+    # Ctrl+Y: la instantánea de rehacer conserva la revisión creada por el pincel.
+    redone = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [],
+        operation="render",
+        background_revision=brushed_revision,
+    )
+    assert redone["background_revision"] == brushed_revision
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None and np.all(rendered[32, 32] == 40)
+
+
+def test_inpaint_revision_is_preserved_when_restoring_original_elsewhere(monkeypatch, tmp_path: Path) -> None:
+    """Restaurar B debe partir de la revisión que ya contiene el inpaint de A."""
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+
+    # El fake hace muy visible la zona reconstruida: 205 en cualquier píxel enmascarado.
+    monkeypatch.setattr(
+        manager,
+        "_manual_inpaint_callable",
+        lambda _model: lambda image, mask: np.where((mask > 0)[..., None], 205, image).astype(np.uint8),
+    )
+
+    bbox = [4, 4, 8, 8]
+    region = _region_payload(bbox=bbox, source_bbox=bbox)
+    inpaint_stroke = {
+        "points": [[28, 12]],
+        "radius": 2,
+        "mode": "inpaint",
+        "applied": False,
+    }
+    inpainted = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [inpaint_stroke],
+        operation="inpaint",
+        background_revision="base",
+        inpaint_model="opencv-tela",
+    )
+    inpaint_revision = inpainted["background_revision"]
+    assert inpaint_revision != "base"
+
+    after_inpaint = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert after_inpaint is not None
+    assert np.all(after_inpaint[12, 28] == 205)
+
+    restore_stroke = {
+        "points": [[28, 30]],
+        "radius": 2,
+        "mode": "mask_eraser",
+        "applied": False,
+    }
+    restored = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [restore_stroke],
+        operation="mask_eraser",
+        background_revision=inpaint_revision,
+    )
+
+    assert restored["background_revision"] not in {"base", inpaint_revision}
+    final = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert final is not None
+    assert np.all(final[12, 28] == 205), "Restaurar otra zona no puede descartar un inpaint ya horneado."
+    assert np.all(final[30, 28] == 40), "La nueva pincelada sí debe recuperar el manga original en su propia zona."
+
+def test_two_consecutive_restore_original_brush_commits_accumulate(monkeypatch, tmp_path: Path) -> None:
+    """Dos aplicaciones separadas del mismo pincel deben encadenarse sobre la revisión previa."""
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+
+    bbox = [4, 4, 8, 8]
+    region = _region_payload(bbox=bbox, source_bbox=bbox)
+    stroke_a = {
+        "points": [[28, 12]],
+        "radius": 2,
+        "mode": "mask_eraser",
+        "applied": False,
+    }
+    first = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [stroke_a],
+        operation="mask_eraser",
+        background_revision="base",
+    )
+    revision_a = first["background_revision"]
+    assert revision_a != "base"
+
+    stroke_b = {
+        "points": [[28, 30]],
+        "radius": 2,
+        "mode": "mask_eraser",
+        "applied": False,
+    }
+    second = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [stroke_b],
+        operation="mask_eraser",
+        background_revision=revision_a,
+    )
+    assert second["background_revision"] not in {"base", revision_a}
+
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[12, 28] == 40), "La primera restauración debe sobrevivir a la segunda aplicación."
+    assert np.all(rendered[30, 28] == 40), "La segunda restauración también debe quedar aplicada."
+
+
+def test_two_consecutive_clean_brush_commits_accumulate_after_inpaint(monkeypatch, tmp_path: Path) -> None:
+    """Limpiar A y luego B no puede devolver A al fondo inpaintado anterior."""
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+    monkeypatch.setattr(
+        manager,
+        "_manual_inpaint_callable",
+        lambda _model: lambda image, mask: np.where((mask > 0)[..., None], 205, image).astype(np.uint8),
+    )
+
+    bbox = [4, 4, 8, 8]
+    region = _region_payload(bbox=bbox, source_bbox=bbox)
+    seed_inpaint = {
+        "points": [[28, 12], [28, 30]],
+        "radius": 4,
+        "mode": "inpaint",
+        "applied": False,
+    }
+    inpainted = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [seed_inpaint],
+        operation="inpaint",
+        background_revision="base",
+        inpaint_model="opencv-tela",
+    )
+    inpaint_revision = inpainted["background_revision"]
+
+    clean_a = {
+        "points": [[28, 12]],
+        "radius": 2,
+        "mode": "restore_clean",
+        "applied": False,
+    }
+    first = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [clean_a],
+        operation="render",
+        background_revision=inpaint_revision,
+    )
+    revision_a = first["background_revision"]
+
+    clean_b = {
+        "points": [[28, 30]],
+        "radius": 2,
+        "mode": "restore_clean",
+        "applied": False,
+    }
+    manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [clean_b],
+        operation="render",
+        background_revision=revision_a,
+    )
+
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[12, 28] == 100), "La primera limpieza debe mantenerse después de limpiar una segunda zona."
+    assert np.all(rendered[30, 28] == 100), "La segunda limpieza debe quedar acumulada sobre la primera."
+
+
+
+def test_two_consecutive_inpaint_commits_accumulate(monkeypatch, tmp_path: Path) -> None:
+    """Aplicar inpaint en A y después en B debe conservar la reconstrucción de A."""
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+    monkeypatch.setattr(
+        manager,
+        "_manual_inpaint_callable",
+        lambda _model: lambda image, mask: np.where((mask > 0)[..., None], 205, image).astype(np.uint8),
+    )
+
+    bbox = [4, 4, 8, 8]
+    region = _region_payload(bbox=bbox, source_bbox=bbox)
+    first = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [{"points": [[28, 12]], "radius": 2, "mode": "inpaint", "applied": False}],
+        operation="inpaint",
+        background_revision="base",
+        inpaint_model="opencv-tela",
+    )
+    revision_a = first["background_revision"]
+
+    second = manager.save_manual_render(
+        "job-test",
+        0,
+        [region],
+        [{"points": [[28, 30]], "radius": 2, "mode": "inpaint", "applied": False}],
+        operation="inpaint",
+        background_revision=revision_a,
+        inpaint_model="opencv-tela",
+    )
+    assert second["background_revision"] not in {"base", revision_a}
+
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[12, 28] == 205), "El primer inpaint debe sobrevivir al segundo commit."
+    assert np.all(rendered[30, 28] == 205), "El segundo inpaint debe aplicarse sobre la revisión ya modificada."

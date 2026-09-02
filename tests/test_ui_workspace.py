@@ -64,6 +64,9 @@ def test_workspace_javascript_connects_history_save_and_shortcut_help() -> None:
     assert "quickSaveBtn?.addEventListener('click'" in javascript
     assert "shortcutHelpBtn?.addEventListener('click', openShortcutModal);" in javascript
     assert "function updateWorkspaceChrome()" in javascript
+    assert "backgroundRevision: state.backgroundRevision || 'base'" in javascript
+    assert "background_revision: state.backgroundRevision || 'base'" in javascript
+    assert "state.backgroundRevision = snapshot.backgroundRevision || 'base';" in javascript
 
 
 def test_editable_preview_and_photoshop_transform_tools_are_wired() -> None:
@@ -143,3 +146,26 @@ def test_renderer_preview_does_not_collapse_repeated_line_breaks() -> None:
     javascript = (STATIC / "app.js").read_text(encoding="utf-8")
 
     assert ".replace(/\n{3,}/g, '\n\n')" not in javascript
+
+
+def test_background_commit_is_rebased_when_user_paints_during_slow_inpaint() -> None:
+    javascript = (STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert "function stripCommittedBrushPrefix(currentStrokes, committedStrokes)" in javascript
+    assert "function reconcileCommittedBackgroundRevision(payload, updatedPage, pageKey)" in javascript
+    assert "state.backgroundRevision = nextRevision;" in javascript
+    assert "state.brushStrokes = stripped.remaining;" in javascript
+    assert "rebaseHistoryAfterBackgroundCommit" in javascript
+    assert "const rebasedBackground = hasNewerChanges" in javascript
+    assert "continuar sobre fondo actualizado" in javascript
+
+def test_polling_cannot_roll_back_a_newer_manual_background_revision() -> None:
+    javascript = (STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert "function pageUpdatedAtValue(page)" in javascript
+    assert "function mergePolledJob(currentJob, incomingJob)" in javascript
+    assert "if (pageUpdatedAtValue(currentPage) > pageUpdatedAtValue(incomingPage))" in javascript
+    assert "return currentPage;" in javascript
+    assert "const job = mergePolledJob(state.job, incomingJob);" in javascript
+    assert "state.job = job;" in javascript
+

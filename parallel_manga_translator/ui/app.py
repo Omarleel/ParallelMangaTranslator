@@ -74,6 +74,8 @@ class RenderRequest(BaseModel):
     regions: List[RegionPatch]
     brush_strokes: List[BrushStrokePatch] = Field(default_factory=list)
     operation: str = "render"
+    inpaint_model: str = "job"
+    background_revision: str = "base"
 
 
 class RegionPreviewRequest(BaseModel):
@@ -209,6 +211,8 @@ def render_page(job_id: str, page_index: int, request: RenderRequest):
             [region.model_dump() if hasattr(region, "model_dump") else region.dict() for region in request.regions],
             [stroke.model_dump() if hasattr(stroke, "model_dump") else stroke.dict() for stroke in request.brush_strokes],
             operation=request.operation,
+            inpaint_model=request.inpaint_model,
+            background_revision=request.background_revision,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

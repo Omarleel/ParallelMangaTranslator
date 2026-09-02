@@ -497,6 +497,17 @@
                     <option value="mask_eraser">Restaurar manga original</option>
                   </select>
                 </label>
+                <label class="field inline-field">
+                  <span>Modelo de inpainting</span>
+                  <select id="brushInpaintModel">
+                    <option value="job" selected>Usar modelo del trabajo</option>
+                    <option value="lama_mpe">LaMa MPE</option>
+                    <option value="lama_large_512px">LaMa Large 512</option>
+                    <option value="aot">AOT</option>
+                    <option value="opencv-tela">OpenCV (rápido)</option>
+                  </select>
+                </label>
+                <p class="field-help">Se usa al aplicar “Reconstruir fondo”. LaMa/AOT suelen conservar mejor tramas y fondos que OpenCV.</p>
                 <label class="brush-size">Tamaño <input id="brushSize" type="range" min="4" max="90" value="22" /><strong id="brushSizeValue">22 px</strong></label>
                 <div class="brush-action-grid">
                   <button id="undoBrushBtn" class="ghost" type="button">Deshacer trazo</button>
