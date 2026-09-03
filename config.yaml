@@ -1,5 +1,5 @@
 translation:
-  source_language: Inglés
+  source_language: Japonés
   target_language: Español
   method: Tradicional          # LLM | Tradicional
   traditional_provider: auto  # auto | google | deepl
@@ -184,9 +184,14 @@ character_memory:
   max_context_pages: 8
 
 evaluation:
-  # Carpeta sugerida para anotaciones manuales de precisión.
-  ground_truth_dir: dataset_eval/ground_truth
+  # Dataset de regresión validado a mano, NO la carpeta que procesa el usuario:
+  # `processing.input_dir` es el manga que se traduce; esto es el banco de pruebas
+  # contra el que se mide si un cambio mejora o empeora. Ver dataset_eval/README.md.
+  dataset_dir: dataset_eval
+  # Umbral de IoU para dar por detectada una región.
   iou_threshold: 0.50
+  # Diferencia por debajo de la cual un cambio se considera ruido, no señal.
+  tolerance: 0.005
 
 export:
   pdf: true

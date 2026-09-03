@@ -308,46 +308,6 @@ pmt-evaluate --help
 
 `config.yaml` es la única fuente de configuración funcional. `.env` debe reservarse solo para secretos como claves API y no debería versionarse.
 
-### Evaluación real de precisión
-
-Se añadió un evaluador para comparar el pipeline contra anotaciones manuales. Esto permite medir detección de regiones, OCR y traducción en vez de depender solo de métricas internas.
-
-Estructura recomendada:
-
-```text
-dataset_eval/ground_truth/
-  0001.json
-  0002.json
-```
-
-Formato mínimo de cada página:
-
-```json
-{
-  "page": "0001.png",
-  "regions": [
-    {
-      "bbox": [10, 20, 180, 90],
-      "type": "dialogue",
-      "text_ja": "行くぞ",
-      "translation_es": "¡Vamos!"
-    }
-  ]
-}
-```
-
-Ejecuta la evaluación después de procesar el manga:
-
-```bash
-python evaluate_manga.py \
-  --ground-truth dataset_eval/ground_truth \
-  --transcription-json dataset/outputs/limpieza/Transcripción.json \
-  --translation-json dataset/outputs/traduccion/Traducción.json \
-  --output dataset/outputs/metricas/reporte_precision.json
-```
-
-El reporte incluye `detection_precision`, `detection_recall`, `detection_f1`, `mean_iou`, `mean_ocr_cer` y `mean_translation_cer`.
-
 ### JSON estricto para traducción LLM
 
 La traducción LLM ahora valida localmente la respuesta antes de usarla. Cuando el proveedor lo permite, intenta `json_schema` estricto; si el proveedor no lo soporta, cae a `json_object` y mantiene validación local estricta.

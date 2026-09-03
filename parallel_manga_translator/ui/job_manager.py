@@ -26,7 +26,7 @@ from parallel_manga_translator.infrastructure.execution_control import (
     JobPausedError,
     execution_control_scope,
 )
-from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
+from parallel_manga_translator.infrastructure.logging_config import close_log_file, configure_logging, get_logger
 from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
 from parallel_manga_translator.ui.manual_renderer import apply_background_brush_strokes, apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_composite, render_manual_page, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
@@ -36,6 +36,14 @@ from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
 logger = get_logger(__name__)
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+_PAGE_PATH_FIELDS = (
+    "original_path",
+    "clean_path",
+    "translated_path",
+    "corrected_path",
+    "corrections_path",
+    "manual_background_path",
+)
 PROJECT_JOBS_DIR = Path(os.getenv("PMT_UI_JOBS_DIR", ".pmt_ui_jobs")).resolve()
 
 
@@ -118,6 +126,22 @@ class JobState:
     def progress(self) -> float:
         total = self.total_count or 1
         return round(((self.processed_count + self.failed_count) / total) * 100, 2)
+
+
+def rebase_stored_path(value: str, old_root: str, new_root: Path) -> str:
+    """Reancla una ruta absoluta guardada bajo `old_root` para que apunte a `new_root`."""
+    if not value or not old_root:
+        return value
+    stored = value.replace("\\", "/")
+    old = old_root.replace("\\", "/").rstrip("/")
+    if not old:
+        return value
+    candidate = stored if os.name != "nt" else stored.lower()
+    prefix = old if os.name != "nt" else old.lower()
+    if not (candidate + "/").startswith(prefix + "/"):
+        return value
+    suffix = stored[len(old):].lstrip("/")
+    return str(new_root / suffix) if suffix else str(new_root)
 
 
 def normalized_output_name(filename: str, page_index: int) -> str:
@@ -1340,6 +1364,10 @@ class JobManager:
                 failure_path = Path(job.root_dir) / "error.log"
                 failure_path.write_text(traceback.format_exc(), encoding="utf-8")
             finally:
+                # El FileHandler de job.log queda enganchado al logger del paquete: sin
+                # cerrarlo, Windows no deja borrar la carpeta del trabajo y los logs de los
+                # trabajos siguientes se duplican en este fichero.
+                close_log_file(str(Path(job.root_dir) / "job.log"))
                 with self._lock:
                     self._controls.pop(job_id, None)
 
@@ -1537,4 +1565,22 @@ class JobManager:
         elif not isinstance(options, JobOptions):
             data["options"] = JobOptions()
         job_fields = JobState.__dataclass_fields__
-        return JobState(**{k: v for k, v in data.items() if k in job_fields})
+        job = JobState(**{k: v for k, v in data.items() if k in job_fields})
+        if self._rebase_job_paths(job):
+            logger.info("Rutas del trabajo %s reancladas a %s.", job_id, job.root_dir)
+            self._save_manifest(job)
+        return job
+
+    def _rebase_job_paths(self, job: JobState) -> bool:
+        """Corrige las rutas absolutas de un trabajo cuya carpeta se movió de sitio."""
+        new_root = self.jobs_root / job.job_id
+        old_root = job.root_dir
+        if not old_root or Path(old_root) == new_root:
+            return False
+        job.root_dir = str(new_root)
+        job.input_dir = rebase_stored_path(job.input_dir, old_root, new_root)
+        job.output_dir = rebase_stored_path(job.output_dir, old_root, new_root)
+        for page in job.pages:
+            for attribute in _PAGE_PATH_FIELDS:
+                setattr(page, attribute, rebase_stored_path(getattr(page, attribute), old_root, new_root))
+        return True

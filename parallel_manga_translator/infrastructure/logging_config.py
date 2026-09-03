@@ -54,5 +54,25 @@ def configure_logging(log_file: str | None = "debug.log", level: Union[int, str]
     return logger
 
 
+def close_log_file(log_file: str | None) -> None:
+    """Cierra y desengancha el FileHandler que `configure_logging` creó para `log_file`.
+
+    Los handlers viven en el logger del paquete, que sobrevive a cada trabajo. Sin cerrarlos:
+    en Windows el fichero queda bloqueado y su carpeta no se puede borrar, y además los logs
+    de cada trabajo nuevo se siguen escribiendo en los `job.log` de todos los anteriores.
+    """
+    if not log_file:
+        return
+    logger = logging.getLogger(LOGGER_NAME)
+    target = Path(str(log_file))
+    for handler in list(logger.handlers):
+        marker = getattr(handler, "_pmt_file", None)
+        if marker is None:
+            continue
+        if marker == str(log_file) or Path(marker) == target:
+            logger.removeHandler(handler)
+            handler.close()
+
+
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"{LOGGER_NAME}.{name}")

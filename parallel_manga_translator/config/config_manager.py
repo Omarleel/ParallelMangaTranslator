@@ -8,6 +8,7 @@ from typing import Any, Dict, Mapping, Optional
 from parallel_manga_translator.config.app_config import (
     ApplicationConfig,
     CharacterMemoryConfig,
+    EvaluationSettings,
     ExportConfig,
     LlmConfig,
     LoggingConfig,
@@ -106,6 +107,7 @@ class ConfigManager:
             character_memory=self._build_character_memory_config(),
             export=self._build_export_config(),
             logging=self._build_logging_config(),
+            evaluation=self._build_evaluation_settings(),
         )
 
     def _build_translation_config(self, project_dir: str) -> TranslationConfig:
@@ -308,4 +310,12 @@ class ConfigManager:
         return LoggingConfig(
             level=str(section.get("level", "INFO")),
             file=str(section.get("file", "debug.log")),
+        )
+
+    def _build_evaluation_settings(self) -> EvaluationSettings:
+        section = self._section("evaluation")
+        return EvaluationSettings(
+            dataset_dir=str(section.get("dataset_dir", "dataset_eval")),
+            iou_threshold=float_value(section.get("iou_threshold", 0.50), 0.50),
+            tolerance=float_value(section.get("tolerance", 0.005), 0.005),
         )

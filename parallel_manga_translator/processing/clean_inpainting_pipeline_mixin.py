@@ -243,11 +243,16 @@ class CleanInpaintingPipelineMixin:
         return page_dir
 
     def _visual_inpaint_debug_relpath(self, path: Path) -> str:
+        """Ruta relativa con separadores `/`.
+
+        Estas rutas viajan dentro de JSON que consumen la UI y otras herramientas, así que
+        no pueden depender del separador del sistema: en Windows saldrían con `\\`.
+        """
         output_root = Path(str(getattr(self, "visual_inpaint_debug_output_root", "")))
         try:
-            return str(path.relative_to(output_root))
+            return path.relative_to(output_root).as_posix()
         except Exception:
-            return str(path)
+            return Path(path).as_posix()
 
     @staticmethod
     def _json_safe(value):

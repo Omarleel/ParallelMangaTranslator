@@ -228,11 +228,21 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         return font, lines, spacing
 
     @staticmethod
-    def _uses_vertical_character_mode(rotation_angle: float, line_groups: Sequence[Sequence[str]]) -> bool:
-        """Una sola línea inclinada se escribe vertical; dos o más sí se rotan."""
+    def _uses_vertical_character_mode(rotation_angle: float, block_texts: Sequence[str]) -> bool:
+        """Una sola línea inclinada se escribe vertical; dos o más sí se rotan.
+
+        Cuenta las líneas del **texto de origen**, no las del ajuste tipográfico. Un globo
+        estrecho parte una sola palabra en varias líneas, y ése es justo el caso donde
+        apilar los caracteres se lee mejor que girar los glifos.
+        """
         if abs(float(rotation_angle or 0.0)) < 0.65:
             return False
-        return sum(len(lines) for lines in line_groups) == 1
+        total = 0
+        for text in block_texts:
+            total += len(str(text or "").splitlines()) or 1
+            if total > 1:
+                return False
+        return total == 1
 
     def _stroke_width_for_style(self, fuente, style: str) -> int:
         if style.startswith("onomatopeya"):
@@ -358,7 +368,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
 
         vertical_character_mode = self._uses_vertical_character_mode(
             requested_rotation,
-            [block["lines"] for block in base_blocks],
+            [block["text"] for block in base_blocks],
         )
         effective_rotation = 0.0 if vertical_character_mode else requested_rotation
 
@@ -369,7 +379,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
             if vertical_character_mode:
                 area_x, area_y, area_w, area_h = raw_area
                 font, lines, line_spacing = self._fit_vertical_character_stack(
-                    base["lines"][0],
+                    block_text,
                     area_w,
                     area_h,
                     style,
@@ -528,7 +538,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         base_blocks = [resolve_slot(slot, block_text) for slot, block_text in render_blocks]
         vertical_character_mode = self._uses_vertical_character_mode(
             requested_rotation,
-            [block["lines"] for block in base_blocks],
+            [block["text"] for block in base_blocks],
         )
         effective_rotation = 0.0 if vertical_character_mode else requested_rotation
 
@@ -540,7 +550,7 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                 safe_x, safe_y, safe_w, safe_h = slot
                 area_x, area_y, area_w, area_h = base["area"]
                 font, lines, line_spacing = self._fit_vertical_character_stack(
-                    base["lines"][0],
+                    block_text,
                     area_w,
                     area_h,
                     style,

@@ -21,3 +21,9 @@ build/
 dist/
 *.egg-info/
 .ParallelMangaTranslator-*/
+
+# Artefacto del grafo de codebase-memory-mcp
+.codebase-memory/
+
+# dataset_eval: se versionan la verdad de referencia y las líneas base, no las imágenes
+dataset_eval/*

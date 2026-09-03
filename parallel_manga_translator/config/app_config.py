@@ -185,6 +185,19 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class EvaluationSettings:
+    """Dataset de regresión validado a mano, no la carpeta que procesa el usuario.
+
+    `processing.ruta_carpeta_entrada` es el manga que se está traduciendo; esto es el
+    banco de pruebas contra el que se mide si un cambio mejora o empeora.
+    """
+
+    dataset_dir: str = "dataset_eval"
+    iou_threshold: float = 0.50
+    tolerance: float = 0.005
+
+
+@dataclass(frozen=True)
 class ApplicationConfig:
     translation: TranslationConfig
     processing: ProcessingConfig
@@ -194,3 +207,4 @@ class ApplicationConfig:
     character_memory: CharacterMemoryConfig = CharacterMemoryConfig()
     export: ExportConfig = ExportConfig()
     logging: LoggingConfig = LoggingConfig()
+    evaluation: EvaluationSettings = EvaluationSettings()
