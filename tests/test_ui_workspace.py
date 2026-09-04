@@ -42,6 +42,12 @@ def test_editor_html_has_unique_ids_and_workspace_controls() -> None:
         "textOffsetX",
         "resetTypographyBtn",
         "translateOriginalBtn",
+        "retranslateBtn",
+        "retranslateModal",
+        "retranslateTranslator",
+        "retranslateTargetLanguage",
+        "retranslateOverwrite",
+        "confirmRetranslateBtn",
     ):
         assert element_id in parser.ids
 
@@ -67,6 +73,19 @@ def test_workspace_javascript_connects_history_save_and_shortcut_help() -> None:
     assert "backgroundRevision: state.backgroundRevision || 'base'" in javascript
     assert "background_revision: state.backgroundRevision || 'base'" in javascript
     assert "state.backgroundRevision = snapshot.backgroundRevision || 'base';" in javascript
+
+
+def test_job_retranslation_dialog_is_wired_to_the_api() -> None:
+    javascript = (STATIC / "app.js").read_text(encoding="utf-8")
+    css = (STATIC / "styles.css").read_text(encoding="utf-8")
+
+    assert "retranslateBtn?.addEventListener('click', openRetranslateModal);" in javascript
+    assert "confirmRetranslateBtn?.addEventListener('click', submitRetranslation);" in javascript
+    assert "/retranslate`" in javascript
+    assert "overwrite_manual: !!retranslateOverwrite?.checked," in javascript
+    # Solo tiene sentido sobre un trabajo terminado con páginas listas.
+    assert "retranslateBtn.disabled = !terminal || readyPages === 0;" in javascript
+    assert ".retranslate-dialog" in css
 
 
 def test_editable_preview_and_photoshop_transform_tools_are_wired() -> None:

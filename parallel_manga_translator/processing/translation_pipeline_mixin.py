@@ -125,6 +125,23 @@ class TranslationPipelineMixin:
             parciales.append(traduccion)
         return parciales
 
+    def resolver_textos_para_render(
+        self,
+        textos_limpios: Sequence[str],
+        textos_traducidos: Sequence[str],
+    ) -> List[str]:
+        """Decide qué texto se dibuja realmente en cada región ya traducida.
+
+        Queda vacío lo que el filtro de idioma de origen descartó y las onomatopeyas
+        que deben conservar el arte original. La retraducción de la UI reutiliza esta
+        misma regla para producir la misma imagen que habría producido el pipeline.
+        """
+        return [
+            "" if (idx < len(self.ultimos_source_language_flags) and not self.ultimos_source_language_flags[idx])
+            else ("" if self._should_keep_original_onomatopoeia(idx, original) else traducido)
+            for idx, (original, traducido) in enumerate(zip(textos_limpios, textos_traducidos))
+        ]
+
     def _region_metadata_for_translation(self, textos: Sequence[str]) -> List[Dict[str, Any]]:
         metadata: List[Dict[str, Any]] = []
         for idx, texto in enumerate(textos):

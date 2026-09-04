@@ -209,6 +209,7 @@
             <span class="job-control-icon" aria-hidden="true">■</span><span>Cancelar trabajo</span>
           </button>
         </div>
+        <button id="retranslateBtn" class="ghost export-btn" type="button" disabled>Retraducir trabajo</button>
         <button id="exportBtn" class="ghost export-btn" type="button" disabled>Exportar ZIP</button>
         <button id="newJobBtn" class="ghost export-btn" type="button">Nuevo trabajo</button>
       </section>
@@ -534,6 +535,42 @@
 
   <button id="panelBackdrop" class="panel-backdrop hidden" type="button" aria-label="Cerrar panel"></button>
   <div id="toast" class="toast hidden"></div>
+
+  <div id="retranslateModal" class="shortcut-modal retranslate-modal hidden" role="dialog" aria-modal="true" aria-labelledby="retranslateModalTitle">
+    <button id="retranslateModalBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar retraducción"></button>
+    <section class="shortcut-dialog retranslate-dialog">
+      <header>
+        <div>
+          <span class="eyebrow">Trabajo terminado</span>
+          <h2 id="retranslateModalTitle">Retraducir el trabajo</h2>
+        </div>
+        <button id="closeRetranslateModalBtn" class="icon-button" type="button" aria-label="Cerrar">×</button>
+      </header>
+      <p class="muted">Reutiliza la limpieza y la transcripción ya calculadas: solo se vuelve a traducir y a rotular. No se repite la detección de globos, ni el OCR, ni el inpainting.</p>
+      <div class="retranslate-form">
+        <label class="field compact">
+          <span>Traductor</span>
+          <select id="retranslateTranslator">
+            <option value="google">Google / tradicional</option>
+            <option value="llm">LLM</option>
+          </select>
+        </label>
+        <label class="field compact">
+          <span>Idioma de salida</span>
+          <select id="retranslateTargetLanguage"></select>
+        </label>
+      </div>
+      <label class="retranslate-overwrite">
+        <input id="retranslateOverwrite" type="checkbox" />
+        <span>Sobrescribir también las páginas con correcciones manuales (se pierden los retoques guardados).</span>
+      </label>
+      <p id="retranslateSummary" class="hint">Sin trabajo cargado.</p>
+      <div class="retranslate-actions">
+        <button id="cancelRetranslateBtn" class="ghost" type="button">Cancelar</button>
+        <button id="confirmRetranslateBtn" class="primary" type="button">Retraducir</button>
+      </div>
+    </section>
+  </div>
 
   <div id="shortcutModal" class="shortcut-modal hidden" role="dialog" aria-modal="true" aria-labelledby="shortcutModalTitle">
     <button id="shortcutModalBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar atajos"></button>

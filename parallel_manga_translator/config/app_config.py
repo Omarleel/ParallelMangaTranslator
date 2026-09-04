@@ -79,6 +79,7 @@ class QualityConfig:
     bubble_fill_whole_interior: bool = False
     bubble_fill_edge_margin: int = 5
     bubble_fill_text_dilate: int = 2
+    bubble_ink_without_ocr_max_ratio: float = 0.35
     bubble_fill_feather: float = 1.0
     bubble_fill_flat_max_rectangularity: float = 0.86
     bubble_fill_strategy: str = "inpaint"
@@ -89,6 +90,7 @@ class QualityConfig:
     visual_inpaint_retry_models: str = "solid,opencv-tela,lama_mpe,aot"
     visual_inpaint_max_retries: int = 4
     visual_inpaint_accept_score: float = 1.0
+    visual_inpaint_best_of_textured: bool = False
     visual_inpaint_debug: bool = False
     bubble_detector: str = "yolo11-seg"
     require_yolo: bool = True
@@ -142,6 +144,7 @@ class QualityConfig:
     ink_mask_min_component_area: int = 3
     ink_mask_component_anchor_overlap: float = 0.03
     ink_mask_component_anchor_max_gap_ratio: float = 0.45
+    text_halo_growth_px: int = 10
     # Orden de lectura sensible a paneles detectados con OpenCV.
     panel_aware_reading_order: bool = True
     panel_detection_min_area_ratio: float = 0.015

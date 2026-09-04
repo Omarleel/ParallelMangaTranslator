@@ -628,6 +628,58 @@ class CleanMaskSeparationTests(unittest.TestCase):
         self.assertGreater(int(np.count_nonzero(BubbleDetector.compose_mask([prepared], image.shape))), 0)
         self.assertEqual(prepared.metadata["clean_mask_source"], "empty_text_ink_inside_bubble")
 
+    def test_bubble_without_ocr_boxes_still_erases_its_ink(self):
+        """El localizador puede fallar dentro de un globo que YOLO sí encontró.
+
+        Sin este rescate el texto original nunca se borra y la traducción se dibuja
+        encima.
+        """
+        image = np.full((120, 120, 3), 255, dtype=np.uint8)
+        image[50:64, 40:80] = 0
+        bubble_mask = np.zeros((120, 120), dtype=np.uint8)
+        bubble_mask[20:100, 20:100] = 255
+        region = TextRegion(
+            bbox=(20, 20, 80, 80),
+            text_bbox=(20, 20, 80, 80),
+            mask=bubble_mask,
+            kind="dialogue",
+            detections_count=0,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+
+        clean_pixels = int(np.count_nonzero(prepared.clean_mask))
+        self.assertGreater(clean_pixels, 300)
+        self.assertLess(clean_pixels, int(np.count_nonzero(prepared.mask)) * 0.30)
+        self.assertEqual(prepared.metadata["clean_mask_source"], "bubble_interior_ink_without_ocr")
+
+    def test_bubble_without_ocr_boxes_keeps_dense_interior_untouched(self):
+        """Una máscara con demasiada tinta no es un globo con texto: no se toca.
+
+        Cubre el caso peligroso: una detección que cayó sobre arte, no sobre un globo.
+        """
+        image = np.full((120, 120, 3), 235, dtype=np.uint8)
+        for fila in range(20, 100, 4):
+            image[fila:fila + 2, 20:100] = 20
+        bubble_mask = np.zeros((120, 120), dtype=np.uint8)
+        bubble_mask[20:100, 20:100] = 255
+        region = TextRegion(
+            bbox=(20, 20, 80, 80),
+            text_bbox=(20, 20, 80, 80),
+            mask=bubble_mask,
+            kind="dialogue",
+            detections_count=0,
+            metadata={},
+        )
+
+        cleaner = self._cleaner()
+        [prepared] = cleaner._attach_clean_masks(image, [region])
+
+        self.assertEqual(int(np.count_nonzero(prepared.clean_mask)), 0)
+        self.assertEqual(prepared.metadata["clean_mask_source"], "empty_text_ink_inside_bubble")
+
     def test_dark_narration_box_uses_bright_ink_clean_mask(self):
         image = np.full((100, 100, 3), 255, dtype=np.uint8)
         image[15:85, 15:85] = 20
@@ -885,3 +937,506 @@ class MaturePrecisionAdaptationsTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(parts), 2)
         self.assertTrue(any(part.endswith("-") for part in parts[:-1]))
+
+
+class FreeTextRegionCleaningTests(unittest.TestCase):
+    """Limpieza de texto libre/SFX: una pasada por región, no una por página."""
+
+    @staticmethod
+    def _cleaner():
+        cleaner = object.__new__(CleanManga)
+        cleaner.bubble_fill_feather = 1.0
+        cleaner.bubble_fill_background_std_threshold = 18.0
+        cleaner.bubble_fill_strategy = "solid"
+        cleaner.bubble_fill_inpaint_padding = 8
+        cleaner.inpaint_model = "opencv-tela"
+        cleaner.visual_inpaint_verifier_enabled = False
+        cleaner.idioma_entrada = "Japonés"
+        cleaner.onomatopoeia_mode = "translate"
+        cleaner.translate_onomatopoeia = True
+        cleaner.clean_onomatopoeia = True
+        cleaner.onomatopoeia_manager = OnomatopoeiaManager()
+        return cleaner
+
+    @staticmethod
+    def _free_text_region(image_shape, rect):
+        x, y, w, h = rect
+        mask = np.zeros(image_shape[:2], dtype=np.uint8)
+        mask[y:y + h, x:x + w] = 255
+        return TextRegion(
+            bbox=rect,
+            text_bbox=rect,
+            mask=mask.copy(),
+            clean_mask=mask,
+            kind="free_text",
+            confidence=0.5,
+            metadata={},
+        )
+
+    def _page_with_two_texts(self):
+        # Fondo con textura: es justo lo que una pasada de inpaint sobre toda la página
+        # difumina cuando la máscara cubre zonas grandes y separadas.
+        image = np.full((300, 300, 3), 235, dtype=np.uint8)
+        image[:, ::7] = 180
+        rects = [(30, 40, 60, 50), (200, 210, 55, 45)]
+        for x, y, w, h in rects:
+            image[y + 8:y + h - 8, x + 8:x + w - 8] = 15
+        return image, rects
+
+    def test_cada_region_se_limpia_por_separado(self):
+        image, rects = self._page_with_two_texts()
+        cleaner = self._cleaner()
+        regions = [self._free_text_region(image.shape, rect) for rect in rects]
+
+        llamadas = []
+        original = CleanManga._clean_region_with_masks
+
+        def espia(self, salida, region, region_index, clean_mask, safe_mask):
+            llamadas.append((region_index, int(cv2.countNonZero(clean_mask))))
+            return original(self, salida, region, region_index, clean_mask, safe_mask)
+
+        cleaner._clean_region_with_masks = espia.__get__(cleaner, CleanManga)
+        limpia = cleaner._clean_free_text_regions(image, regions, debug_index_offset=3)
+
+        self.assertEqual([indice for indice, _ in llamadas], [3, 4])
+        self.assertTrue(all(pixeles > 0 for _, pixeles in llamadas))
+        for x, y, w, h in rects:
+            self.assertLess(int(np.count_nonzero(limpia[y:y + h, x:x + w] < 60)), 10)
+
+    def test_el_fondo_fuera_de_las_mascaras_no_se_toca(self):
+        image, rects = self._page_with_two_texts()
+        cleaner = self._cleaner()
+        regions = [self._free_text_region(image.shape, rect) for rect in rects]
+
+        limpia = cleaner._clean_free_text_regions(image, regions)
+
+        union = np.zeros(image.shape[:2], dtype=np.uint8)
+        for x, y, w, h in rects:
+            union[y:y + h, x:x + w] = 255
+        # Margen para el difuminado del borde de la máscara.
+        fuera = cv2.bitwise_not(cv2.dilate(union, np.ones((9, 9), np.uint8), iterations=1))
+        self.assertEqual(int(np.count_nonzero(cv2.absdiff(image, limpia)[fuera > 0])), 0)
+
+    def test_regiones_a_limpiar_excluye_onomatopeyas_conservadas(self):
+        image = np.full((120, 120, 3), 255, dtype=np.uint8)
+        cleaner = self._cleaner()
+        cleaner.onomatopoeia_mode = "keep"
+        cleaner.translate_onomatopoeia = False
+        cleaner.clean_onomatopoeia = False
+        cleaner.source_language_filter = SourceLanguageFilter("Japonés")
+
+        globo = self._free_text_region(image.shape, (10, 10, 40, 40))
+        globo.kind = "dialogue"
+        globo.source_text_hint = "こんにちは"
+        sfx = self._free_text_region(image.shape, (60, 60, 40, 40))
+        sfx.kind = "sfx"
+
+        globos, libres = cleaner.regiones_a_limpiar(image, [globo, sfx])
+
+        self.assertEqual(globos, [globo])
+        self.assertEqual(libres, [])
+
+
+class FreeTextInkMaskTests(unittest.TestCase):
+    """La máscara de borrado del texto libre son los trazos, no la caja del OCR."""
+
+    ALTO, ANCHO = 260, 320
+    CAJA = (60, 60, 200, 140)
+
+    def _pagina_con_rotulo_claro(self):
+        """Rótulo blanco sobre gris medio: el caso que rompía la detección de polaridad."""
+        image = np.full((self.ALTO, self.ANCHO, 3), 170, dtype=np.uint8)
+        x, y, w, h = self.CAJA
+        for fila in range(y + 12, y + h - 12, 24):
+            image[fila:fila + 14, x + 14:x + w - 14] = 250
+        return image
+
+    def _region_de_caja_ocr(self):
+        """Como la construye el detector: el polígono OCR relleno, es decir la caja entera."""
+        mask = np.zeros((self.ALTO, self.ANCHO), dtype=np.uint8)
+        x, y, w, h = self.CAJA
+        mask[y:y + h, x:x + w] = 255
+        return TextRegion(
+            bbox=self.CAJA,
+            text_bbox=self.CAJA,
+            mask=mask.copy(),
+            clean_mask=mask.copy(),
+            text_mask=mask.copy(),
+            kind="free_text",
+            confidence=0.5,
+            metadata={},
+        )
+
+    @staticmethod
+    def _cleaner():
+        cleaner = object.__new__(CleanManga)
+        cleaner.bubble_fill_edge_margin = 3
+        cleaner.bubble_fill_text_dilate = 2
+        cleaner.bubble_fill_whole_interior = False
+        cleaner.bubble_fill_flat_max_rectangularity = 0.86
+        cleaner.fine_text_detection = True
+        cleaner.fine_text_mask_dilate = 2
+        cleaner.ink_mask_refinement = True
+        cleaner.ink_mask_min_component_area = 3
+        cleaner.ink_mask_component_anchor_overlap = 0.03
+        cleaner.ink_mask_component_anchor_max_gap_ratio = 0.45
+        return cleaner
+
+    def test_la_mascara_de_borrado_no_es_la_caja_ocr(self):
+        """Sembrar el refinamiento con la propia caja lo anulaba: devolvía el bloque entero.
+
+        Con un bloque sólido, cualquier inpainter barre el fondo en vez de borrar el texto.
+        """
+        image = self._pagina_con_rotulo_claro()
+        [prepared] = self._cleaner()._attach_clean_masks(image, [self._region_de_caja_ocr()])
+
+        pixeles_caja = self.CAJA[2] * self.CAJA[3]
+        pixeles_tinta = int(np.count_nonzero(prepared.clean_mask))
+        self.assertGreater(pixeles_tinta, 0)
+        self.assertLess(pixeles_tinta, pixeles_caja * 0.75)
+        self.assertEqual(prepared.metadata["clean_mask_source"], "region_text_ink")
+
+    def _pagina_con_trazos(self, fondo: int, tinta: int, grosor: int):
+        """Rótulo de N trazos dentro de la caja OCR, para variar la densidad de tinta."""
+        image = np.full((self.ALTO, self.ANCHO, 3), fondo, dtype=np.uint8)
+        x, y, w, h = self.CAJA
+        for i in range(5):
+            fila = y + 10 + i * 26
+            image[fila:fila + grosor, x + 10:x + w - 10] = tinta
+        return image
+
+    def _cobertura_de_tinta(self, image, tinta_es_clara: bool) -> float:
+        [prepared] = self._cleaner()._attach_clean_masks(image, [self._region_de_caja_ocr()])
+        gris = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        trazos = (gris >= 235) if tinta_es_clara else (gris <= 60)
+        x, y, w, h = self.CAJA
+        dentro = np.zeros(gris.shape, dtype=bool)
+        dentro[y:y + h, x:x + w] = True
+        trazos = trazos & dentro
+        total = int(np.count_nonzero(trazos))
+        self.assertGreater(total, 0)
+        return int(np.count_nonzero(trazos & (prepared.clean_mask > 0))) / total
+
+    def test_detecta_la_tinta_aunque_sea_escasa_en_la_caja(self):
+        """Con trazos finos, los cuartiles caen los dos en el fondo y la polaridad se perdía."""
+        self.assertGreater(self._cobertura_de_tinta(self._pagina_con_trazos(170, 250, 3), True), 0.9)
+
+    def test_detecta_la_tinta_aunque_domine_la_caja(self):
+        """Si la tinta ocupa casi toda la caja, la mediana 'del fondo' era la propia tinta."""
+        self.assertGreater(self._cobertura_de_tinta(self._pagina_con_trazos(170, 250, 22), True), 0.9)
+
+    def test_detecta_tinta_oscura_escasa_sobre_blanco(self):
+        self.assertGreater(self._cobertura_de_tinta(self._pagina_con_trazos(250, 20, 3), False), 0.9)
+
+    def test_detecta_texto_de_color_con_la_misma_luminancia_que_el_fondo(self):
+        """Texto de color sobre gris: la luminancia no lo distingue, el color sí.
+
+        Detectando la tinta por luma, un rótulo cuyo brillo coincide con el del fondo es
+        invisible y sobrevive entero a la limpieza; es lo que pasaba con los rótulos de
+        color sobre arte claro.
+        """
+        fondo = (150, 150, 150)
+        tinta = (60, 170, 190)  # luma ~163 frente a 150: indistinguible en gris
+        image = np.full((self.ALTO, self.ANCHO, 3), fondo, dtype=np.uint8)
+        x, y, w, h = self.CAJA
+        for i in range(5):
+            fila = y + 10 + i * 26
+            image[fila:fila + 8, x + 10:x + w - 10] = tinta
+
+        gris = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        self.assertLess(abs(int(np.median(gris)) - 150), 20, "el test debe ser ambiguo en luma")
+
+        [prepared] = self._cleaner()._attach_clean_masks(image, [self._region_de_caja_ocr()])
+        trazos = np.all(image == np.array(tinta, dtype=np.uint8), axis=-1)
+        cubiertos = int(np.count_nonzero(trazos & (prepared.clean_mask > 0)))
+        self.assertGreater(cubiertos / max(1, int(np.count_nonzero(trazos))), 0.9)
+
+    def test_la_mascara_cubre_los_trazos_claros_sobre_gris(self):
+        """La polaridad la decide el contraste: sobre gris medio la tinta puede ser clara."""
+        image = self._pagina_con_rotulo_claro()
+        [prepared] = self._cleaner()._attach_clean_masks(image, [self._region_de_caja_ocr()])
+
+        gris = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        trazos = gris >= 235
+        cubiertos = int(np.count_nonzero(trazos & (prepared.clean_mask > 0)))
+        self.assertGreater(cubiertos / max(1, int(np.count_nonzero(trazos))), 0.85)
+
+
+class AutoInpaintCandidateTests(unittest.TestCase):
+    """`auto` reserva LaMa para fondos complejos: color o trama."""
+
+    UMBRAL = 18.0
+
+    @staticmethod
+    def _cleaner():
+        return object.__new__(CleanManga)
+
+    def test_pagina_a_color_usa_lama(self):
+        color = np.zeros((80, 80, 3), dtype=np.uint8)
+        color[:, :, 2] = 220  # canal rojo dominante: página a color
+        elegido = self._cleaner()._auto_inpaint_candidate(color, 0.0, self.UMBRAL)
+        self.assertEqual(elegido, "lama_mpe")
+
+    def test_fondo_monocromo_con_trama_usa_lama(self):
+        """Una página B/N con trama es fondo complejo aunque no tenga color."""
+        gris = np.full((80, 80, 3), 200, dtype=np.uint8)
+        elegido = self._cleaner()._auto_inpaint_candidate(gris, self.UMBRAL + 5, self.UMBRAL)
+        self.assertEqual(elegido, "lama_mpe")
+
+    def test_fondo_monocromo_plano_no_usa_lama(self):
+        """Interior de globo blanco: LaMa no aporta y cuesta GPU."""
+        gris = np.full((80, 80, 3), 245, dtype=np.uint8)
+        elegido = self._cleaner()._auto_inpaint_candidate(gris, 2.0, self.UMBRAL)
+        self.assertEqual(elegido, "solid")
+
+
+class TextHaloGrowthTests(unittest.TestCase):
+    """La máscara debe tragarse el halo del texto, o el inpainter lo propaga hacia dentro."""
+
+    LADO = 260
+    CAJA = (60, 60, 140, 140)
+
+    def _pagina(self):
+        """Glifos oscuros con halo claro sobre un fondo con textura, como una trama."""
+        from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner  # noqa: F401
+
+        image = np.full((self.LADO, self.LADO, 3), 147, dtype=np.uint8)
+        image[::3, :] = 129          # textura del fondo
+        image[1::3, :] = 165
+        x, y, w, h = self.CAJA
+        halo = np.zeros((self.LADO, self.LADO), dtype=bool)
+        glifo = np.zeros((self.LADO, self.LADO), dtype=bool)
+        # El texto debe dominar la caja: es el balance de la situación real, y es el que
+        # hace que Otsu corte entre los glifos y el resto, dejando el halo con el fondo.
+        for i in range(4):
+            fila = y + 2 + i * 34
+            halo[fila:fila + 30, x + 4:x + w - 4] = True
+            glifo[fila + 10:fila + 20, x + 4:x + w - 4] = True
+        halo &= ~glifo
+        image[halo] = 214            # halo claro alrededor del trazo
+        image[glifo] = 12            # tinta
+        return image, halo, glifo
+
+    @staticmethod
+    def _mascara(image, caja, growth_px):
+        from parallel_manga_translator.quality.text_mask_refiner import (
+            TextInkMaskRefiner,
+            TextMaskRefinementOptions,
+        )
+
+        x, y, w, h = caja
+        zona = np.zeros(image.shape[:2], dtype=np.uint8)
+        zona[y:y + h, x:x + w] = 255
+        crecimiento = None
+        if growth_px:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * growth_px + 5,) * 2)
+            crecimiento = cv2.dilate(zona, kernel)
+        return TextInkMaskRefiner.refine(
+            image,
+            zona,
+            zona,
+            raw_text_mask=zona,
+            initial_ink_mask=None,
+            options=TextMaskRefinementOptions(halo_growth_px=growth_px),
+            growth_mask=crecimiento,
+        )
+
+    def test_el_umbral_del_halo_queda_entre_el_fondo_y_la_tinta(self):
+        """En una región hay tres poblaciones, no dos.
+
+        Otsu corta en dos: con los glifos muy lejos del fondo, el halo queda agrupado con
+        el fondo y el umbral de tinta no sirve para crecer hacia él. El umbral del halo
+        tiene que caer en medio.
+        """
+        from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner
+
+        # Tres poblaciones como las medidas en material real: fondo ~49, halo ~137,
+        # glifos ~240 de distancia al color del fondo.
+        distancia = np.concatenate([
+            np.full(9000, 49.0), np.full(46000, 137.0), np.full(19000, 240.0),
+        ]).astype(np.float32)
+        distancia = distancia.reshape(-1, 1)
+        zona = np.full(distancia.shape, 255, dtype=np.uint8)
+
+        umbral_tinta = 185.0
+        umbral_halo = TextInkMaskRefiner._halo_threshold(distancia, zona, umbral_tinta)
+
+        # El umbral es una cota exclusiva (convenio de OpenCV): lo que cuenta es a qué
+        # población deja pasar, no su valor.
+        self.assertLess(umbral_halo, 137.0, "el halo debe quedar por encima del umbral")
+        self.assertGreaterEqual(umbral_halo, 49.0, "el fondo debe quedar por debajo")
+
+    def test_el_crecimiento_cubre_el_halo(self):
+        image, halo, glifo = self._pagina()
+        mascara = self._mascara(image, self.CAJA, 10)
+        self.assertGreater(
+            np.count_nonzero(halo & (mascara > 0)) / max(1, np.count_nonzero(halo)), 0.85
+        )
+        self.assertGreater(
+            np.count_nonzero(glifo & (mascara > 0)) / max(1, np.count_nonzero(glifo)), 0.85
+        )
+
+    def test_el_crecimiento_se_detiene_en_el_fondo(self):
+        """Debe pararse al tocar la trama, no seguir comiéndose la página."""
+        image, halo, glifo = self._pagina()
+        mascara = self._mascara(image, self.CAJA, 10)
+        texto = cv2.dilate(
+            (halo | glifo).astype(np.uint8) * 255,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25)),
+        )
+        lejos = (texto == 0) & (mascara > 0)
+        self.assertLess(np.count_nonzero(lejos) / mascara.size, 0.01)
+
+
+class BubbleDatasetExportTests(unittest.TestCase):
+    """Exportación de trabajos corregidos como dataset YOLO-seg."""
+
+    @staticmethod
+    def _pagina_con_globo(destino: Path):
+        """Un globo elíptico blanco con borde negro sobre fondo gris."""
+        imagen = np.full((400, 300, 3), 120, dtype=np.uint8)
+        cv2.ellipse(imagen, (150, 200), (90, 60), 0, 0, 360, (255, 255, 255), -1)
+        cv2.ellipse(imagen, (150, 200), (90, 60), 0, 0, 360, (0, 0, 0), 4)
+        cv2.imwrite(str(destino), imagen)
+        return imagen
+
+    def _trabajo(self, raiz: Path, job_id: str, bbox):
+        job = raiz / job_id
+        job.mkdir(parents=True, exist_ok=True)
+        imagen_path = job / "0001.jpg"
+        self._pagina_con_globo(imagen_path)
+        manifest = {
+            "job_id": job_id,
+            "pages": [{
+                "index": 0,
+                "original_path": str(imagen_path),
+                "regions": [
+                    {"index": 0, "type": "dialogue", "bbox": list(bbox), "deleted": False},
+                    {"index": 1, "type": "free_text", "bbox": [10, 10, 40, 20], "deleted": False},
+                    {"index": 2, "type": "dialogue", "bbox": list(bbox), "deleted": True},
+                ],
+            }],
+        }
+        (job / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    def test_exporta_poligonos_normalizados_y_solo_de_globos(self):
+        from parallel_manga_translator.quality.export_bubble_dataset import export_jobs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            self._trabajo(raiz / "jobs", "trabajo_a", (60, 140, 180, 120))
+            stats = export_jobs(raiz / "jobs", raiz / "out", dataset_dir=raiz / "no_existe", val_ratio=0.0)
+
+            # El texto libre no es un globo y la región borrada tampoco cuenta.
+            self.assertEqual(stats.regions, 1)
+            self.assertEqual(stats.labelled, 1)
+
+            etiquetas = list((raiz / "out" / "labels").rglob("*.txt"))
+            self.assertEqual(len(etiquetas), 1)
+            partes = etiquetas[0].read_text(encoding="utf-8").split()
+            self.assertEqual(partes[0], "0")
+            coordenadas = [float(v) for v in partes[1:]]
+            self.assertGreaterEqual(len(coordenadas), 6)
+            self.assertEqual(len(coordenadas) % 2, 0)
+            self.assertTrue(all(0.0 <= c <= 1.0 for c in coordenadas))
+            self.assertTrue((raiz / "out" / "data.yaml").is_file())
+
+    def test_excluye_los_trabajos_que_originan_el_banco(self):
+        """Entrenar con las páginas del banco invalidaría la evaluación."""
+        from parallel_manga_translator.quality.export_bubble_dataset import export_jobs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            self._trabajo(raiz / "jobs", "trabajo_del_banco", (60, 140, 180, 120))
+            caso = raiz / "banco" / "caso_x"
+            caso.mkdir(parents=True)
+            (caso / "case.json").write_text(json.dumps({"origin_job": "trabajo_del_banco"}), encoding="utf-8")
+
+            stats = export_jobs(raiz / "jobs", raiz / "out", dataset_dir=raiz / "banco")
+            self.assertEqual(stats.labelled, 0)
+
+            forzado = export_jobs(raiz / "jobs", raiz / "out2", dataset_dir=raiz / "banco",
+                                  include_eval_jobs=True)
+            self.assertEqual(forzado.labelled, 1)
+
+    def test_el_reparto_train_val_es_estable(self):
+        """`hash()` de Python está aleatorizado por proceso y no sirve aquí."""
+        from parallel_manga_translator.quality.export_bubble_dataset import _split_for
+
+        primero = [_split_for("trabajo", i, 0.2) for i in range(40)]
+        segundo = [_split_for("trabajo", i, 0.2) for i in range(40)]
+        self.assertEqual(primero, segundo)
+        self.assertIn("val", primero)
+        self.assertIn("train", primero)
+
+
+class BestOfInpaintCandidateTests(unittest.TestCase):
+    """Sobre fondo con textura conviene mirar todos los rellenos, no cortar en el primero."""
+
+    UMBRAL = 18.0
+    #: Menor es mejor, así que `lama_mpe` debería ganar si se exploran todos.
+    PUNTUACIONES = {"opencv-tela": 0.9, "solid": 0.5, "lama_mpe": 0.2, "aot": 0.7}
+
+    def _cleaner(self, best_of: bool, aplicados: list):
+        puntuaciones = self.PUNTUACIONES
+
+        class VerificadorFalso:
+            """Puntúa el último candidato aplicado; todos aprueban, para aislar la elección."""
+
+            def evaluate(self, before, after, mask, context_mask=None):
+                return types.SimpleNamespace(
+                    passed=True,
+                    score=puntuaciones[aplicados[-1]],
+                    failed_checks=[],
+                    to_dict=lambda: {},
+                )
+
+        cleaner = object.__new__(CleanManga)
+        cleaner.inpaint_model = "opencv-tela"
+        cleaner.visual_inpaint_retry = True
+        cleaner.visual_inpaint_retry_models = "solid,opencv-tela,lama_mpe,aot"
+        cleaner.visual_inpaint_max_retries = 4
+        cleaner.visual_inpaint_debug = False
+        cleaner.visual_inpaint_best_of_textured = best_of
+        cleaner.visual_inpaint_verifier = VerificadorFalso()
+
+        def aplicar(imagen, clean_mask, safe_mask, fill_color, candidate, *, sigma):
+            aplicados.append(candidate)
+            return np.full((8, 8, 3), 10, dtype=np.uint8), f"configured_inpaint:{candidate}"
+
+        cleaner._apply_visual_inpaint_candidate = aplicar
+        return cleaner
+
+    def _ejecutar(self, best_of: bool, variacion: float):
+        aplicados: list = []
+        cleaner = self._cleaner(best_of, aplicados)
+        imagen = np.full((8, 8, 3), 200, dtype=np.uint8)
+        mascara = np.zeros((8, 8), dtype=np.uint8)
+        mascara[2:6, 2:6] = 255
+        resultado = cleaner._apply_bubble_cleaning_with_visual_verifier(
+            imagen, mascara, mascara, (255, 255, 255),
+            fill_strategy="inpaint",
+            background_variation=variacion,
+            variation_threshold=self.UMBRAL,
+            sigma=0.6,
+        )
+        return resultado, aplicados
+
+    def test_sobre_fondo_plano_corta_en_el_primero_que_aprueba(self):
+        (_img, _metodo, _informe, _intentos, elegido), aplicados = self._ejecutar(True, variacion=2.0)
+
+        self.assertEqual(elegido, "opencv-tela")
+        self.assertEqual(aplicados, ["opencv-tela"])
+
+    def test_sobre_fondo_con_textura_elige_el_de_mejor_score(self):
+        (_img, metodo, _informe, _intentos, elegido), aplicados = self._ejecutar(True, variacion=40.0)
+
+        self.assertEqual(elegido, "lama_mpe")
+        self.assertGreater(len(aplicados), 1, "debe probar más de un candidato")
+        self.assertIn("best_of_candidates", metodo)
+
+    def test_apagado_mantiene_el_corte_aunque_haya_textura(self):
+        (_img, _metodo, _informe, _intentos, elegido), aplicados = self._ejecutar(False, variacion=40.0)
+
+        self.assertEqual(elegido, "opencv-tela")
+        self.assertEqual(aplicados, ["opencv-tela"])

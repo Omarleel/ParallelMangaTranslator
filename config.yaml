@@ -43,6 +43,11 @@ quality:
   bubble_fill_edge_margin: 6
   # Dilatación de la máscara de tinta del texto; sube a 3 si quedan halos, baja a 1 si borra demasiado.
   bubble_fill_text_dilate: 2
+  # Globos que el detector encontró pero donde el localizador de texto no vio ninguna caja
+  # (texto estilizado, contraste bajo). Se busca tinta en el interior del globo y se borra
+  # sólo si ocupa como mucho esta fracción del interior; por encima se asume que no es texto.
+  # 0 desactiva el rescate y deja esos globos sin limpiar, como antes.
+  bubble_ink_without_ocr_max_ratio: 0.35
   # Opciones avanzadas para suavizado y relleno de máscara.
   bubble_fill_feather: 1.0
   bubble_fill_flat_max_rectangularity: 0.82
@@ -66,6 +71,13 @@ quality:
   visual_inpaint_max_retries: 4
   # 1.0 = exige que todas las comprobaciones estén bajo su umbral interno.
   visual_inpaint_accept_score: 1.0
+  # Sobre fondo con textura ningún relleno domina: cada candidato es el mejor en una parte de
+  # los casos, y el verificador corta en el primero que aprueba. true prueba todos ahí y se
+  # queda con el mejor.
+  # Medido en los dos casos del banco: el verificador sube 0.5755 -> 0.5943 en ja_01 y no se
+  # mueve en en_01, a cambio de un +26% de tiempo en todas las páginas. Por eso viene apagado:
+  # actívalo sólo si priorizas calidad sobre velocidad.
+  visual_inpaint_best_of_textured: false
   # true guarda métricas e imágenes/crops por región en salida/debug_inpaint/.
   visual_inpaint_debug: true
   bubble_detector: yolo11-seg
@@ -144,6 +156,12 @@ quality:
   ink_mask_min_component_area: 3
   ink_mask_component_anchor_overlap: 0.03
   ink_mask_component_anchor_max_gap_ratio: 0.45
+  # El texto suele llevar halo (blanco sobre trama, negro sobre fondo claro) que queda fuera
+  # de la caja del OCR. Si no se borra, el inpainter tiene halo pegado al borde del agujero y
+  # lo propaga hacia dentro: quedan manchas con la forma de las letras. La máscara crece hacia
+  # él por reconstrucción, sólo por píxeles contiguos que no se parecen al fondo, hasta este
+  # límite en píxeles. 0 desactiva el crecimiento.
+  text_halo_growth_px: 10
   # Orden de lectura por paneles detectados con OpenCV; si falla, cae al orden base de PMT.
   panel_aware_reading_order: true
   panel_detection_min_area_ratio: 0.015
@@ -170,7 +188,7 @@ onomatopoeia:
 
 llm:
   provider: groq
-  model: llama-3.3-70b-versatile
+  model: llama-3.1-8b-instant
   seed: 7
   max_retries: 3
   # true intenta response_format json_schema estricto y cae a json_object si el proveedor no lo soporta.

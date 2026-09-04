@@ -351,10 +351,13 @@ def score_case(
     transcription_json: Optional[Path] = None,
     translation_json: Optional[Path] = None,
     config: Optional[EvaluationConfig] = None,
+    page_numbers: Optional[Sequence[int]] = None,
 ) -> Dict[str, Any]:
     """Puntúa una predicción contra la verdad de referencia del caso.
 
     Sin argumentos de predicción usa ``prediccion_base/``, es decir reproduce la línea base.
+    ``page_numbers`` restringe la puntuación a esas páginas: una ejecución parcial
+    puntuada contra todas las páginas del caso da un recall falso, no una regresión.
     """
     if predictions_dir is not None:
         transcription_json, translation_json = resolve_prediction_jsons(predictions_dir)
@@ -366,6 +369,9 @@ def score_case(
         )
 
     gt_files = case.ground_truth_files()
+    if page_numbers is not None:
+        wanted = {int(n) for n in page_numbers}
+        gt_files = [path for path in gt_files if _page_number_from_name(path.stem) in wanted]
     if not gt_files:
         raise FileNotFoundError(f"El caso {case.name} no tiene verdad de referencia en {case.ground_truth_dir}")
 

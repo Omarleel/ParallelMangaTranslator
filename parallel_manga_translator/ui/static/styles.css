@@ -1858,8 +1858,9 @@ body:has(.work-view:not(.hidden)) {
 .editor-footer { padding: 8px 10px 10px; }
 .editor-footer .autosave-card { border-radius: 8px; }
 
-/* Modal de atajos. */
-.shortcut-modal {
+/* Modales: atajos y retraducción comparten fondo, caja y cabecera. */
+.shortcut-modal,
+.retranslate-modal {
   position: fixed;
   inset: 0;
   z-index: 150;
@@ -1867,7 +1868,8 @@ body:has(.work-view:not(.hidden)) {
   place-items: center;
   padding: 20px;
 }
-.shortcut-modal-backdrop {
+.shortcut-modal-backdrop,
+.retranslate-modal-backdrop {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1877,7 +1879,8 @@ body:has(.work-view:not(.hidden)) {
   background: rgba(2, 4, 10, .74);
   backdrop-filter: blur(5px);
 }
-.shortcut-dialog {
+.shortcut-dialog,
+.retranslate-dialog {
   position: relative;
   width: min(680px, 100%);
   max-height: min(720px, calc(100dvh - 32px));
@@ -1888,14 +1891,16 @@ body:has(.work-view:not(.hidden)) {
   background: #151a29;
   box-shadow: 0 28px 90px rgba(0, 0, 0, .58);
 }
-.shortcut-dialog header {
+.shortcut-dialog header,
+.retranslate-dialog header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
 }
-.shortcut-dialog h2 { margin: 2px 0 0; font-size: 21px; }
+.shortcut-dialog h2,
+.retranslate-dialog h2 { margin: 2px 0 0; font-size: 21px; }
 .eyebrow {
   color: var(--accent-2);
   font-size: 10px;
@@ -2191,4 +2196,35 @@ body:has(.work-view:not(.hidden)) {
 @media (max-width: 390px) {
   .transform-quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .transform-quick-actions #fitRegionToTextBtn { grid-column: 1 / -1; }
+}
+
+/* Diálogo de retraducción de un trabajo terminado. */
+.retranslate-dialog { width: min(520px, 100%); }
+.retranslate-dialog > .muted { margin: 0 0 14px; line-height: 1.5; }
+.retranslate-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.retranslate-overwrite {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.retranslate-overwrite input { margin-top: 2px; }
+#retranslateSummary { margin: 10px 0 0; }
+.retranslate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .retranslate-form { grid-template-columns: minmax(0, 1fr); }
+  .retranslate-actions button { flex: 1; }
 }

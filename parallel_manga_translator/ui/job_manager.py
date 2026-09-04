@@ -31,6 +31,7 @@ from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
 from parallel_manga_translator.ui.manual_renderer import apply_background_brush_strokes, apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_composite, render_manual_page, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
+from parallel_manga_translator.ui.retranslator import JobRetranslator, region_is_retranslatable
 from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
 
 logger = get_logger(__name__)
@@ -117,6 +118,11 @@ class JobState:
     recovery_count: int = 0
     started_at: float = 0.0
     finished_at: float = 0.0
+    # Qué debe hacer el worker con este trabajo cuando lo tome de la cola. La
+    # retraducción reutiliza la misma cola persistente y el mismo worker único, así
+    # que necesita decir con qué operación vuelve a entrar.
+    pending_operation: str = "process"  # process | retranslate
+    retranslate_pages: List[int] = field(default_factory=list)
 
     @property
     def total_count(self) -> int:
@@ -235,6 +241,8 @@ def job_to_public(job: JobState) -> Dict[str, Any]:
         "cancel_requested": job.cancel_requested,
         "resume_requested": job.resume_requested,
         "recovery_count": job.recovery_count,
+        "pending_operation": job.pending_operation or "process",
+        "retranslate_pending": len(job.retranslate_pages or []),
         "started_at": job.started_at,
         "finished_at": job.finished_at,
         "options": asdict(job.options) if hasattr(job.options, "__dataclass_fields__") else job.options,
@@ -390,6 +398,91 @@ class JobManager:
         self._queue.enqueue(job.job_id)
         self._wake_worker()
 
+    def retranslate_job(
+        self,
+        job_id: str,
+        *,
+        translator: str | None = None,
+        target_language: str | None = None,
+        overwrite_manual: bool = False,
+    ) -> JobState:
+        """Reencola un trabajo terminado para volver a traducirlo con otro traductor.
+
+        No repite detección, OCR ni inpainting: reutiliza la imagen limpia y la
+        transcripción ya guardadas. Por defecto respeta las páginas con correcciones
+        manuales; `overwrite_manual` las descarta para retraducirlas también.
+        """
+        job = self.get_job(job_id)
+        with self._lock:
+            if job.status not in {"ready", "failed", "cancelled"}:
+                raise ValueError(f"No se puede retraducir un trabajo en estado {job.status}.")
+
+            options = job.options if isinstance(job.options, JobOptions) else JobOptions(**dict(job.options or {}))
+            selected = normalize_choice(translator, options.translator or "llm")
+            if selected not in {"google", "llm"}:
+                raise ValueError("El traductor debe ser 'google' (tradicional) o 'llm'.")
+
+            targets, skipped = self._retranslation_targets(job, overwrite_manual=overwrite_manual)
+            if not targets:
+                if skipped:
+                    raise ValueError(
+                        "Todas las páginas retraducibles tienen correcciones manuales. "
+                        "Activa la opción de sobrescribirlas si quieres retraducirlas igualmente."
+                    )
+                raise ValueError(
+                    "No hay páginas retraducibles: hacen falta páginas listas con su imagen limpia y su transcripción."
+                )
+
+            options.translator = selected
+            if target_language and str(target_language).strip():
+                options.target_language = str(target_language).strip()
+            job.options = options
+
+            if overwrite_manual:
+                for index in targets:
+                    self._discard_manual_edits(job, job.pages[index])
+
+            job.pending_operation = "retranslate"
+            job.retranslate_pages = list(targets)
+            job.pause_requested = False
+            job.cancel_requested = False
+            job.resume_requested = False
+            job.finished_at = 0.0
+            job.status = "queued"
+            job.message = self._retranslation_queue_message(selected, len(targets), len(skipped))
+            job.updated_at = time.time()
+            self._save_manifest(job)
+        self._queue.enqueue(job.job_id)
+        self._wake_worker()
+        return job
+
+    @staticmethod
+    def _retranslation_queue_message(translator: str, targets: int, skipped: int) -> str:
+        motor = "Google" if translator == "google" else "LLM"
+        mensaje = f"Retraducción con {motor} en cola: {targets} página(s)."
+        if skipped:
+            mensaje += f" {skipped} conservan su corrección manual."
+        return mensaje
+
+    @staticmethod
+    def _is_retranslating(job: JobState) -> bool:
+        return str(job.pending_operation or "process") == "retranslate"
+
+    def _retranslation_targets(self, job: JobState, *, overwrite_manual: bool) -> tuple[List[int], List[int]]:
+        """Separa las páginas que se pueden retraducir de las que se conservan."""
+        targets: List[int] = []
+        skipped: List[int] = []
+        for page in job.pages:
+            if page.status != "ready" or not Path(page.clean_path).exists():
+                continue
+            if not any(region_is_retranslatable(region) for region in page.regions):
+                continue
+            if not overwrite_manual and page.corrected_path and Path(page.corrected_path).exists():
+                skipped.append(page.index)
+                continue
+            targets.append(page.index)
+        return targets, skipped
+
     def pause_job(self, job_id: str) -> JobState:
         job = self.get_job(job_id)
         with self._lock:
@@ -453,6 +546,8 @@ class JobManager:
                 job.status = "cancelling"
                 job.message = "Cancelación solicitada; se detendrá en el próximo punto seguro."
                 control.request_cancel()
+            elif self._is_retranslating(job):
+                self._finish_retranslation(job, message="Retraducción cancelada antes de empezar.")
             else:
                 self._finalize_cancelled_job(job)
             self._save_manifest(job)
@@ -558,7 +653,7 @@ class JobManager:
                 self._queue.remove(job_id)
                 changed = True
             elif job.status in {"processing", "queued", "resuming"}:
-                if all(page.status == "ready" for page in job.pages):
+                if not self._is_retranslating(job) and all(page.status == "ready" for page in job.pages):
                     job.status = "ready"
                     job.message = "Trabajo recuperado: todas las páginas estaban completas."
                     job.finished_at = job.finished_at or time.time()
@@ -1015,7 +1110,17 @@ class JobManager:
     def reset_manual_render(self, job_id: str, page_index: int) -> Dict[str, Any]:
         job = self.get_job(job_id)
         page = self._page(job, page_index)
+        self._discard_manual_edits(job, page)
+        page.updated_at = time.time()
+        job.updated_at = page.updated_at
+        self._save_manifest(job)
+        return page_to_public(page, job_id)
+
+    def _discard_manual_edits(self, job: JobState, page: PageState) -> None:
+        """Borra la corrección manual de una página y la devuelve a la salida automática."""
         for raw in [page.corrected_path, page.corrections_path]:
+            if not raw:
+                continue
             path = Path(raw)
             if path.exists():
                 path.unlink()
@@ -1027,10 +1132,6 @@ class JobManager:
         page.brush_strokes = []
         page.background_revision = "base"
         page.manual_background_path = ""
-        page.updated_at = time.time()
-        job.updated_at = page.updated_at
-        self._save_manifest(job)
-        return page_to_public(page, job_id)
 
     def _build_config_for_job(self, job: JobState):
         config = build_default_config(self.config_path)
@@ -1148,6 +1249,9 @@ class JobManager:
 
     def _run_job(self, job_id: str) -> None:
         job = self.get_job(job_id)
+        if self._is_retranslating(job):
+            self._run_retranslation(job_id)
+            return
         with self._processing_lock:
             if job.status in {"paused", "cancelled", "ready"}:
                 return
@@ -1370,6 +1474,228 @@ class JobManager:
                 close_log_file(str(Path(job.root_dir) / "job.log"))
                 with self._lock:
                     self._controls.pop(job_id, None)
+
+    def _run_retranslation(self, job_id: str) -> None:
+        """Vuelve a traducir las páginas marcadas sin repetir limpieza ni OCR."""
+        job = self.get_job(job_id)
+        with self._processing_lock:
+            if job.status in {"paused", "cancelled"} or not self._is_retranslating(job):
+                return
+
+            config = self._build_config_for_job(job)
+            control = ExecutionControl(
+                on_paused=lambda: self._on_control_paused(job_id),
+                on_resumed=lambda: self._on_control_resumed(job_id),
+            )
+            with self._lock:
+                self._controls[job_id] = control
+                job.status = "processing"
+                job.message = "Preparando la retraducción…"
+                job.finished_at = 0.0
+                job.updated_at = time.time()
+                self._save_manifest(job)
+
+            try:
+                with execution_control_scope(control):
+                    control.checkpoint()
+                    prepare_runtime()
+                    if not self._assets_prepared:
+                        # El rotulado necesita las mismas fuentes que el pipeline.
+                        prepare_assets()
+                        self._assets_prepared = True
+                    set_active_config(config)
+                    configure_logging(log_file=config.logging.file, level=config.logging.level)
+
+                    translation_dir = Path(job.output_dir) / "traduccion"
+                    translation_dir.mkdir(parents=True, exist_ok=True)
+                    trad_queue = CapturingJsonQueue(translation_dir / "Traducción.json")
+                    retranslator = JobRetranslator(config)
+
+                    elegido = normalize_choice(job.options.translator, "llm")
+                    motor = "Google" if elegido == "google" else "LLM"
+                    pendientes = [index for index in job.retranslate_pages if 0 <= index < len(job.pages)]
+                    total = len(pendientes)
+                    degradacion = ""
+                    detenida_en = 0
+                    for posicion, page_index in enumerate(pendientes, start=1):
+                        control.checkpoint()
+                        page = job.pages[page_index]
+                        with self._lock:
+                            job.active_page = page.index
+                            job.message = f"Retraduciendo página {posicion}/{total} con {motor}."
+                            page.message = f"Retraduciendo con {motor}…"
+                            page.updated_at = time.time()
+                            job.updated_at = page.updated_at
+                            self._save_manifest(job)
+
+                        resultados = retranslator.retranslate_page(
+                            page_index=page.index,
+                            clean_path=page.clean_path,
+                            output_path=page.translated_path,
+                            regions=page.regions,
+                        )
+                        control.checkpoint()
+
+                        with self._lock:
+                            page.regions = self._apply_retranslation(page.regions, resultados)
+                            self._push_retranslated_page(trad_queue, page, resultados)
+                            page.message = "Retraducida y lista para revisión."
+                            page.last_error = ""
+                            page.completed_at = time.time()
+                            page.updated_at = page.completed_at
+                            job.retranslate_pages = [index for index in job.retranslate_pages if index != page_index]
+                            job.updated_at = page.updated_at
+                            self._save_manifest(job)
+
+                        # El proveedor LLM cae al traductor tradicional en silencio cuando
+                        # se queda sin tokens. Quien pidió LLM sobre un trabajo terminado
+                        # no debe acabar con medio tomo traducido por otro motor sin
+                        # enterarse: se para aquí y se deja el resto intacto.
+                        if elegido == "llm" and retranslator.llm_fallback_reason:
+                            degradacion = retranslator.llm_fallback_reason
+                            detenida_en = posicion
+                            break
+
+                    with self._lock:
+                        if degradacion:
+                            self._finish_retranslation(
+                                job,
+                                message=(
+                                    f"Retraducción detenida en la página {detenida_en} de {total}: {degradacion} "
+                                    "Esas páginas quedaron con traducción tradicional; el resto no se tocó. "
+                                    "Vuelve a lanzarla cuando el LLM esté disponible, o elige Google a propósito."
+                                ),
+                            )
+                        else:
+                            self._finish_retranslation(job, message=f"Retraducción con {motor} finalizada.")
+                        self._save_manifest(job)
+
+            except JobPausedError:
+                requeue = False
+                with self._lock:
+                    if job.cancel_requested or control.cancel_requested:
+                        self._finish_retranslation(
+                            job,
+                            message="Retraducción cancelada. Las páginas ya retraducidas se conservaron.",
+                        )
+                    elif job.resume_requested:
+                        job.status = "queued"
+                        job.message = "Retraducción reanudada y devuelta a la cola."
+                        job.pause_requested = False
+                        job.resume_requested = False
+                        job.updated_at = time.time()
+                        self._queue.enqueue(job_id, preserve_time=False)
+                        requeue = True
+                    else:
+                        job.status = "paused"
+                        job.message = "Retraducción pausada. Continuará en la página pendiente al reanudar."
+                        job.pause_requested = True
+                        job.updated_at = time.time()
+                    self._save_manifest(job)
+                if requeue:
+                    self._wake_worker()
+            except JobCancelledError:
+                with self._lock:
+                    self._finish_retranslation(
+                        job,
+                        message="Retraducción cancelada. Las páginas ya retraducidas se conservaron.",
+                    )
+                    self._save_manifest(job)
+            except Exception as exc:
+                logger.exception("Error retraduciendo el job %s: %s", job_id, exc)
+                with self._lock:
+                    # Las páginas siguen siendo válidas: solo falló el intento de
+                    # retraducción, así que el trabajo vuelve a su estado terminal.
+                    self._finish_retranslation(job, message=f"La retraducción falló: {exc}")
+                    self._save_manifest(job)
+            finally:
+                close_log_file(str(Path(job.root_dir) / "job.log"))
+                with self._lock:
+                    self._controls.pop(job_id, None)
+
+    def _finish_retranslation(self, job: JobState, *, message: str) -> None:
+        """Devuelve el trabajo a su estado terminal después de una retraducción."""
+        job.pending_operation = "process"
+        job.retranslate_pages = []
+        job.pause_requested = False
+        job.resume_requested = False
+        self._recount(job)
+        # Retraducir no cambia qué páginas existen: el trabajo vuelve al estado
+        # terminal que tenía, incluido el de un trabajo cancelado a medias.
+        if job.failed_count:
+            job.status = "failed"
+        elif any(page.status == "cancelled" for page in job.pages):
+            job.status = "cancelled"
+        else:
+            job.status = "ready"
+        job.cancel_requested = job.status == "cancelled"
+        job.message = message
+        job.finished_at = time.time()
+        job.updated_at = job.finished_at
+        self._queue.remove(job.job_id)
+
+    @staticmethod
+    def _apply_retranslation(regions: Sequence[Dict[str, Any]], resultados: Sequence[Any]) -> List[Dict[str, Any]]:
+        """Vuelca la nueva traducción sobre las regiones guardadas del manifiesto."""
+        por_indice = {resultado.index: resultado for resultado in resultados}
+        actualizadas: List[Dict[str, Any]] = []
+        for posicion, region in enumerate(regions):
+            if not isinstance(region, dict):
+                continue
+            resultado = por_indice.get(int(region.get("index", posicion)))
+            if resultado is None:
+                actualizadas.append(region)
+                continue
+            actualizadas.append({
+                **region,
+                "translated_text": resultado.translated_text,
+                "style": resultado.style,
+                # `ui_layout` se conserva a propósito: describe el hueco del globo que
+                # salió de la máscara de limpieza, y esa geometría no cambia al
+                # retraducir. El texto nuevo se reajusta dentro de ella al renderizar.
+                # La región vuelve a ser salida automática: cualquier marca de edición
+                # manual previa ya se descartó antes de encolar la retraducción.
+                "modified": False,
+            })
+        return actualizadas
+
+    def _push_retranslated_page(self, trad_queue: CapturingJsonQueue, page: PageState, resultados: Sequence[Any]) -> None:
+        """Reescribe los globos de la página en Traducción.json conservando el resto."""
+        pagina_no = page.index + 1
+        datos = trad_queue.data
+        entrada = next(
+            (
+                dict(item)
+                for item in (datos.get("Traducción", []) if isinstance(datos, dict) else [])
+                if isinstance(item, dict) and item.get("Página") == pagina_no
+            ),
+            {"Página": pagina_no},
+        )
+        previos = {
+            int(item.get("Índice", posicion)): dict(item)
+            for posicion, item in enumerate(self._page_items(datos, "Traducción", pagina_no))
+        }
+        globos: List[Dict[str, Any]] = []
+        for resultado in resultados:
+            if not resultado.source_language_ok:
+                # El pipeline no publica lo que descartó el filtro de idioma de origen.
+                continue
+            x, y, w, h = resultado.bbox
+            elemento = previos.get(resultado.index, {
+                "Índice": resultado.index,
+                "Coordenadas": [[x, y], [x + w, y + h]],
+            })
+            # Solo cambian texto y estilo. "Layout UI" y el resto de campos del globo
+            # se arrastran tal cual desde la ejecución del pipeline.
+            elemento.update({
+                "Índice": resultado.index,
+                "Texto": resultado.translated_text,
+                "Estilo": resultado.style,
+            })
+            globos.append(elemento)
+        entrada["Globos de texto"] = globos
+        trad_queue.put({"establecer_elemento_en_lista": {"Traducción": entrada}})
+        trad_queue.put({"ordenar_por_paginas": {"tipo": "Traducción"}})
 
     def _merge_page_regions(
         self,

@@ -61,6 +61,7 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
         self.bubble_fill_whole_interior = bool(quality_config.bubble_fill_whole_interior)
         self.bubble_fill_edge_margin = int(quality_config.bubble_fill_edge_margin)
         self.bubble_fill_text_dilate = int(quality_config.bubble_fill_text_dilate)
+        self.bubble_ink_without_ocr_max_ratio = float(quality_config.bubble_ink_without_ocr_max_ratio)
         self.bubble_fill_feather = float(quality_config.bubble_fill_feather)
         self.bubble_fill_flat_max_rectangularity = float(quality_config.bubble_fill_flat_max_rectangularity)
         self.bubble_fill_strategy = str(quality_config.bubble_fill_strategy or "inpaint").strip().lower()
@@ -71,6 +72,7 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
         self.visual_inpaint_retry_models = str(quality_config.visual_inpaint_retry_models or "solid,opencv-tela,lama_mpe,aot")
         self.visual_inpaint_max_retries = int(quality_config.visual_inpaint_max_retries)
         self.visual_inpaint_debug = bool(quality_config.visual_inpaint_debug)
+        self.visual_inpaint_best_of_textured = bool(quality_config.visual_inpaint_best_of_textured)
         self.visual_inpaint_verifier = VisualInpaintVerifier(accept_score=float(quality_config.visual_inpaint_accept_score))
         self._visual_retry_inpainters = {}
         self.fine_text_detection = bool(quality_config.fine_text_detection)
@@ -79,6 +81,7 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanMaskS
         self.ink_mask_min_component_area = int(quality_config.ink_mask_min_component_area)
         self.ink_mask_component_anchor_overlap = float(quality_config.ink_mask_component_anchor_overlap)
         self.ink_mask_component_anchor_max_gap_ratio = float(quality_config.ink_mask_component_anchor_max_gap_ratio)
+        self.text_halo_growth_px = int(quality_config.text_halo_growth_px)
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.onomatopoeia_mode = str(onomatopoeia_config.mode or "translate").strip().lower()
         self.translate_onomatopoeia = bool(onomatopoeia_config.translate)

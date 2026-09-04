@@ -24,6 +24,29 @@ Detection = Tuple[Sequence[Sequence[float]], str, float]
 class CleanInpaintingPipelineMixin:
     """Orquestación del proceso de limpieza e inpainting."""
 
+    #: Tipos de región que se limpian rellenando el interior del globo.
+    BUBBLE_KINDS = frozenset({"dialogue", "narration", "unknown"})
+
+    def regiones_a_limpiar(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> Tuple[List[TextRegion], List[TextRegion]]:
+        """Separa las regiones que realmente se borran: globos y texto libre/SFX.
+
+        Es la única definición de "esto se borra" y por eso es pública: el arnés de
+        evaluación la usa para medir la limpieza sobre exactamente las mismas regiones
+        que el pipeline decide limpiar. Medir sobre todas las regiones contaría como
+        fallo el arte que se conserva a propósito (onomatopeyas en modo ``keep``).
+        """
+        globos = [
+            region for region in regiones or []
+            if region.kind in self.BUBBLE_KINDS and self._region_matches_source_language(region)
+        ]
+        libres = [
+            region for region in regiones or []
+            if region.kind not in self.BUBBLE_KINDS
+            and self._region_matches_source_language(region)
+            and self._should_clean_non_bubble_region(region, imagen)
+        ]
+        return globos, libres
+
     def _build_inpainter(self, model_name: str):
         if model_name not in self.INPAINTER_FACTORIES:
             raise ValueError(f"Modelo de inpainting no soportado: {model_name}")
@@ -76,6 +99,28 @@ class CleanInpaintingPipelineMixin:
 
         return "B/N"
 
+    def _auto_inpaint_candidate(
+        self,
+        imagen: np.ndarray,
+        background_variation: float,
+        variation_threshold: float,
+    ) -> str:
+        """Resuelve ``inpaint_model: auto`` por región, no por página.
+
+        LaMa solo donde hay que reconstruir estructura: página a color, o fondo con
+        textura —trama, degradado, arte— medido por la variación del fondo de esa región.
+        Sobre un fondo plano en blanco y negro no aporta nada y cuesta GPU, así que ahí se
+        deja el relleno plano, que luego se convierte en ``opencv-tela`` como reserva.
+
+        La resolución anterior era por página y solo miraba si era a color, de modo que
+        una página monocroma con trama nunca llegaba a LaMa.
+        """
+        if self._is_color_page(imagen):
+            return "lama_mpe"
+        if float(background_variation) >= float(variation_threshold):
+            return "lama_mpe"
+        return "solid"
+
     def _clean_with_regions(self, imagen: np.ndarray, mascara_capa: np.ndarray, resultados, regiones: Sequence[TextRegion]) -> np.ndarray:
         if not regiones:
             return imagen.copy()
@@ -83,14 +128,10 @@ class CleanInpaintingPipelineMixin:
         # El modo YOLO mantiene dos máscaras distintas: region.mask es la zona segura
         # del globo; region.clean_mask es la tinta/texto original que se borra.
         imagen_base = imagen.copy()
-        bubble_regions = [r for r in regiones if r.kind in {"dialogue", "narration", "unknown"} and self._region_matches_source_language(r)]
         # Texto libre y onomatopeyas se limpian con inpainting, no con relleno plano de globo.
         # Si el usuario eligió conservar onomatopeyas, las regiones SFX se dejan intactas
         # para no borrar arte original ni reinsertarlo como fuente plana.
-        sfx_regions = [
-            r for r in regiones
-            if r.kind not in {"dialogue", "narration", "unknown"} and self._region_matches_source_language(r) and self._should_clean_non_bubble_region(r, imagen)
-        ]
+        bubble_regions, sfx_regions = self.regiones_a_limpiar(imagen, regiones)
 
         if self.bubble_fill and self.inpaint_mode in {"auto", "fast", "bubble_only", "quality", "sfx"}:
             imagen_base = self._fill_bubble_interiors(imagen_base, bubble_regions)
@@ -98,19 +139,7 @@ class CleanInpaintingPipelineMixin:
         if self.inpaint_mode == "bubble_only":
             return imagen_base
 
-        # Resolvemos el modelo real si la configuración está en "auto"
-        actual_inpaint_model = getattr(self, "inpaint_model", "opencv-tela")
-        if actual_inpaint_model == "auto":
-            actual_inpaint_model = self._resolve_auto_inpaint_model(imagen)
-        # Las onomatopeyas/fx fuera de globo se inpaintan con máscara propia. En modo quality
-        # se usa el modelo seleccionado; en auto/fast se prefiere OpenCV por velocidad.
-        sfx_mask = BubbleDetector.compose_clean_mask(sfx_regions, imagen.shape) if sfx_regions else np.zeros(mascara_capa.shape, dtype=np.uint8)
-        if cv2.countNonZero(sfx_mask) > 0:
-            if self.inpaint_mode == "quality" and actual_inpaint_model not in {"opencv-tela", "B/N"}:
-                res_impainting = self._run_async_inpaint(imagen_base, sfx_mask)
-                imagen_base = self.convertir_a_imagen_limpia(res_impainting, imagen_base)
-            else:
-                imagen_base = cv2.inpaint(imagen_base, sfx_mask, 3, cv2.INPAINT_NS)
+        imagen_base = self._clean_free_text_regions(imagen_base, sfx_regions, debug_index_offset=len(bubble_regions))
 
         if self.inpaint_mode == "quality" and not self.bubble_fill:
             res_impainting = self._ejecutar_inpainting(imagen, mascara_capa, resultados)
@@ -531,11 +560,20 @@ class CleanInpaintingPipelineMixin:
         initial_candidate = str(getattr(self, "inpaint_model", "auto") or "auto") if should_use_inpaint else "solid"
         initial_candidate = self._normalize_inpaint_candidate(initial_candidate)
         if initial_candidate == "auto":
-            initial_candidate = self._normalize_inpaint_candidate(self._resolve_auto_inpaint_model(imagen))
+            initial_candidate = self._normalize_inpaint_candidate(
+                self._auto_inpaint_candidate(imagen, background_variation, variation_threshold)
+            )
         if initial_candidate == "solid" and should_use_inpaint:
             initial_candidate = "opencv-tela"
 
         verifier = getattr(self, "visual_inpaint_verifier", None)
+        # Sobre fondo con textura ningún relleno domina: medido en 181 regiones, cada
+        # candidato es el mejor en 38-50 de ellas, y quedarse con el primero que aprueba
+        # deja un 24 % de score sobre la mesa. Ahí se prueban todos y gana el mejor; sobre
+        # fondo plano no compensa multiplicar por cuatro el coste de GPU.
+        explorar_todos = bool(getattr(self, "visual_inpaint_best_of_textured", False)) and (
+            background_variation >= variation_threshold
+        )
         attempts: List[dict] = []
         best_image: Optional[np.ndarray] = None
         best_method = "visual_verifier_no_candidate"
@@ -579,11 +617,12 @@ class CleanInpaintingPipelineMixin:
                 best_method = method
                 best_candidate = candidate
                 best_report = report
-            if report.passed:
+            if report.passed and not explorar_todos:
                 return candidate_image, method, report, attempts, candidate
 
         if best_image is not None:
-            return best_image, f"{best_method}:best_failed_visual_score", best_report, attempts, best_candidate
+            sufijo = "best_of_candidates" if bool(getattr(best_report, "passed", False)) else "best_failed_visual_score"
+            return best_image, f"{best_method}:{sufijo}", best_report, attempts, best_candidate
 
         fallback = self._apply_solid_fill(imagen, clean_mask, fill_color, sigma=sigma)
         if verifier is not None:
@@ -624,89 +663,155 @@ class CleanInpaintingPipelineMixin:
             if cv2.countNonZero(clean_mask) == 0:
                 continue
 
-            fill_color = self._dominant_fill_color(salida, safe_mask, clean_mask)
-            background_variation = self._background_variation_score(salida, safe_mask, clean_mask)
-            variation_threshold = float(getattr(self, "bubble_fill_background_std_threshold", 18.0) or 18.0)
-            fill_strategy = str(getattr(self, "bubble_fill_strategy", "inpaint") or "inpaint").strip().lower()
-            if fill_strategy in {"configured_inpaint", "config_inpaint", "lama"}:
-                fill_strategy = "inpaint"
-            if fill_strategy in {"adaptive"}:
-                fill_strategy = "auto"
-            if fill_strategy not in {"inpaint", "auto", "solid"}:
-                fill_strategy = "inpaint"
+            salida = self._clean_region_with_masks(salida, region, region_index, clean_mask, safe_mask)
+        return salida
 
-            metadata = getattr(region, "metadata", None)
-            if isinstance(metadata, dict):
-                metadata["fill_color_source"] = "safe_region_minus_clean_mask"
-                metadata["fill_color_bgr"] = tuple(int(c) for c in fill_color)
-                metadata["background_variation_score"] = round(float(background_variation), 3)
-                metadata["background_variation_threshold"] = float(variation_threshold)
-                metadata["bubble_fill_strategy"] = fill_strategy
+    def _normalized_fill_strategy(self) -> str:
+        fill_strategy = str(getattr(self, "bubble_fill_strategy", "inpaint") or "inpaint").strip().lower()
+        if fill_strategy in {"configured_inpaint", "config_inpaint", "lama"}:
+            return "inpaint"
+        if fill_strategy in {"adaptive"}:
+            return "auto"
+        return fill_strategy if fill_strategy in {"inpaint", "auto", "solid"} else "inpaint"
 
-            sigma = float(getattr(self, "bubble_fill_feather", 1.0) or 1.0)
-            if not str((region.metadata or {}).get("clean_mask_source", "")).endswith("opt_in"):
-                sigma = min(sigma, 0.65)
+    @staticmethod
+    def _free_text_context_mask(clean_mask: np.ndarray, image_shape) -> np.ndarray:
+        """Anillo de fondo alrededor de la tinta a borrar, para texto libre y SFX.
 
-            if bool(getattr(self, "visual_inpaint_verifier_enabled", False)):
-                debug_before_image = salida.copy() if self._visual_inpaint_debug_enabled() else None
-                salida_verificada, method, report, attempts, chosen_candidate = self._apply_bubble_cleaning_with_visual_verifier(
-                    salida,
-                    clean_mask,
-                    safe_mask,
-                    fill_color,
-                    fill_strategy=fill_strategy,
-                    background_variation=background_variation,
-                    variation_threshold=variation_threshold,
-                    sigma=sigma,
-                    debug_region_index=region_index,
-                )
-                salida = salida_verificada
-                if isinstance(metadata, dict):
-                    metadata["bubble_fill_method"] = method
-                    metadata["visual_inpaint_candidate"] = chosen_candidate
-                    metadata["visual_inpaint_retries"] = max(0, len([a for a in attempts if not a.get("skipped")]) - 1)
-                    if report is not None:
-                        metadata["visual_inpaint_passed"] = bool(report.passed)
-                        metadata["visual_inpaint_score"] = round(float(report.score), 4)
-                        metadata["visual_inpaint_failed_checks"] = report.failed_checks
-                        if bool(getattr(self, "visual_inpaint_debug", False)):
-                            metadata["visual_inpaint_report"] = report.to_dict()
-                    if bool(getattr(self, "visual_inpaint_debug", False)):
-                        metadata["visual_inpaint_attempts"] = attempts
-                        debug_metadata = self._write_visual_inpaint_region_debug_summary(
-                            region_index=region_index,
-                            region=region,
-                            before_image=debug_before_image,
-                            after_image=salida,
-                            clean_mask=clean_mask,
-                            safe_mask=safe_mask,
-                            fill_color=fill_color,
-                            fill_strategy=fill_strategy,
-                            method=method,
-                            chosen_candidate=chosen_candidate,
-                            report=report,
-                            attempts=attempts,
-                        )
-                        metadata.update(debug_metadata)
+        Un globo aporta su interior como zona de referencia; el texto libre no tiene
+        ninguna. Sin este anillo, el color de relleno, la medida de variación del fondo
+        y el verificador visual se quedan sin muestra y cualquier candidato parece
+        igual de bueno. El anillo se mantiene ancho porque el verificador muestrea una
+        banda de hasta 28 px alrededor de la máscara.
+        """
+        ink = (clean_mask > 0).astype(np.uint8) * 255
+        points = cv2.findNonZero(ink)
+        if points is None:
+            return np.zeros(image_shape[:2], dtype=np.uint8)
+        _x, _y, width, height = cv2.boundingRect(points)
+        ring = max(32, min(72, int(round(min(width, height) * 0.45))))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * ring + 1, 2 * ring + 1))
+        return cv2.dilate(ink, kernel, iterations=1)
+
+    def _clean_free_text_regions(
+        self,
+        imagen: np.ndarray,
+        regiones: Sequence[TextRegion],
+        *,
+        debug_index_offset: int = 0,
+    ) -> np.ndarray:
+        """Limpia texto libre y onomatopeyas región a región, no de una pasada.
+
+        Antes se componía una única máscara con todas estas regiones y se inpaintaba
+        la página entera de golpe. Con manchas grandes y separadas eso arrasa el fondo
+        —``cv2.inpaint`` difunde a lo largo de toda la máscara— y además no pasaba
+        nunca por el verificador visual, así que un resultado malo se aceptaba igual.
+        Aquí cada región usa su propio recorte, sus propios candidatos y su propia
+        verificación, exactamente igual que los interiores de globo.
+        """
+        salida = imagen
+        for offset, region in enumerate(regiones or []):
+            clean_mask = self._binary_mask(getattr(region, "clean_mask", None), salida.shape)
+            if cv2.countNonZero(clean_mask) == 0:
                 continue
-
-            should_use_configured_inpaint = fill_strategy == "inpaint" or (
-                fill_strategy == "auto" and background_variation >= variation_threshold
+            context_mask = self._free_text_context_mask(clean_mask, salida.shape)
+            salida = self._clean_region_with_masks(
+                salida, region, debug_index_offset + offset, clean_mask, context_mask
             )
-            if should_use_configured_inpaint:
-                salida_inpaint, method = self._run_configured_inpaint_on_mask(salida, clean_mask, safe_mask)
-                if method.startswith("configured_inpaint"):
-                    salida = salida_inpaint
-                    if isinstance(metadata, dict):
-                        metadata["bubble_fill_method"] = "configured_inpaint"
-                        metadata["bubble_fill_inpaint_model"] = str(getattr(self, "inpaint_model", ""))
-                    continue
-                if isinstance(metadata, dict):
-                    metadata["bubble_fill_inpaint_fallback"] = method
+        return salida
 
-            salida = self._apply_solid_fill(salida, clean_mask, fill_color, sigma=sigma)
+    def _clean_region_with_masks(
+        self,
+        salida: np.ndarray,
+        region: TextRegion,
+        region_index: int,
+        clean_mask: np.ndarray,
+        safe_mask: np.ndarray,
+    ) -> np.ndarray:
+        """Borra la tinta de una región y verifica el resultado.
+
+        ``clean_mask`` es la tinta que se borra; ``safe_mask`` es la zona de referencia
+        de la que se muestrea el fondo (interior del globo, o anillo alrededor del texto
+        libre). Nunca se pintan los píxeles de ``safe_mask`` que no estén en
+        ``clean_mask``.
+        """
+        fill_color = self._dominant_fill_color(salida, safe_mask, clean_mask)
+        background_variation = self._background_variation_score(salida, safe_mask, clean_mask)
+        variation_threshold = float(getattr(self, "bubble_fill_background_std_threshold", 18.0) or 18.0)
+        fill_strategy = self._normalized_fill_strategy()
+
+        metadata = getattr(region, "metadata", None)
+        if isinstance(metadata, dict):
+            metadata["fill_color_source"] = "safe_region_minus_clean_mask"
+            metadata["fill_color_bgr"] = tuple(int(c) for c in fill_color)
+            metadata["background_variation_score"] = round(float(background_variation), 3)
+            metadata["background_variation_threshold"] = float(variation_threshold)
+            metadata["bubble_fill_strategy"] = fill_strategy
+
+        sigma = float(getattr(self, "bubble_fill_feather", 1.0) or 1.0)
+        if not str((region.metadata or {}).get("clean_mask_source", "")).endswith("opt_in"):
+            sigma = min(sigma, 0.65)
+
+        if bool(getattr(self, "visual_inpaint_verifier_enabled", False)):
+            debug_before_image = salida.copy() if self._visual_inpaint_debug_enabled() else None
+            salida_verificada, method, report, attempts, chosen_candidate = self._apply_bubble_cleaning_with_visual_verifier(
+                salida,
+                clean_mask,
+                safe_mask,
+                fill_color,
+                fill_strategy=fill_strategy,
+                background_variation=background_variation,
+                variation_threshold=variation_threshold,
+                sigma=sigma,
+                debug_region_index=region_index,
+            )
+            salida = salida_verificada
             if isinstance(metadata, dict):
-                metadata["bubble_fill_method"] = "solid_color"
+                metadata["bubble_fill_method"] = method
+                metadata["visual_inpaint_candidate"] = chosen_candidate
+                metadata["visual_inpaint_retries"] = max(0, len([a for a in attempts if not a.get("skipped")]) - 1)
+                if report is not None:
+                    metadata["visual_inpaint_passed"] = bool(report.passed)
+                    metadata["visual_inpaint_score"] = round(float(report.score), 4)
+                    metadata["visual_inpaint_failed_checks"] = report.failed_checks
+                    if bool(getattr(self, "visual_inpaint_debug", False)):
+                        metadata["visual_inpaint_report"] = report.to_dict()
+                if bool(getattr(self, "visual_inpaint_debug", False)):
+                    metadata["visual_inpaint_attempts"] = attempts
+                    debug_metadata = self._write_visual_inpaint_region_debug_summary(
+                        region_index=region_index,
+                        region=region,
+                        before_image=debug_before_image,
+                        after_image=salida,
+                        clean_mask=clean_mask,
+                        safe_mask=safe_mask,
+                        fill_color=fill_color,
+                        fill_strategy=fill_strategy,
+                        method=method,
+                        chosen_candidate=chosen_candidate,
+                        report=report,
+                        attempts=attempts,
+                    )
+                    metadata.update(debug_metadata)
+            return salida
+
+        should_use_configured_inpaint = fill_strategy == "inpaint" or (
+            fill_strategy == "auto" and background_variation >= variation_threshold
+        )
+        if should_use_configured_inpaint:
+            salida_inpaint, method = self._run_configured_inpaint_on_mask(salida, clean_mask, safe_mask)
+            if method.startswith("configured_inpaint"):
+                salida = salida_inpaint
+                if isinstance(metadata, dict):
+                    metadata["bubble_fill_method"] = "configured_inpaint"
+                    metadata["bubble_fill_inpaint_model"] = str(getattr(self, "inpaint_model", ""))
+                return salida
+            if isinstance(metadata, dict):
+                metadata["bubble_fill_inpaint_fallback"] = method
+
+        salida = self._apply_solid_fill(salida, clean_mask, fill_color, sigma=sigma)
+        if isinstance(metadata, dict):
+            metadata["bubble_fill_method"] = "solid_color"
         return salida
 
     def _ejecutar_inpainting(self, imagen, mascara_capa, resultados):

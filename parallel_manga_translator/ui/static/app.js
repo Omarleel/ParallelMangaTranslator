@@ -75,6 +75,16 @@ const pauseJobBtn = $('pauseJobBtn');
 const resumeJobBtn = $('resumeJobBtn');
 const cancelJobBtn = $('cancelJobBtn');
 const exportBtn = $('exportBtn');
+const retranslateBtn = $('retranslateBtn');
+const retranslateModal = $('retranslateModal');
+const retranslateModalBackdrop = $('retranslateModalBackdrop');
+const closeRetranslateModalBtn = $('closeRetranslateModalBtn');
+const cancelRetranslateBtn = $('cancelRetranslateBtn');
+const confirmRetranslateBtn = $('confirmRetranslateBtn');
+const retranslateTranslator = $('retranslateTranslator');
+const retranslateTargetLanguage = $('retranslateTargetLanguage');
+const retranslateOverwrite = $('retranslateOverwrite');
+const retranslateSummary = $('retranslateSummary');
 const reviewLayout = $('reviewLayout');
 const waitState = $('waitState');
 const imageStage = $('imageStage');
@@ -963,6 +973,13 @@ function renderJob(job) {
   pauseJobBtn.disabled = terminal || ['paused', 'pausing', 'resuming', 'cancelling'].includes(job.status);
   resumeJobBtn.disabled = !['paused', 'pausing', 'resuming'].includes(job.status);
   cancelJobBtn.disabled = terminal || job.status === 'cancelling';
+  const readyPages = (job.pages || []).filter((page) => page.status === 'ready').length;
+  if (retranslateBtn) {
+    retranslateBtn.disabled = !terminal || readyPages === 0;
+    retranslateBtn.title = retranslateBtn.disabled
+      ? 'Disponible cuando el trabajo termina y tiene páginas listas.'
+      : 'Vuelve a traducir las páginas listas reutilizando limpieza y transcripción.';
+  }
   const exportablePages = (job.pages || []).filter((page) => page.status === 'ready' || page.has_corrected).length;
   exportBtn.disabled = exportablePages === 0;
   exportBtn.textContent = exportablePages > 0 ? `Exportar ZIP (${exportablePages})` : 'Exportar ZIP';
@@ -3015,6 +3032,13 @@ document.addEventListener('keydown', (event) => {
   if (workView.classList.contains('hidden')) return;
 
   const key = event.key.toLowerCase();
+  if (retranslateModal && !retranslateModal.classList.contains('hidden')) {
+    if (key === 'escape') {
+      event.preventDefault();
+      closeRetranslateModal();
+    }
+    return;
+  }
   if (shortcutModal && !shortcutModal.classList.contains('hidden')) {
     if (key === 'escape') {
       event.preventDefault();
@@ -3148,6 +3172,82 @@ document.addEventListener('keyup', (event) => {
   updateCanvasReadout();
 });
 
+const TARGET_LANGUAGES = ['Español', 'Inglés', 'Portugués', 'Francés', 'Italiano', 'Japonés', 'Coreano', 'Chino'];
+
+function fillTargetLanguages(selected) {
+  if (!retranslateTargetLanguage) return;
+  const languages = TARGET_LANGUAGES.includes(selected) || !selected
+    ? TARGET_LANGUAGES
+    : [selected, ...TARGET_LANGUAGES];
+  retranslateTargetLanguage.innerHTML = '';
+  for (const language of languages) {
+    const option = document.createElement('option');
+    option.value = language;
+    option.textContent = language;
+    retranslateTargetLanguage.appendChild(option);
+  }
+  retranslateTargetLanguage.value = selected || TARGET_LANGUAGES[0];
+}
+
+function updateRetranslateSummary() {
+  if (!retranslateSummary || !state.job) return;
+  const pages = state.job.pages || [];
+  const ready = pages.filter((page) => page.status === 'ready');
+  const corrected = ready.filter((page) => page.has_corrected).length;
+  const overwrite = !!retranslateOverwrite?.checked;
+  const afectadas = overwrite ? ready.length : ready.length - corrected;
+  const detalle = corrected === 0
+    ? ''
+    : overwrite
+      ? ` Se descartarán las correcciones manuales de ${corrected} página(s).`
+      : ` ${corrected} página(s) con correcciones manuales se conservarán tal cual.`;
+  retranslateSummary.textContent = `Se retraducirán ${afectadas} de ${pages.length} páginas.${detalle}`;
+  if (confirmRetranslateBtn) confirmRetranslateBtn.disabled = afectadas <= 0;
+}
+
+function openRetranslateModal() {
+  if (!retranslateModal || !state.job) return;
+  const opts = state.job.options || {};
+  if (retranslateTranslator) retranslateTranslator.value = opts.translator === 'google' ? 'google' : 'llm';
+  if (retranslateOverwrite) retranslateOverwrite.checked = false;
+  fillTargetLanguages(opts.target_language || 'Español');
+  updateRetranslateSummary();
+  retranslateModal.classList.remove('hidden');
+  retranslateTranslator?.focus();
+}
+
+function closeRetranslateModal() {
+  if (!retranslateModal) return;
+  retranslateModal.classList.add('hidden');
+  retranslateBtn?.focus();
+}
+
+async function submitRetranslation() {
+  if (!state.job) return;
+  const jobId = state.job.job_id;
+  if (confirmRetranslateBtn) confirmRetranslateBtn.disabled = true;
+  try {
+    const job = await requestJson(`/api/jobs/${jobId}/retranslate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        translator: retranslateTranslator?.value || 'llm',
+        target_language: retranslateTargetLanguage?.value || null,
+        overwrite_manual: !!retranslateOverwrite?.checked,
+      }),
+    });
+    closeRetranslateModal();
+    state.job = job;
+    renderJob(job);
+    startPolling(job.job_id);
+    showToast(job.message || 'Retraducción en cola.');
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    updateRetranslateSummary();
+  }
+}
+
 async function controlCurrentJob(action) {
   if (!state.job) return;
   const labels = { pause: 'Pausando…', resume: 'Reanudando…', cancel: 'Cancelando…' };
@@ -3167,6 +3267,13 @@ resetRotationBtn?.addEventListener('click', () => {
   syncRotationControls(0);
   updateRegionFromEditor();
 });
+
+retranslateBtn?.addEventListener('click', openRetranslateModal);
+retranslateModalBackdrop?.addEventListener('click', closeRetranslateModal);
+closeRetranslateModalBtn?.addEventListener('click', closeRetranslateModal);
+cancelRetranslateBtn?.addEventListener('click', closeRetranslateModal);
+retranslateOverwrite?.addEventListener('change', updateRetranslateSummary);
+confirmRetranslateBtn?.addEventListener('click', submitRetranslation);
 
 resumeJobBtn.addEventListener('click', () => controlCurrentJob('resume'));
 cancelJobBtn.addEventListener('click', () => controlCurrentJob('cancel'));

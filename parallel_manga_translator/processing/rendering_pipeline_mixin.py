@@ -131,11 +131,7 @@ class RenderingPipelineMixin:
         textos_traducidos = self.traducir_textos(textos_limpios)
         self.ultimos_textos_traducidos = textos_traducidos
         self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
-        textos_para_render = [
-            "" if (idx < len(self.ultimos_source_language_flags) and not self.ultimos_source_language_flags[idx])
-            else ("" if self._should_keep_original_onomatopoeia(idx, original) else traducido)
-            for idx, (original, traducido) in enumerate(zip(textos_limpios, textos_traducidos))
-        ]
+        textos_para_render = self.resolver_textos_para_render(textos_limpios, textos_traducidos)
         self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos, textos_para_render)
         clip_masks = [region.local_mask() for region in self.ultimas_regiones] if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores) else None
         return self.text_renderer.render(

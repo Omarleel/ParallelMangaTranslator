@@ -140,7 +140,8 @@ class CleanMaskStrategyMixin:
         if w <= 0 or h <= 0:
             return np.zeros(image_shape[:2], dtype=np.uint8)
 
-        # Si no hubo OCR y text_bbox == bbox, no inventamos limpieza de todo el globo.
+        # Si no hubo OCR y text_bbox == bbox, la caja de texto no aporta nada: el interior
+        # del globo se explora aparte en `_bubble_interior_text_zone`, con guardas.
         if int(getattr(region, "detections_count", 0) or 0) <= 0 and (x, y, w, h) == (bx, by, bw, bh):
             return np.zeros(image_shape[:2], dtype=np.uint8)
 
@@ -148,6 +149,49 @@ class CleanMaskStrategyMixin:
         pad_y = max(4, min(18, int(round(max(w, h) * 0.10))))
         expanded = self._expand_rect((x, y, w, h), pad_x, pad_y, image_shape)
         return self._rect_mask(expanded, image_shape)
+    def _bubble_interior_text_zone(self, imagen: np.ndarray, safe_mask: np.ndarray) -> np.ndarray:
+        """Zona donde buscar tinta cuando el localizador no encontró texto en el globo.
+
+        El detector de globos y el localizador de texto son independientes: YOLO puede
+        encontrar el globo y EasyOCR/Paddle no devolver ninguna caja dentro (texto
+        estilizado, contraste bajo, kana pequeño). Antes ese globo se quedaba sin
+        máscara de tinta, así que el original nunca se borraba y la traducción acababa
+        dibujada encima del texto japonés.
+
+        El interior del globo se usa aquí como zona de **búsqueda**, nunca como máscara
+        de borrado: qué se borra lo siguen decidiendo el umbralizado de tinta y los
+        componentes conectados. Si la tinta ocupa demasiada parte del interior, la
+        máscara no es un globo con texto —un recorte de arte, una viñeta oscura— y se
+        prefiere no tocar nada.
+        """
+        max_ratio = float(getattr(self, "bubble_ink_without_ocr_max_ratio", 0.35) or 0.0)
+        if max_ratio <= 0.0:
+            return np.zeros(imagen.shape[:2], dtype=np.uint8)
+
+        interior = int(cv2.countNonZero(safe_mask))
+        if interior <= 0:
+            return np.zeros(imagen.shape[:2], dtype=np.uint8)
+
+        # Sin dilatar: aquí sólo se mide cuánta tinta hay, no se construye la máscara final.
+        tinta = self._text_ink_mask(imagen, safe_mask, safe_mask, dilate_px=0)
+        ratio = cv2.countNonZero(tinta) / interior
+        if ratio <= 0.0 or ratio > max_ratio:
+            return np.zeros(imagen.shape[:2], dtype=np.uint8)
+        return safe_mask
+
+    def _halo_growth_zone(self, safe_mask: np.ndarray, image_shape) -> np.ndarray:
+        """Hasta dónde puede crecer la máscara buscando el halo del texto libre.
+
+        La zona segura del texto libre es la caja del OCR, y el halo casi siempre la
+        desborda. Se ensancha lo justo para que quepa el crecimiento; lo que se borre
+        dentro de esa zona lo sigue decidiendo la reconstrucción, no este margen.
+        """
+        margen = max(0, int(getattr(self, "text_halo_growth_px", 10))) + 2
+        if margen <= 2:
+            return self._binary_mask(safe_mask, image_shape)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * margen + 1, 2 * margen + 1))
+        return cv2.dilate(self._binary_mask(safe_mask, image_shape), kernel, iterations=1)
+
     @staticmethod
     def _is_bubble_region(region: TextRegion) -> bool:
         return getattr(region, "kind", "") in {"dialogue", "narration", "unknown"}
@@ -167,12 +211,21 @@ class CleanMaskStrategyMixin:
             text_mask = self._binary_mask(getattr(region, "text_mask", None), shape)
             if getattr(self, "ink_mask_refinement", True) and cv2.countNonZero(raw_mask) > 0:
                 safe = self._binary_mask(region.mask, shape) if region.mask is not None else raw_mask
+                # `initial_ink_mask` va vacío a propósito. En texto libre y SFX la máscara de
+                # partida es el polígono OCR relleno, es decir la caja del renglón entero, no
+                # los trazos. `refine` une la semilla inicial con sus candidatos, así que
+                # pasarla aquí devolvía siempre el rectángulo completo y el refinamiento no
+                # podía reducir nada: el inpainting recibía un bloque sólido y barría el fondo.
+                # Qué tinta se borra lo deciden el umbralizado y los componentes conectados.
                 refined = TextInkMaskRefiner.refine(
                     imagen,
                     safe,
                     raw_mask,
                     raw_text_mask=text_mask if cv2.countNonZero(text_mask) > 0 else raw_mask,
-                    initial_ink_mask=raw_mask,
+                    initial_ink_mask=None,
+                    # El halo del texto libre cae fuera de la caja del OCR, así que el
+                    # crecimiento necesita permiso para salir de la zona segura.
+                    growth_mask=self._halo_growth_zone(safe, shape),
                     options=TextMaskRefinementOptions(
                         enabled=True,
                         fine_text_detection=bool(getattr(self, "fine_text_detection", True)),
@@ -180,12 +233,12 @@ class CleanMaskStrategyMixin:
                         min_component_area=int(getattr(self, "ink_mask_min_component_area", 3)),
                         component_anchor_overlap=float(getattr(self, "ink_mask_component_anchor_overlap", 0.03)),
                         component_anchor_max_gap_ratio=float(getattr(self, "ink_mask_component_anchor_max_gap_ratio", 0.45)),
+                        halo_growth_px=int(getattr(self, "text_halo_growth_px", 10)),
                     ),
                 )
                 if cv2.countNonZero(refined) > 0:
-                    raw_mask = refined
-                    return raw_mask, "region_text_mask"
-            return raw_mask, "region_text_mask"
+                    return refined, "region_text_ink"
+            return raw_mask, "region_text_box"
 
         safe_mask = self._safe_bubble_mask(region.mask, shape, self.bubble_fill_edge_margin)
         if cv2.countNonZero(safe_mask) == 0:
@@ -202,6 +255,12 @@ class CleanMaskStrategyMixin:
             # La máscara de polígonos OCR es una zona más precisa que el bbox unido.
             text_zone = cv2.bitwise_or(text_zone, raw_text_mask)
 
+        zone_source = "text_ink_inside_bubble"
+        if cv2.countNonZero(text_zone) == 0:
+            text_zone = self._bubble_interior_text_zone(imagen, safe_mask)
+            if cv2.countNonZero(text_zone) > 0:
+                zone_source = "bubble_interior_ink_without_ocr"
+
         clean_mask = self._text_ink_mask(imagen, text_zone, safe_mask, self.bubble_fill_text_dilate)
         if getattr(self, "ink_mask_refinement", True):
             clean_mask = TextInkMaskRefiner.refine(
@@ -210,6 +269,9 @@ class CleanMaskStrategyMixin:
                 text_zone,
                 raw_text_mask=raw_text_mask if cv2.countNonZero(raw_text_mask) > 0 else None,
                 initial_ink_mask=clean_mask,
+                # En globos el crecimiento no puede salir del interior: el borde negro del
+                # globo no es halo de texto y borrarlo destroza la viñeta.
+                growth_mask=safe_mask,
                 options=TextMaskRefinementOptions(
                     enabled=True,
                     fine_text_detection=bool(getattr(self, "fine_text_detection", True)),
@@ -217,9 +279,10 @@ class CleanMaskStrategyMixin:
                     min_component_area=int(getattr(self, "ink_mask_min_component_area", 3)),
                     component_anchor_overlap=float(getattr(self, "ink_mask_component_anchor_overlap", 0.03)),
                     component_anchor_max_gap_ratio=float(getattr(self, "ink_mask_component_anchor_max_gap_ratio", 0.45)),
+                    halo_growth_px=int(getattr(self, "text_halo_growth_px", 10)),
                 ),
             )
-        return clean_mask, "text_ink_inside_bubble" if cv2.countNonZero(clean_mask) > 0 else "empty_text_ink_inside_bubble"
+        return clean_mask, zone_source if cv2.countNonZero(clean_mask) > 0 else "empty_text_ink_inside_bubble"
 
     def _attach_clean_masks(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> List[TextRegion]:
         """Anota cada región con clean_mask sin reemplazar la máscara del globo.

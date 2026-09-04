@@ -91,6 +91,12 @@ class TranslateRegionRequest(BaseModel):
     original_text: str = ""
 
 
+class RetranslateJobRequest(BaseModel):
+    translator: str = "llm"
+    target_language: Optional[str] = None
+    overwrite_manual: bool = False
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
@@ -153,6 +159,20 @@ def pause_job(job_id: str):
 def resume_job(job_id: str):
     try:
         return job_to_public(manager.resume_job(job_id))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/retranslate")
+def retranslate_job(job_id: str, request: RetranslateJobRequest):
+    try:
+        job = manager.retranslate_job(
+            job_id,
+            translator=normalize_choice(request.translator, "llm"),
+            target_language=request.target_language,
+            overwrite_manual=bool(request.overwrite_manual),
+        )
+        return job_to_public(job)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 class LlmTranslationMixin:
     """Prompting, validación JSON estricta y traducción vía LLM."""
 
+    # Queda anotado cuando una traducción "LLM" acabó resolviéndose con el traductor
+    # tradicional. El pipeline lo ignora —el fallback es deliberado y silencioso—, pero
+    # quien pidió LLM explícitamente necesita poder enterarse en vez de recibir una
+    # traducción de otro motor sin avisar.
+    llm_fallback_reason: str = ""
+
     def _build_llm_system_prompt(self, character_memory_text: str = "") -> str:
         lore_str = f"Contexto general de la obra: {self.lore_manga}\n" if self.lore_manga else ""
         glossary_text = self.glossary.as_prompt_text()
@@ -138,6 +144,7 @@ class LlmTranslationMixin:
 
         if self.client is None:
             logger.warning("Groq no está configurado; usando fallback tradicional.")
+            self.llm_fallback_reason = "Groq no está configurado (falta GROQ_API_KEY o el paquete groq)."
             return self.traducir_textos_tradicional(textos_actuales)
 
         salida = textos_actuales[:]
@@ -238,6 +245,7 @@ class LlmTranslationMixin:
                     if "429" in err_str and "rate_limit_exceeded" in err_str and "tokens" in err_str:
                         logger.error("Límite de tokens de Groq agotado. Cambiando a traductor tradicional de forma definitiva.")
                         self.metodo = "Tradicional"
+                        self.llm_fallback_reason = "El LLM agotó su límite de tokens (429) y se cambió al traductor tradicional."
                         return self.traducir_textos_tradicional(textos_actuales)
 
                     if response_format.get("type") == "json_schema":
@@ -251,4 +259,5 @@ class LlmTranslationMixin:
                 cooperative_sleep(2 ** (attempt - 1))
 
         logger.error("LLM agotó reintentos. Último error: %s", last_error)
+        self.llm_fallback_reason = f"El LLM agotó los reintentos. Último error: {last_error}"
         return self.traducir_textos_tradicional(textos_actuales)

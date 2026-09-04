@@ -93,6 +93,26 @@ correcciones/   JSON con textos, cajas y flags manuales
 
 La UI procesa página por página en segundo plano para mejorar la experiencia: una página pendiente muestra un mensaje de espera, pero las páginas ya listas se pueden revisar y corregir inmediatamente. El botón **Exportar ZIP** descarga un paquete con `imagenes_finales/`, usando la versión corregida si existe y, si no, la traducción automática lista; también incluye `correcciones/` y `manifest_export.json` cuando corresponda. Usa la misma configuración funcional de `config.yaml`; puedes apuntar a otro archivo con `PMT_CONFIG=/ruta/config.yaml python ParallelMangaTranslatorUI.py`.
 
+### Retraducir un trabajo terminado
+
+Cuando un trabajo llega a su estado final, el botón **Retraducir trabajo** vuelve a
+traducir sus páginas con el traductor que elijas —**LLM** o **Google / tradicional**— y
+permite cambiar el idioma de salida. La retraducción reutiliza la limpieza y la
+transcripción ya calculadas: no repite la detección de globos, ni el OCR, ni el
+inpainting, así que solo cuesta la traducción y el rotulado.
+
+Rotula reutilizando la geometría que el pipeline calculó con la máscara del globo, de
+modo que el texto nuevo entra en el mismo hueco y con el mismo tamaño. Si pides **LLM** y
+el proveedor se queda sin tokens, la retraducción **se detiene** en esa página en vez de
+seguir en silencio con el traductor tradicional, y te dice dónde paró.
+
+Reescribe `traduccion/` y `Traducción.json`, y por defecto **conserva** las páginas con
+correcciones manuales. Marca *Sobrescribir también las páginas con correcciones
+manuales* para retraducirlas igualmente: en ese caso se descartan sus retoques
+guardados. Entra por la misma cola persistente y el mismo worker único que el
+procesamiento normal, de modo que se puede pausar, reanudar y cancelar igual, y se
+retoma sola si la aplicación se reinicia a medias.
+
 ### Cola persistente, pausa, cancelación y recuperación
 
 Los trabajos se registran en `.pmt_ui_jobs/queue.sqlite3` y cada trabajo mantiene un
