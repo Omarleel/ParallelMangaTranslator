@@ -160,9 +160,7 @@ def build_case_config(
     quality, translation, ocr = secciones["quality"], secciones["translation"], secciones["ocr"]
 
     config = replace(config, translation=translation, ocr=ocr, processing=processing, quality=quality)
-    from parallel_manga_translator.config.runtime_config import set_active_config
 
-    set_active_config(config)
     return config
 
 

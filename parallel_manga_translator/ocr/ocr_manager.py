@@ -28,15 +28,14 @@ class OcrManager:
         idioma_entrada: str,
         config: OcrConfig | None = None,
         engine: OcrEngine | None = None,
+        cache_dir: str = "",
+        cache: PersistentJsonCache | None = None,
     ) -> None:
         self.idioma_entrada = idioma_entrada
-        if config is None:
-            from parallel_manga_translator.config.runtime_config import get_active_config
-
-            config = get_active_config().ocr
-        self.config = config
+        # Por defecto, los valores del dataclass; nunca el estado global del proceso.
+        self.config = config if config is not None else OcrConfig()
         self.engine = engine or OcrFactory.create(idioma_entrada, self.config)
-        self.cache = PersistentJsonCache("ocr")
+        self.cache = cache if cache is not None else PersistentJsonCache("ocr", base_dir=cache_dir or None)
         self.source_language_filter = SourceLanguageFilter(idioma_entrada)
 
     @property

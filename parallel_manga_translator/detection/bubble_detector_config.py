@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from parallel_manga_translator.config.app_config import ProcessingConfig, QualityConfig
-from parallel_manga_translator.config.runtime_config import get_active_config
 
 
 @dataclass(frozen=True)
@@ -118,12 +117,9 @@ class BubbleDetectorSettings:
     @classmethod
     def from_config(
         cls,
-        quality: QualityConfig | None = None,
-        processing: ProcessingConfig | None = None,
+        quality: QualityConfig,
+        processing: ProcessingConfig,
     ) -> "BubbleDetectorSettings":
-        active = get_active_config() if quality is None or processing is None else None
-        quality = quality or active.quality  # type: ignore[union-attr]
-        processing = processing or active.processing  # type: ignore[union-attr]
         return cls(
             enabled=quality.bubble_detection,
             split=BubbleSplitSettings.from_quality_config(quality),

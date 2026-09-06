@@ -46,7 +46,7 @@ class GroqTranslationProvider(TraditionalTranslationMixin, LlmTranslationMixin):
         self.lore_manga = (config.lore or "").strip()
         self.llm_strict_json_schema = bool(config.strict_json_schema)
         self._translation_cache = {}
-        self.cache = PersistentJsonCache("translations")
+        self.cache = PersistentJsonCache("translations", base_dir=config.cache_dir or None, enabled=config.cache_enabled)
         self.glossary = GlossaryManager(glossary_path=config.glossary_path, project_dir=config.project_dir)
         self.character_memory = CharacterMemoryManager(
             project_dir=config.project_dir,

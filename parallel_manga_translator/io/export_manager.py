@@ -8,7 +8,7 @@ from typing import Iterable, List
 
 from PIL import Image
 
-from parallel_manga_translator.config.runtime_config import get_active_config
+from parallel_manga_translator.config.app_config import ExportConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -30,8 +30,7 @@ class ExportManager:
         return sorted(files, key=cls.natural_sort_key)
 
     @classmethod
-    def export_pdf(cls, translated_dir: str, title: str) -> None:
-        export_config = get_active_config().export
+    def export_pdf(cls, translated_dir: str, title: str, export_config: ExportConfig) -> None:
         if export_config.skip_pdf or not export_config.pdf:
             logger.info("Exportación PDF omitida por configuración.")
             return
@@ -56,8 +55,8 @@ class ExportManager:
                     pass
 
     @classmethod
-    def export_cbz(cls, translated_dir: str, title: str) -> None:
-        if not get_active_config().export.cbz:
+    def export_cbz(cls, translated_dir: str, title: str, export_config: ExportConfig) -> None:
+        if not export_config.cbz:
             return
         files = cls.list_images(translated_dir)
         if not files:

@@ -226,7 +226,6 @@ def test_corrected_transcription_can_be_retranslated_without_running_ocr(monkeyp
     import parallel_manga_translator.ui.job_manager as job_manager_module
     from parallel_manga_translator.translation.translator_manager import TranslatorManager
 
-    monkeypatch.setattr(job_manager_module, "set_active_config", lambda config: None)
 
     class FakeTranslator:
         def traducir_textos(self, texts):

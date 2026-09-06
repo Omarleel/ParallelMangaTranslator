@@ -19,7 +19,6 @@ import cv2
 from parallel_manga_translator.cli import build_default_config, build_image_processor, prepare_assets, prepare_runtime
 from parallel_manga_translator.config.constants import normalizar_modelo_inpaint
 from parallel_manga_translator.inpainting import AOTInpainter, LamaInpainterMPE, LamaLarge, OpenCVInpainter
-from parallel_manga_translator.config.runtime_config import set_active_config
 from parallel_manga_translator.infrastructure.execution_control import (
     ExecutionControl,
     JobCancelledError,
@@ -1187,7 +1186,6 @@ class JobManager:
             }
 
         config = self._build_config_for_job(job)
-        set_active_config(config)
         from parallel_manga_translator.translation.translator_manager import TranslatorManager
 
         control = ExecutionControl()
@@ -1224,7 +1222,6 @@ class JobManager:
             raise ValueError("La región seleccionada no contiene píxeles válidos.")
 
         config = self._build_config_for_job(job)
-        set_active_config(config)
         from parallel_manga_translator.ocr.ocr_manager import OcrManager
 
         ocr = OcrManager(config.translation.idioma_entrada, config.ocr)
@@ -1297,7 +1294,6 @@ class JobManager:
                     )
                     translation = replace(config.translation, project_dir=job.input_dir)
                     config = replace(config, processing=processing, translation=translation)
-                    set_active_config(config)
                     configure_logging(log_file=config.logging.file, level=config.logging.level)
 
                     output_dir = Path(job.output_dir)
@@ -1512,7 +1508,6 @@ class JobManager:
                         # El rotulado necesita las mismas fuentes que el pipeline.
                         prepare_assets()
                         self._assets_prepared = True
-                    set_active_config(config)
                     configure_logging(log_file=config.logging.file, level=config.logging.level)
 
                     translation_dir = Path(job.output_dir) / "traduccion"

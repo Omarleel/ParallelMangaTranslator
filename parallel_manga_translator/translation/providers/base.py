@@ -25,6 +25,10 @@ class TranslationProviderConfig:
     deepl_api_key: str = ""
     project_dir: Optional[str] = None
     glossary_path: str = ""
+    # Caché de traducciones. La UI usa una carpeta por trabajo, así que esto tiene que
+    # viajar explícitamente en vez de leerse del estado global del proceso.
+    cache_dir: str = ""
+    cache_enabled: Optional[bool] = None
     character_memory_enabled: bool = True
     character_memory_path: str = ""
     character_memory_max_context_pages: int = 8

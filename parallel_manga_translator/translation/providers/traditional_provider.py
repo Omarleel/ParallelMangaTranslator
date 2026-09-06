@@ -80,7 +80,7 @@ class TraditionalTranslationProvider(TraditionalTranslationMixin):
         self.deepl_api_key = config.deepl_api_key
         self.max_retries = max(1, int(config.max_retries))
         self._translation_cache = {}
-        self.cache = PersistentJsonCache("translations")
+        self.cache = PersistentJsonCache("translations", base_dir=config.cache_dir or None, enabled=config.cache_enabled)
         self.glossary = GlossaryManager(glossary_path=config.glossary_path, project_dir=config.project_dir)
         self.character_memory = CharacterMemoryManager(
             project_dir=config.project_dir,

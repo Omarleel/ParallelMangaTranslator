@@ -11,20 +11,26 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 
-from parallel_manga_translator.config.runtime_config import get_active_config
+from parallel_manga_translator.config.app_config import ProcessingConfig
 
 
 class PersistentJsonCache:
     """Caché simple, persistente y segura para OCR/traducciones.
 
-    La activación y la carpeta base se leen desde `processing.cache` y
-    `processing.cache_dir` en `config.yaml`. No consulta variables de entorno.
+    La activación y la carpeta base **se reciben**; esta clase no las busca. Vienen de
+    `processing.cache` y `processing.cache_dir`, que el composition root propaga. Es una
+    capa de infraestructura: leer ella misma la configuración de aplicación era acoplarla
+    hacia arriba, y además rompía el aislamiento de caché por trabajo de la UI.
     """
 
     def __init__(self, namespace: str, base_dir: Optional[str] = None, enabled: Optional[bool] = None) -> None:
-        processing = get_active_config().processing
-        self.enabled = processing.cache if enabled is None else bool(enabled)
-        root = Path(base_dir or processing.cache_dir or ".cache")
+        # Los valores por defecto salen del dataclass, no del estado global del proceso.
+        # `base_dir` importa de verdad: la UI usa una caché por trabajo, y cuando esa ruta
+        # viajaba por `get_active_config()` dos trabajos simultáneos compartían la del
+        # último en llamar a `set_active_config`. Quien construya la caché la pasa.
+        defaults = ProcessingConfig()
+        self.enabled = defaults.cache if enabled is None else bool(enabled)
+        root = Path(base_dir or defaults.cache_dir or ".cache")
         self.path = root / namespace
         self._lock = threading.Lock()
         if self.enabled:

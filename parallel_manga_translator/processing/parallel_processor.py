@@ -15,7 +15,7 @@ from parallel_manga_translator.io.export_manager import ExportManager
 from parallel_manga_translator.quality.metrics_manager import MetricsWriter
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.config.constants import PESO_MODELOS
-from parallel_manga_translator.config.runtime_config import get_active_config
+from parallel_manga_translator.config.app_config import ApplicationConfig, ProcessingConfig
 
 logger = get_logger(__name__)
 
@@ -33,10 +33,17 @@ class ExecutionPlan:
 class ParallelProcessor:
     IMAGE_EXTENSIONS = (".jpg", ".png", ".jpeg", ".bmp", ".webp")
 
-    def __init__(self):
+    def __init__(self, config: ApplicationConfig):
+        """Recibe la configuración de la ejecución; no la busca en el estado global.
+
+        Se construye una sola vez, en `cli.run_pipeline`, donde la configuración ya
+        existe. Pedirla aquí evita que dos ejecuciones simultáneas compartan la del
+        último `set_active_config`.
+        """
+        self.config = config
         self.utilities = Utilities()
         self._ensure_mp_start_method()
-        self.resource_profile = self._detect_resources()
+        self.resource_profile = self._detect_resources(config.processing)
 
     @staticmethod
     def _ensure_mp_start_method() -> None:
@@ -48,7 +55,7 @@ class ParallelProcessor:
                 pass
 
     @staticmethod
-    def _detect_resources() -> ResourceProfile:
+    def _detect_resources(processing: ProcessingConfig) -> ResourceProfile:
         cpu_count = os.cpu_count() or 2
         max_parallel_workers = max(1, cpu_count - 1)
         total_memory_gb = 8.0
@@ -65,7 +72,7 @@ class ParallelProcessor:
             except Exception as exc:
                 logger.warning("No se pudo leer la info de la GPU. Error: %s", exc)
 
-        configured_workers = get_active_config().processing.max_workers
+        configured_workers = processing.max_workers
         if configured_workers is not None:
             max_parallel_workers = max(1, int(configured_workers))
 
@@ -133,10 +140,10 @@ class ParallelProcessor:
         return paddle_requested and subprocess_enabled
 
     def _compilar_a_pdf(self, ruta_traduccion: str, titulo_manga: str):
-        ExportManager.export_pdf(ruta_traduccion, titulo_manga)
+        ExportManager.export_pdf(ruta_traduccion, titulo_manga, self.config.export)
 
     def _compilar_a_cbz(self, ruta_traduccion: str, titulo_manga: str):
-        ExportManager.export_cbz(ruta_traduccion, titulo_manga)
+        ExportManager.export_cbz(ruta_traduccion, titulo_manga, self.config.export)
 
     @staticmethod
     def _start_json_writers(ruta_limpieza_salida: str, ruta_traduccion_salida: str):
@@ -183,7 +190,7 @@ class ParallelProcessor:
 
             plan = self._build_execution_plan(cantidad_archivos, batch_size, parallel)
             hardware_usado = "GPU" if torch.cuda.is_available() else "CPU"
-            active_config = get_active_config()
+            active_config = self.config
             process_owner = getattr(process_func, "__self__", None)
             pipeline_callable = getattr(process_owner, "procesar_pipeline", None)
             external_gpu_ocr = self._ocr_uses_external_gpu_process(active_config)

@@ -48,6 +48,8 @@ class TranslatorManager:
         strict_json_schema: bool = True,
         translation_config: TranslationConfig | None = None,
         character_memory_config: CharacterMemoryConfig | None = None,
+        cache_dir: str = "",
+        cache_enabled: bool | None = None,
     ) -> None:
         if translation_config is not None:
             idioma_entrada = translation_config.idioma_entrada
@@ -75,10 +77,9 @@ class TranslatorManager:
             traditional_block_cooldown = TranslationConfig.traditional_block_cooldown
             traditional_block_max_wait = TranslationConfig.traditional_block_max_wait
 
+        # Por defecto, los valores del dataclass; nunca el estado global del proceso.
         if character_memory_config is None:
-            from parallel_manga_translator.config.runtime_config import get_active_config
-
-            character_memory_config = get_active_config().character_memory
+            character_memory_config = CharacterMemoryConfig()
 
         self.metodo = metodo.strip()
         self.idioma_entrada = idioma_entrada
@@ -104,6 +105,8 @@ class TranslatorManager:
             character_memory_enabled=character_memory_config.enabled,
             character_memory_path=character_memory_config.path,
             character_memory_max_context_pages=character_memory_config.max_context_pages,
+            cache_dir=cache_dir,
+            cache_enabled=cache_enabled,
         )
         self.provider = TranslatorFactory.create(self.config)
 

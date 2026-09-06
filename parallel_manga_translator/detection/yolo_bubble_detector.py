@@ -13,7 +13,6 @@ from parallel_manga_translator.models.processing_models import Box
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 from parallel_manga_translator.config.app_config import QualityConfig
-from parallel_manga_translator.config.runtime_config import get_active_config
 
 logger = get_logger(__name__)
 
@@ -41,8 +40,13 @@ class YoloBubbleDetector:
 
     SUPPORTED_MODES = {"yolo11", "yolo11-seg", "yolo11_seg", "yolo11seg", "yolo11-segmentation"}
 
-    def __init__(self, quality_config: QualityConfig | None = None) -> None:
-        quality_config = quality_config or get_active_config().quality
+    def __init__(self, quality_config: QualityConfig) -> None:
+        """Recibe su configuración; no la busca.
+
+        Antes caía a `get_active_config()` cuando no se la pasaban. Ese `or` era peso
+        muerto —en el flujo real `BubbleDetector` siempre la pasa— y a la vez un
+        service locator: ataba un adaptador al estado global del proceso.
+        """
         self.mode = str(quality_config.bubble_detector or "yolo11-seg").strip().lower()
         if self.mode not in self.SUPPORTED_MODES:
             raise RuntimeError(
