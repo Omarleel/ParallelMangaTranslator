@@ -138,7 +138,7 @@ def _manager_with_ready_job(tmp: str, *, translator: str = "llm") -> tuple[JobMa
     )
     manager = JobManager(jobs_root=jobs_root, start_worker=False)
     manager._jobs[job.job_id] = job
-    manager._save_manifest(job)
+    manager.manifests.save(job)
     return manager, job
 
 
@@ -210,7 +210,7 @@ class RetranslationJobTests(unittest.TestCase):
             manager, job = _manager_with_ready_job(tmp)
             manager.retranslate_job(job.job_id, translator="llm")
             job.status = "processing"
-            manager._save_manifest(job)
+            manager.manifests.save(job)
 
             restarted = JobManager(jobs_root=Path(tmp), start_worker=False)
             recovered = restarted.get_job(job.job_id)

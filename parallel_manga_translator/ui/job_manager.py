@@ -10,7 +10,7 @@ import time
 import traceback
 import uuid
 import zipfile
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -27,8 +27,18 @@ from parallel_manga_translator.infrastructure.execution_control import (
 )
 from parallel_manga_translator.infrastructure.logging_config import close_log_file, configure_logging, get_logger
 from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
-from parallel_manga_translator.io.image_naming import normalized_page_output_name
 from parallel_manga_translator.ui.manual_renderer import apply_background_brush_strokes, apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections_payload, render_manual_composite, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
+from parallel_manga_translator.ui.job_manifest_store import JobManifestStore
+# Reexportados a proposito: `ui/app.py` los importa desde aqui y son parte del API
+# publica del modulo, no imports incidentales.
+from parallel_manga_translator.ui.job_state import (  # noqa: F401
+    JobOptions,
+    JobState,
+    PageState,
+    normalize_choice,
+    normalized_output_name,
+    rebase_stored_path,
+)
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
 from parallel_manga_translator.ui.retranslator import JobRetranslator, region_is_retranslatable
 from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
@@ -36,128 +46,8 @@ from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
 logger = get_logger(__name__)
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
-_PAGE_PATH_FIELDS = (
-    "original_path",
-    "clean_path",
-    "translated_path",
-    "corrected_path",
-    "corrections_path",
-    "manual_background_path",
-)
 PROJECT_JOBS_DIR = Path(os.getenv("PMT_UI_JOBS_DIR", ".pmt_ui_jobs")).resolve()
 
-# En Windows, el escáner on-access del antivirus abre los archivos recién escritos y,
-# mientras sostiene el handle, renombrar sobre el destino devuelve ERROR_ACCESS_DENIED
-# (WinError 5): renombrar sobre un archivo existente necesita acceso de borrado sobre él.
-# Es transitorio, y perder el guardado aborta el trabajo entero, así que se reintenta.
-_MANIFEST_REPLACE_RETRIES = 6
-_MANIFEST_REPLACE_BACKOFF = 0.05
-
-
-def normalize_choice(value: Any, default: str = "auto") -> str:
-    normalized = str(value or default).strip().lower()
-    if normalized in {"", "none", "null", "nil", "default"}:
-        return default
-    return normalized
-
-
-@dataclass
-class JobOptions:
-    source_language: str = "Japonés"
-    target_language: str = "Español"
-    detection_engine: str = "auto"
-    transcription_engine: str = "auto"
-    translator: str = "llm"  # google | llm
-    inpaint_model: str = "auto"
-    page_max_retries: int = 2
-    retry_backoff_seconds: float = 2.0
-
-
-@dataclass
-class PageState:
-    index: int
-    source_filename: str
-    output_filename: str
-    status: str = "pending"  # pending | processing | ready | failed
-    message: str = ""
-    original_path: str = ""
-    clean_path: str = ""
-    translated_path: str = ""
-    corrected_path: str = ""
-    corrections_path: str = ""
-    manual_background_path: str = ""
-    background_revision: str = "base"
-    regions: List[Dict[str, Any]] = field(default_factory=list)
-    brush_strokes: List[Dict[str, Any]] = field(default_factory=list)
-    attempt_count: int = 0
-    last_error: str = ""
-    started_at: float = 0.0
-    completed_at: float = 0.0
-    updated_at: float = field(default_factory=time.time)
-
-    @property
-    def display_status(self) -> str:
-        if self.corrected_path and Path(self.corrected_path).exists():
-            return "corrected"
-        return self.status
-
-
-@dataclass
-class JobState:
-    job_id: str
-    title: str
-    root_dir: str
-    input_dir: str
-    output_dir: str
-    status: str = "queued"  # queued | processing | ready | failed
-    message: str = "Esperando inicio del procesamiento."
-    created_at: float = field(default_factory=time.time)
-    updated_at: float = field(default_factory=time.time)
-    pages: List[PageState] = field(default_factory=list)
-    processed_count: int = 0
-    failed_count: int = 0
-    active_page: int = 0
-    options: JobOptions = field(default_factory=JobOptions)
-    pause_requested: bool = False
-    cancel_requested: bool = False
-    resume_requested: bool = False
-    recovery_count: int = 0
-    started_at: float = 0.0
-    finished_at: float = 0.0
-    # Qué debe hacer el worker con este trabajo cuando lo tome de la cola. La
-    # retraducción reutiliza la misma cola persistente y el mismo worker único, así
-    # que necesita decir con qué operación vuelve a entrar.
-    pending_operation: str = "process"  # process | retranslate
-    retranslate_pages: List[int] = field(default_factory=list)
-
-    @property
-    def total_count(self) -> int:
-        return len(self.pages)
-
-    @property
-    def progress(self) -> float:
-        total = self.total_count or 1
-        return round(((self.processed_count + self.failed_count) / total) * 100, 2)
-
-
-def rebase_stored_path(value: str, old_root: str, new_root: Path) -> str:
-    """Reancla una ruta absoluta guardada bajo `old_root` para que apunte a `new_root`."""
-    if not value or not old_root:
-        return value
-    stored = value.replace("\\", "/")
-    old = old_root.replace("\\", "/").rstrip("/")
-    if not old:
-        return value
-    candidate = stored if os.name != "nt" else stored.lower()
-    prefix = old if os.name != "nt" else old.lower()
-    if not (candidate + "/").startswith(prefix + "/"):
-        return value
-    suffix = stored[len(old):].lstrip("/")
-    return str(new_root / suffix) if suffix else str(new_root)
-
-
-def normalized_output_name(filename: str, page_index: int) -> str:
-    return normalized_page_output_name(filename, page_index)
 
 
 def natural_sort_key(filename: str) -> List[Any]:
@@ -268,6 +158,9 @@ class JobManager:
         self.jobs_root.mkdir(parents=True, exist_ok=True)
         self._jobs: Dict[str, JobState] = {}
         self._lock = threading.RLock()
+        # Persistencia del manifiesto: se construye antes de `_recover_interrupted_jobs`,
+        # que ya lee trabajos de disco.
+        self.manifests = JobManifestStore(self.jobs_root)
         # El pipeline usa configuración global y modelos CUDA grandes. Un único worker
         # garantiza aislamiento entre trabajos y evita duplicar memoria de GPU.
         self._processing_lock = threading.Lock()
@@ -321,7 +214,7 @@ class JobManager:
         )
         with self._lock:
             self._jobs[job.job_id] = job
-            self._save_manifest(job)
+            self.manifests.save(job)
         return job
 
     def create_job_from_uploads(self, files: Sequence[Any], zip_file: Optional[Any] = None, title: str = "", options: JobOptions | None = None) -> JobState:
@@ -399,7 +292,7 @@ class JobManager:
             job.status = "queued"
             job.message = "Trabajo añadido a la cola persistente."
             job.updated_at = time.time()
-            self._save_manifest(job)
+            self.manifests.save(job)
         self._queue.enqueue(job.job_id)
         self._wake_worker()
 
@@ -456,7 +349,7 @@ class JobManager:
             job.status = "queued"
             job.message = self._retranslation_queue_message(selected, len(targets), len(skipped))
             job.updated_at = time.time()
-            self._save_manifest(job)
+            self.manifests.save(job)
         self._queue.enqueue(job.job_id)
         self._wake_worker()
         return job
@@ -504,7 +397,7 @@ class JobManager:
                 self._queue.remove(job_id)
                 job.status = "paused"
                 job.message = "Trabajo pausado en la cola."
-            self._save_manifest(job)
+            self.manifests.save(job)
         return job
 
     def resume_job(self, job_id: str) -> JobState:
@@ -532,7 +425,7 @@ class JobManager:
                 job.message = "Trabajo reanudado y devuelto a la cola."
                 job.resume_requested = False
                 self._queue.enqueue(job_id, preserve_time=False)
-            self._save_manifest(job)
+            self.manifests.save(job)
         self._wake_worker()
         return job
 
@@ -555,7 +448,7 @@ class JobManager:
                 self._finish_retranslation(job, message="Retraducción cancelada antes de empezar.")
             else:
                 self._finalize_cancelled_job(job)
-            self._save_manifest(job)
+            self.manifests.save(job)
         self._wake_worker()
         return job
 
@@ -563,7 +456,7 @@ class JobManager:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
-                job = self._load_manifest(job_id)
+                job = self.manifests.load(job_id)
                 self._jobs[job_id] = job
             return job
 
@@ -575,7 +468,7 @@ class JobManager:
             job_id = manifest.parent.name
             if job_id not in known:
                 try:
-                    job = self._load_manifest(job_id)
+                    job = self.manifests.load(job_id)
                     loaded.append(job)
                     with self._lock:
                         self._jobs[job_id] = job
@@ -627,7 +520,7 @@ class JobManager:
             job_id = manifest.parent.name
             manifest_ids.add(job_id)
             try:
-                job = self._load_manifest(job_id)
+                job = self.manifests.load(job_id)
             except Exception as exc:
                 logger.warning("No se pudo recuperar el manifiesto %s: %s", manifest, exc)
                 self._queue.remove(job_id)
@@ -675,7 +568,7 @@ class JobManager:
             with self._lock:
                 if changed:
                     job.updated_at = time.time()
-                    self._save_manifest(job)
+                    self.manifests.save(job)
                 self._jobs[job_id] = job
 
         for stale_id in set(self._queue.all_ids()) - manifest_ids:
@@ -689,7 +582,7 @@ class JobManager:
                 job.pause_requested = True
                 job.message = "Trabajo pausado en un punto seguro."
                 job.updated_at = time.time()
-                self._save_manifest(job)
+                self.manifests.save(job)
         except Exception:
             logger.exception("No se pudo guardar la pausa del trabajo %s", job_id)
 
@@ -702,7 +595,7 @@ class JobManager:
                 job.resume_requested = False
                 job.message = "Procesamiento reanudado."
                 job.updated_at = time.time()
-                self._save_manifest(job)
+                self.manifests.save(job)
         except Exception:
             logger.exception("No se pudo guardar la reanudación del trabajo %s", job_id)
 
@@ -1068,7 +961,7 @@ class JobManager:
             page.manual_background_path = "" if next_revision == "base" else str(next_background)
             page.updated_at = time.time()
             job.updated_at = page.updated_at
-            self._save_manifest(job)
+            self.manifests.save(job)
         return page_to_public(page, job_id)
 
 
@@ -1120,7 +1013,7 @@ class JobManager:
             self._discard_manual_edits(job, page)
             page.updated_at = time.time()
             job.updated_at = page.updated_at
-            self._save_manifest(job)
+            self.manifests.save(job)
             return page_to_public(page, job_id)
 
     def _discard_manual_edits(self, job: JobState, page: PageState) -> None:
@@ -1194,7 +1087,7 @@ class JobManager:
 
         with self._lock:
             job.updated_at = time.time()
-            self._save_manifest(job)
+            self.manifests.save(job)
 
         return {
             "original_text": source_text,
@@ -1273,7 +1166,7 @@ class JobManager:
                 job.started_at = job.started_at or time.time()
                 job.finished_at = 0.0
                 job.updated_at = time.time()
-                self._save_manifest(job)
+                self.manifests.save(job)
 
             try:
                 with execution_control_scope(control):
@@ -1338,7 +1231,7 @@ class JobManager:
                                 job.status = "processing"
                                 job.message = f"Procesando página {page.index + 1}/{len(job.pages)}."
                                 job.updated_at = page.updated_at
-                                self._save_manifest(job)
+                                self.manifests.save(job)
 
                             self._remove_partial_outputs(page)
                             try:
@@ -1370,7 +1263,7 @@ class JobManager:
                                     page.updated_at = page.completed_at
                                     self._recount(job)
                                     job.updated_at = page.updated_at
-                                    self._save_manifest(job)
+                                    self.manifests.save(job)
                                 page_succeeded = True
 
                             except JobPausedError:
@@ -1382,7 +1275,7 @@ class JobManager:
                                     page.message = "Página pausada; se retomará desde el inicio al reanudar."
                                     page.updated_at = time.time()
                                     job.updated_at = page.updated_at
-                                    self._save_manifest(job)
+                                    self.manifests.save(job)
                                 raise
                             except JobCancelledError:
                                 with self._lock:
@@ -1390,7 +1283,7 @@ class JobManager:
                                     page.message = "Cancelada por el usuario."
                                     page.completed_at = time.time()
                                     page.updated_at = page.completed_at
-                                    self._save_manifest(job)
+                                    self.manifests.save(job)
                                 raise
                             except Exception as exc:
                                 logger.exception(
@@ -1416,7 +1309,7 @@ class JobManager:
                                         page.completed_at = page.updated_at
                                     self._recount(job)
                                     job.updated_at = page.updated_at
-                                    self._save_manifest(job)
+                                    self.manifests.save(job)
                                 if page.attempt_count < max_attempts:
                                     self._cooperative_backoff(
                                         control,
@@ -1434,7 +1327,7 @@ class JobManager:
                         else:
                             job.status = "failed"
                             job.message = "Finalizado con páginas fallidas."
-                        self._save_manifest(job)
+                        self.manifests.save(job)
 
             except JobPausedError:
                 requeue = False
@@ -1454,13 +1347,13 @@ class JobManager:
                         job.message = "Trabajo pausado. Las páginas terminadas se conservaron."
                         job.pause_requested = True
                         job.updated_at = time.time()
-                    self._save_manifest(job)
+                    self.manifests.save(job)
                 if requeue:
                     self._wake_worker()
             except JobCancelledError:
                 with self._lock:
                     self._finalize_cancelled_job(job)
-                    self._save_manifest(job)
+                    self.manifests.save(job)
             except Exception as exc:
                 logger.exception("Error preparando o ejecutando job %s: %s", job_id, exc)
                 with self._lock:
@@ -1468,7 +1361,7 @@ class JobManager:
                     job.message = f"Error general: {exc}"
                     job.finished_at = time.time()
                     job.updated_at = job.finished_at
-                    self._save_manifest(job)
+                    self.manifests.save(job)
                 failure_path = Path(job.root_dir) / "error.log"
                 failure_path.write_text(traceback.format_exc(), encoding="utf-8")
             finally:
@@ -1497,7 +1390,7 @@ class JobManager:
                 job.message = "Preparando la retraducción…"
                 job.finished_at = 0.0
                 job.updated_at = time.time()
-                self._save_manifest(job)
+                self.manifests.save(job)
 
             try:
                 with execution_control_scope(control):
@@ -1529,7 +1422,7 @@ class JobManager:
                             page.message = f"Retraduciendo con {motor}…"
                             page.updated_at = time.time()
                             job.updated_at = page.updated_at
-                            self._save_manifest(job)
+                            self.manifests.save(job)
 
                         resultados = retranslator.retranslate_page(
                             page_index=page.index,
@@ -1548,7 +1441,7 @@ class JobManager:
                             page.updated_at = page.completed_at
                             job.retranslate_pages = [index for index in job.retranslate_pages if index != page_index]
                             job.updated_at = page.updated_at
-                            self._save_manifest(job)
+                            self.manifests.save(job)
 
                         # El proveedor LLM cae al traductor tradicional en silencio cuando
                         # se queda sin tokens. Quien pidió LLM sobre un trabajo terminado
@@ -1571,7 +1464,7 @@ class JobManager:
                             )
                         else:
                             self._finish_retranslation(job, message=f"Retraducción con {motor} finalizada.")
-                        self._save_manifest(job)
+                        self.manifests.save(job)
 
             except JobPausedError:
                 requeue = False
@@ -1594,7 +1487,7 @@ class JobManager:
                         job.message = "Retraducción pausada. Continuará en la página pendiente al reanudar."
                         job.pause_requested = True
                         job.updated_at = time.time()
-                    self._save_manifest(job)
+                    self.manifests.save(job)
                 if requeue:
                     self._wake_worker()
             except JobCancelledError:
@@ -1603,14 +1496,14 @@ class JobManager:
                         job,
                         message="Retraducción cancelada. Las páginas ya retraducidas se conservaron.",
                     )
-                    self._save_manifest(job)
+                    self.manifests.save(job)
             except Exception as exc:
                 logger.exception("Error retraduciendo el job %s: %s", job_id, exc)
                 with self._lock:
                     # Las páginas siguen siendo válidas: solo falló el intento de
                     # retraducción, así que el trabajo vuelve a su estado terminal.
                     self._finish_retranslation(job, message=f"La retraducción falló: {exc}")
-                    self._save_manifest(job)
+                    self.manifests.save(job)
             finally:
                 close_log_file(str(Path(job.root_dir) / "job.log"))
                 with self._lock:
@@ -1864,69 +1757,4 @@ class JobManager:
             job.status = status
             job.message = message
             job.updated_at = time.time()
-            self._save_manifest(job)
-
-    def _save_manifest(self, job: JobState) -> None:
-        manifest = Path(job.root_dir) / "manifest.json"
-        manifest.parent.mkdir(parents=True, exist_ok=True)
-        payload = asdict(job)
-        tmp_path = manifest.with_suffix(".json.tmp")
-        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        for intento in range(1, _MANIFEST_REPLACE_RETRIES + 1):
-            try:
-                tmp_path.replace(manifest)
-                return
-            except PermissionError:
-                if intento == _MANIFEST_REPLACE_RETRIES:
-                    logger.warning(
-                        "No se pudo reemplazar %s tras %s intentos. Suele ser un antivirus "
-                        "sosteniendo el archivo recién escrito; excluir la carpeta de trabajos "
-                        "del escaneo en tiempo real lo evita.",
-                        manifest,
-                        intento,
-                    )
-                    raise
-                time.sleep(_MANIFEST_REPLACE_BACKOFF * (2 ** (intento - 1)))
-
-    def _load_manifest(self, job_id: str) -> JobState:
-        manifest = self.jobs_root / job_id / "manifest.json"
-        if not manifest.exists():
-            raise FileNotFoundError("No existe ese trabajo de UI.")
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("El manifiesto del trabajo no es válido.")
-        page_fields = PageState.__dataclass_fields__
-        pages = [
-            PageState(**{k: v for k, v in page.items() if k in page_fields})
-            for page in data.get("pages", [])
-            if isinstance(page, dict)
-        ]
-        data["pages"] = pages
-        options = data.get("options", {})
-        if isinstance(options, dict):
-            data["options"] = JobOptions(**{k: v for k, v in options.items() if k in JobOptions.__dataclass_fields__})
-        elif not isinstance(options, JobOptions):
-            data["options"] = JobOptions()
-        job_fields = JobState.__dataclass_fields__
-        job = JobState(**{k: v for k, v in data.items() if k in job_fields})
-        if self._rebase_job_paths(job):
-            logger.info("Rutas del trabajo %s reancladas a %s.", job_id, job.root_dir)
-            # `list_jobs` llega aquí sin el lock; `get_job` ya lo tiene y el RLock es reentrante.
-            with self._lock:
-                self._save_manifest(job)
-        return job
-
-    def _rebase_job_paths(self, job: JobState) -> bool:
-        """Corrige las rutas absolutas de un trabajo cuya carpeta se movió de sitio."""
-        new_root = self.jobs_root / job.job_id
-        old_root = job.root_dir
-        if not old_root or Path(old_root) == new_root:
-            return False
-        job.root_dir = str(new_root)
-        job.input_dir = rebase_stored_path(job.input_dir, old_root, new_root)
-        job.output_dir = rebase_stored_path(job.output_dir, old_root, new_root)
-        for page in job.pages:
-            for attribute in _PAGE_PATH_FIELDS:
-                setattr(page, attribute, rebase_stored_path(getattr(page, attribute), old_root, new_root))
-        return True
+            self.manifests.save(job)

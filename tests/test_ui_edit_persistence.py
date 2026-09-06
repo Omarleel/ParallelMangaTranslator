@@ -71,7 +71,7 @@ def _build_ready_manager(tmp_path: Path) -> tuple[JobManager, JobState, PageStat
     )
     manager = JobManager(jobs_root=jobs_root, start_worker=False)
     manager._jobs[job.job_id] = job
-    manager._save_manifest(job)
+    manager.manifests.save(job)
     return manager, job, page
 
 

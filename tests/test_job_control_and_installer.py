@@ -106,7 +106,7 @@ class JobRecoveryAndRetryTests(unittest.TestCase):
             job.status = "processing"
             job.pages[0].status = "processing"
             job.pages[0].attempt_count = 1
-            first._save_manifest(job)
+            first.manifests.save(job)
 
             restarted = JobManager(jobs_root=jobs_root, start_worker=False)
             recovered = restarted.get_job(job.job_id)
@@ -128,7 +128,7 @@ class JobRecoveryAndRetryTests(unittest.TestCase):
             cv2.imwrite(page.translated_path, np.full((24, 24, 3), 255, np.uint8))
             job.status = "processing"
             page.status = "processing"
-            first._save_manifest(job)
+            first.manifests.save(job)
 
             restarted = JobManager(jobs_root=jobs_root, start_worker=False)
             recovered = restarted.get_job(job.job_id)
