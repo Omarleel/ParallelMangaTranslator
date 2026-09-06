@@ -99,7 +99,7 @@ class CleanOnomatopoeiaGuardMixin:
 
     def _free_text_crop_for_clean_guard(self, imagen: np.ndarray, region: TextRegion) -> np.ndarray:
         height_img, width_img = imagen.shape[:2]
-        x, y, w, h = self._clip_rect(region.bbox, imagen.shape)
+        x, y, w, h = self.mask_strategy.clip_rect(region.bbox, imagen.shape)
         if w <= 0 or h <= 0:
             return np.empty((0, 0, 3), dtype=imagen.dtype)
         crop = imagen[y:y + h, x:x + w]
@@ -120,7 +120,7 @@ class CleanOnomatopoeiaGuardMixin:
         transcripción (MangaOCR/Paddle/EasyOCR según configuración) sobre la región ya
         enmascarada. Si ese OCR no lee absolutamente nada, la región se preserva.
         """
-        x, y, w, h = self._clip_rect(getattr(region, "ocr_bbox", region.bbox), imagen.shape)
+        x, y, w, h = self.mask_strategy.clip_rect(getattr(region, "ocr_bbox", region.bbox), imagen.shape)
         if w <= 0 or h <= 0:
             return np.empty((0, 0, 3), dtype=imagen.dtype)
 

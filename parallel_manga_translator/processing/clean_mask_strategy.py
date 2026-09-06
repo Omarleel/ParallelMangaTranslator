@@ -9,11 +9,34 @@ from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner, TextMaskRefinementOptions
 
 
-class CleanMaskStrategyMixin:
-    """Construcción y ajuste de máscaras de limpieza."""
+class CleanMaskStrategy:
+    """Construcción y ajuste de máscaras de limpieza.
+
+    Era `CleanMaskStrategyMixin`. Doce de sus trece métodos no tocan estado y el
+    decimotercero sólo necesita los cuatro ajustes de relleno, así que heredarla sólo
+    servía para que `CleanInpaintingPipelineMixin` la llamara por `self` sin declarar
+    la dependencia.
+
+    Cuidado con los nombres: `quality/text_mask_refiner.py` tiene su propio
+    `_clip_rect` y `quality/visual_inpaint_verifier.py` su propio `_binary_mask`.
+    Son de otras clases y no son intercambiables.
+    """
+
+    def __init__(
+        self,
+        *,
+        bubble_fill_whole_interior: bool,
+        bubble_fill_edge_margin: int,
+        bubble_fill_text_dilate: int,
+        bubble_fill_flat_max_rectangularity: float,
+    ) -> None:
+        self.bubble_fill_whole_interior = bool(bubble_fill_whole_interior)
+        self.bubble_fill_edge_margin = int(bubble_fill_edge_margin)
+        self.bubble_fill_text_dilate = int(bubble_fill_text_dilate)
+        self.bubble_fill_flat_max_rectangularity = float(bubble_fill_flat_max_rectangularity)
 
     @staticmethod
-    def _clip_rect(rect: Tuple[int, int, int, int], image_shape) -> Tuple[int, int, int, int]:
+    def clip_rect(rect: Tuple[int, int, int, int], image_shape) -> Tuple[int, int, int, int]:
         x, y, w, h = (int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3]))
         height, width = image_shape[:2]
         x = max(0, min(width, x))
@@ -23,20 +46,20 @@ class CleanMaskStrategyMixin:
         return x, y, x2 - x, y2 - y
 
     @staticmethod
-    def _expand_rect(rect: Tuple[int, int, int, int], px: int, py: int, image_shape) -> Tuple[int, int, int, int]:
+    def expand_rect(rect: Tuple[int, int, int, int], px: int, py: int, image_shape) -> Tuple[int, int, int, int]:
         x, y, w, h = rect
-        return CleanMaskStrategyMixin._clip_rect((x - px, y - py, w + 2 * px, h + 2 * py), image_shape)
+        return CleanMaskStrategy.clip_rect((x - px, y - py, w + 2 * px, h + 2 * py), image_shape)
 
     @staticmethod
-    def _rect_mask(rect: Tuple[int, int, int, int], image_shape) -> np.ndarray:
+    def rect_mask(rect: Tuple[int, int, int, int], image_shape) -> np.ndarray:
         mask = np.zeros(image_shape[:2], dtype=np.uint8)
-        x, y, w, h = CleanMaskStrategyMixin._clip_rect(rect, image_shape)
+        x, y, w, h = CleanMaskStrategy.clip_rect(rect, image_shape)
         if w > 0 and h > 0:
             mask[y:y + h, x:x + w] = 255
         return mask
 
     @staticmethod
-    def _binary_mask(mask: np.ndarray, image_shape) -> np.ndarray:
+    def binary_mask(mask: np.ndarray, image_shape) -> np.ndarray:
         if mask is None or mask.size == 0:
             return np.zeros(image_shape[:2], dtype=np.uint8)
         out = np.zeros(image_shape[:2], dtype=np.uint8)
@@ -48,8 +71,8 @@ class CleanMaskStrategyMixin:
         return out
 
     @staticmethod
-    def _safe_bubble_mask(mask: np.ndarray, image_shape, margin: int) -> np.ndarray:
-        bubble = CleanMaskStrategyMixin._binary_mask(mask, image_shape)
+    def safe_bubble_mask(mask: np.ndarray, image_shape, margin: int) -> np.ndarray:
+        bubble = CleanMaskStrategy.binary_mask(mask, image_shape)
         if cv2.countNonZero(bubble) == 0:
             return bubble
         margin = max(0, int(margin))
@@ -65,7 +88,7 @@ class CleanMaskStrategyMixin:
         return bubble
 
     @staticmethod
-    def _mask_rectangularity(mask: np.ndarray) -> float:
+    def mask_rectangularity(mask: np.ndarray) -> float:
         if mask is None or cv2.countNonZero(mask) == 0:
             return 1.0
         points = cv2.findNonZero((mask > 0).astype(np.uint8))
@@ -77,7 +100,7 @@ class CleanMaskStrategyMixin:
         return float(cv2.countNonZero(mask)) / float(w * h)
 
     @staticmethod
-    def _text_ink_mask(imagen: np.ndarray, text_zone: np.ndarray, safe_mask: np.ndarray, dilate_px: int = 2) -> np.ndarray:
+    def text_ink_mask(imagen: np.ndarray, text_zone: np.ndarray, safe_mask: np.ndarray, dilate_px: int = 2) -> np.ndarray:
         if cv2.countNonZero(text_zone) == 0 or cv2.countNonZero(safe_mask) == 0:
             return np.zeros(imagen.shape[:2], dtype=np.uint8)
 
@@ -132,11 +155,11 @@ class CleanMaskStrategyMixin:
 
         return cv2.bitwise_and(filtered, safe_mask)
 
-    def _bubble_text_zone(self, region: TextRegion, image_shape) -> np.ndarray:
+    def bubble_text_zone(self, region: TextRegion, image_shape) -> np.ndarray:
         # Usa el bbox OCR/text_bbox como guía, pero nunca como máscara de pintado directa.
         # Se expande para cubrir antialias y detecciones parciales de OCR vertical japonés.
-        x, y, w, h = self._clip_rect(region.text_bbox, image_shape)
-        bx, by, bw, bh = self._clip_rect(region.bbox, image_shape)
+        x, y, w, h = self.clip_rect(region.text_bbox, image_shape)
+        bx, by, bw, bh = self.clip_rect(region.bbox, image_shape)
         if w <= 0 or h <= 0:
             return np.zeros(image_shape[:2], dtype=np.uint8)
 
@@ -147,9 +170,9 @@ class CleanMaskStrategyMixin:
 
         pad_x = max(3, min(14, int(round(max(w, h) * 0.08))))
         pad_y = max(4, min(18, int(round(max(w, h) * 0.10))))
-        expanded = self._expand_rect((x, y, w, h), pad_x, pad_y, image_shape)
-        return self._rect_mask(expanded, image_shape)
-    def _bubble_interior_text_zone(self, imagen: np.ndarray, safe_mask: np.ndarray) -> np.ndarray:
+        expanded = self.expand_rect((x, y, w, h), pad_x, pad_y, image_shape)
+        return self.rect_mask(expanded, image_shape)
+    def bubble_interior_text_zone(self, imagen: np.ndarray, safe_mask: np.ndarray) -> np.ndarray:
         """Zona donde buscar tinta cuando el localizador no encontró texto en el globo.
 
         El detector de globos y el localizador de texto son independientes: YOLO puede
@@ -173,13 +196,13 @@ class CleanMaskStrategyMixin:
             return np.zeros(imagen.shape[:2], dtype=np.uint8)
 
         # Sin dilatar: aquí sólo se mide cuánta tinta hay, no se construye la máscara final.
-        tinta = self._text_ink_mask(imagen, safe_mask, safe_mask, dilate_px=0)
+        tinta = self.text_ink_mask(imagen, safe_mask, safe_mask, dilate_px=0)
         ratio = cv2.countNonZero(tinta) / interior
         if ratio <= 0.0 or ratio > max_ratio:
             return np.zeros(imagen.shape[:2], dtype=np.uint8)
         return safe_mask
 
-    def _halo_growth_zone(self, safe_mask: np.ndarray, image_shape) -> np.ndarray:
+    def halo_growth_zone(self, safe_mask: np.ndarray, image_shape) -> np.ndarray:
         """Hasta dónde puede crecer la máscara buscando el halo del texto libre.
 
         La zona segura del texto libre es la caja del OCR, y el halo casi siempre la
@@ -188,29 +211,29 @@ class CleanMaskStrategyMixin:
         """
         margen = max(0, int(getattr(self, "text_halo_growth_px", 10))) + 2
         if margen <= 2:
-            return self._binary_mask(safe_mask, image_shape)
+            return self.binary_mask(safe_mask, image_shape)
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * margen + 1, 2 * margen + 1))
-        return cv2.dilate(self._binary_mask(safe_mask, image_shape), kernel, iterations=1)
+        return cv2.dilate(self.binary_mask(safe_mask, image_shape), kernel, iterations=1)
 
     @staticmethod
-    def _is_bubble_region(region: TextRegion) -> bool:
+    def is_bubble_region(region: TextRegion) -> bool:
         return getattr(region, "kind", "") in {"dialogue", "narration", "unknown"}
 
-    def _build_clean_mask_for_region(self, imagen: np.ndarray, region: TextRegion) -> tuple[np.ndarray, str]:
+    def build_clean_mask_for_region(self, imagen: np.ndarray, region: TextRegion) -> tuple[np.ndarray, str]:
         """Construye la máscara de limpieza separada de la máscara de región.
 
         - ``region.mask`` delimita la zona segura del globo/elemento.
         - ``region.clean_mask`` delimita la tinta original que se puede borrar.
         """
         shape = imagen.shape
-        if not self._is_bubble_region(region):
+        if not self.is_bubble_region(region):
             existing_clean = getattr(region, "clean_mask", None)
-            raw_mask = self._binary_mask(existing_clean, shape)
+            raw_mask = self.binary_mask(existing_clean, shape)
             if cv2.countNonZero(raw_mask) == 0 and region.mask is not None:
-                raw_mask = self._binary_mask(region.mask, shape)
-            text_mask = self._binary_mask(getattr(region, "text_mask", None), shape)
+                raw_mask = self.binary_mask(region.mask, shape)
+            text_mask = self.binary_mask(getattr(region, "text_mask", None), shape)
             if getattr(self, "ink_mask_refinement", True) and cv2.countNonZero(raw_mask) > 0:
-                safe = self._binary_mask(region.mask, shape) if region.mask is not None else raw_mask
+                safe = self.binary_mask(region.mask, shape) if region.mask is not None else raw_mask
                 # `initial_ink_mask` va vacío a propósito. En texto libre y SFX la máscara de
                 # partida es el polígono OCR relleno, es decir la caja del renglón entero, no
                 # los trazos. `refine` une la semilla inicial con sus candidatos, así que
@@ -225,7 +248,7 @@ class CleanMaskStrategyMixin:
                     initial_ink_mask=None,
                     # El halo del texto libre cae fuera de la caja del OCR, así que el
                     # crecimiento necesita permiso para salir de la zona segura.
-                    growth_mask=self._halo_growth_zone(safe, shape),
+                    growth_mask=self.halo_growth_zone(safe, shape),
                     options=TextMaskRefinementOptions(
                         enabled=True,
                         fine_text_detection=bool(getattr(self, "fine_text_detection", True)),
@@ -240,28 +263,28 @@ class CleanMaskStrategyMixin:
                     return refined, "region_text_ink"
             return raw_mask, "region_text_box"
 
-        safe_mask = self._safe_bubble_mask(region.mask, shape, self.bubble_fill_edge_margin)
+        safe_mask = self.safe_bubble_mask(region.mask, shape, self.bubble_fill_edge_margin)
         if cv2.countNonZero(safe_mask) == 0:
             return np.zeros(shape[:2], dtype=np.uint8), "empty_bubble_mask"
 
         # Opt-in explícito para limpiar todo el interior del globo. Sigue separado
         # como clean_mask, pero no es el comportamiento por defecto.
-        if self.bubble_fill_whole_interior and self._mask_rectangularity(safe_mask) < self.bubble_fill_flat_max_rectangularity:
+        if self.bubble_fill_whole_interior and self.mask_rectangularity(safe_mask) < self.bubble_fill_flat_max_rectangularity:
             return safe_mask, "bubble_safe_interior_opt_in"
 
-        text_zone = self._bubble_text_zone(region, shape)
-        raw_text_mask = self._binary_mask(getattr(region, "text_mask", None), shape)
+        text_zone = self.bubble_text_zone(region, shape)
+        raw_text_mask = self.binary_mask(getattr(region, "text_mask", None), shape)
         if cv2.countNonZero(raw_text_mask) > 0:
             # La máscara de polígonos OCR es una zona más precisa que el bbox unido.
             text_zone = cv2.bitwise_or(text_zone, raw_text_mask)
 
         zone_source = "text_ink_inside_bubble"
         if cv2.countNonZero(text_zone) == 0:
-            text_zone = self._bubble_interior_text_zone(imagen, safe_mask)
+            text_zone = self.bubble_interior_text_zone(imagen, safe_mask)
             if cv2.countNonZero(text_zone) > 0:
                 zone_source = "bubble_interior_ink_without_ocr"
 
-        clean_mask = self._text_ink_mask(imagen, text_zone, safe_mask, self.bubble_fill_text_dilate)
+        clean_mask = self.text_ink_mask(imagen, text_zone, safe_mask, self.bubble_fill_text_dilate)
         if getattr(self, "ink_mask_refinement", True):
             clean_mask = TextInkMaskRefiner.refine(
                 imagen,
@@ -284,7 +307,7 @@ class CleanMaskStrategyMixin:
             )
         return clean_mask, zone_source if cv2.countNonZero(clean_mask) > 0 else "empty_text_ink_inside_bubble"
 
-    def _attach_clean_masks(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> List[TextRegion]:
+    def attach_clean_masks(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> List[TextRegion]:
         """Anota cada región con clean_mask sin reemplazar la máscara del globo.
 
         La máscara del globo queda disponible para OCR/renderizado y restricciones
@@ -292,8 +315,8 @@ class CleanMaskStrategyMixin:
         """
         prepared: List[TextRegion] = []
         for region in regiones or []:
-            clean_mask, source = self._build_clean_mask_for_region(imagen, region)
-            region.clean_mask = self._binary_mask(clean_mask, imagen.shape)
+            clean_mask, source = self.build_clean_mask_for_region(imagen, region)
+            region.clean_mask = self.binary_mask(clean_mask, imagen.shape)
             metadata = getattr(region, "metadata", None)
             if isinstance(metadata, dict):
                 metadata["region_mask_role"] = "safe_region_for_ocr_and_render"
@@ -304,10 +327,10 @@ class CleanMaskStrategyMixin:
                     metadata["ink_mask_refinement"] = "connected_components_anchored_to_ocr"
                     metadata["ink_mask_refined"] = True
                 if getattr(region, "text_mask", None) is not None and getattr(region.text_mask, "size", 0):
-                    metadata["text_mask_pixels"] = int(cv2.countNonZero(self._binary_mask(region.text_mask, imagen.shape)))
+                    metadata["text_mask_pixels"] = int(cv2.countNonZero(self.binary_mask(region.text_mask, imagen.shape)))
                     metadata.setdefault("fine_text_mask_source", "ocr_polygons")
-                if self._is_bubble_region(region):
-                    metadata["bubble_mask_pixels"] = int(cv2.countNonZero(self._binary_mask(region.mask, imagen.shape)))
+                if self.is_bubble_region(region):
+                    metadata["bubble_mask_pixels"] = int(cv2.countNonZero(self.binary_mask(region.mask, imagen.shape)))
                     metadata["bubble_clean_mask_separated"] = True
             prepared.append(region)
         return prepared

@@ -10,6 +10,9 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from parallel_manga_translator.processing.bubble_fill_policy import BubbleFillPolicy, strategy_honored
+from parallel_manga_translator.processing.inpainter_runner import InpainterRunner
+from parallel_manga_translator.io.image_io import try_write_image
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
@@ -47,10 +50,6 @@ class CleanInpaintingPipelineMixin:
         ]
         return globos, libres
 
-    def _build_inpainter(self, model_name: str):
-        if model_name not in self.INPAINTER_FACTORIES:
-            raise ValueError(f"Modelo de inpainting no soportado: {model_name}")
-        return self.INPAINTER_FACTORIES[model_name]()
 
     def limpiar_manga(self, imagen: np.ndarray):
         if self._visual_inpaint_debug_enabled():
@@ -63,7 +62,7 @@ class CleanInpaintingPipelineMixin:
         regiones = self.bubble_detector.build_regions_from_bubbles_and_text(imagen, regiones_primarias, resultados)
         regiones = self._filter_regions_by_source_language(regiones)
         regiones = self._filter_regions_by_specialized_ocr_guard(imagen, regiones)
-        regiones = self._attach_clean_masks(imagen, regiones)
+        regiones = self.mask_strategy.attach_clean_masks(imagen, regiones)
         self.last_regions = regiones
 
         # Esta es la máscara de limpieza/tinta, no la máscara completa de globo.
@@ -73,53 +72,8 @@ class CleanInpaintingPipelineMixin:
         imagen_limpia = self._clean_with_regions(imagen, mascara_capa, resultados, regiones)
         return mascara_capa, imagen_limpia, regiones
 
-    def _is_color_page(self, image: np.ndarray, threshold: float = 5.0) -> bool:
-        """
-        Detecta si una página es color o escala de grises.
-
-        Si los canales RGB son prácticamente iguales en toda la imagen,
-        se considera B/N.
-        """
-        if image.ndim != 3 or image.shape[2] < 3:
-            return False
-
-        b, g, r = cv2.split(image.astype(np.float32))
-
-        rg = np.mean(np.abs(r - g))
-        rb = np.mean(np.abs(r - b))
-        gb = np.mean(np.abs(g - b))
-
-        color_score = (rg + rb + gb) / 3.0
-
-        return color_score > threshold
     
-    def _resolve_auto_inpaint_model(self, image: np.ndarray) -> str:
-        if self._is_color_page(image):
-            return "lama_mpe"
 
-        return "B/N"
-
-    def _auto_inpaint_candidate(
-        self,
-        imagen: np.ndarray,
-        background_variation: float,
-        variation_threshold: float,
-    ) -> str:
-        """Resuelve ``inpaint_model: auto`` por región, no por página.
-
-        LaMa solo donde hay que reconstruir estructura: página a color, o fondo con
-        textura —trama, degradado, arte— medido por la variación del fondo de esa región.
-        Sobre un fondo plano en blanco y negro no aporta nada y cuesta GPU, así que ahí se
-        deja el relleno plano, que luego se convierte en ``opencv-tela`` como reserva.
-
-        La resolución anterior era por página y solo miraba si era a color, de modo que
-        una página monocroma con trama nunca llegaba a LaMa.
-        """
-        if self._is_color_page(imagen):
-            return "lama_mpe"
-        if float(background_variation) >= float(variation_threshold):
-            return "lama_mpe"
-        return "solid"
 
     def _clean_with_regions(self, imagen: np.ndarray, mascara_capa: np.ndarray, resultados, regiones: Sequence[TextRegion]) -> np.ndarray:
         if not regiones:
@@ -142,49 +96,12 @@ class CleanInpaintingPipelineMixin:
         imagen_base = self._clean_free_text_regions(imagen_base, sfx_regions, debug_index_offset=len(bubble_regions))
 
         if self.inpaint_mode == "quality" and not self.bubble_fill:
-            res_impainting = self._ejecutar_inpainting(imagen, mascara_capa, resultados)
+            res_impainting = self.inpainter_runner.ejecutar_inpainting(imagen, mascara_capa, resultados)
             return self.convertir_a_imagen_limpia(res_impainting, imagen)
 
         return imagen_base
 
-    @staticmethod
-    def _background_sample_mask(local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None) -> np.ndarray:
-        """Devuelve la zona de fondo: región segura menos tinta a borrar."""
-        if local_mask is None or getattr(local_mask, "size", 0) == 0:
-            return np.zeros((0, 0), dtype=np.uint8)
 
-        base_mask = (local_mask > 0).astype(np.uint8)
-        if cv2.countNonZero(base_mask) == 0:
-            return base_mask
-
-        if exclude_mask is None or not getattr(exclude_mask, "size", 0):
-            return base_mask
-
-        exclusion = (exclude_mask > 0).astype(np.uint8)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        dilated_exclusion = cv2.dilate(exclusion, kernel, iterations=1)
-        sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not(dilated_exclusion))
-
-        if cv2.countNonZero(sample_mask) < max(16, int(cv2.countNonZero(base_mask) * 0.04)):
-            sample_mask = cv2.bitwise_and(base_mask, cv2.bitwise_not(exclusion))
-        if cv2.countNonZero(sample_mask) == 0:
-            sample_mask = base_mask
-        return sample_mask
-
-    @staticmethod
-    def _background_variation_score(region_img: np.ndarray, local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None) -> float:
-        """Mide variación del fondo seguro."""
-        if region_img.size == 0 or local_mask is None or getattr(local_mask, "size", 0) == 0:
-            return 0.0
-        sample_mask = CleanInpaintingPipelineMixin._background_sample_mask(local_mask, exclude_mask)
-        if sample_mask.size == 0 or cv2.countNonZero(sample_mask) == 0:
-            return 0.0
-        pixels = region_img[sample_mask > 0]
-        if pixels.size == 0:
-            return 0.0
-        pixels = pixels.reshape(-1, 3).astype(np.float32)
-        luma = pixels[:, 0] * 0.114 + pixels[:, 1] * 0.587 + pixels[:, 2] * 0.299
-        return float(np.std(luma))
 
     @staticmethod
     def _dominant_fill_color(region_img: np.ndarray, local_mask: np.ndarray, exclude_mask: Optional[np.ndarray] = None):
@@ -192,7 +109,7 @@ class CleanInpaintingPipelineMixin:
         if region_img.size == 0 or local_mask is None or getattr(local_mask, "size", 0) == 0:
             return (255, 255, 255)
 
-        sample_mask = CleanInpaintingPipelineMixin._background_sample_mask(local_mask, exclude_mask)
+        sample_mask = BubbleFillPolicy.background_sample_mask(local_mask, exclude_mask)
         if sample_mask.size == 0 or cv2.countNonZero(sample_mask) == 0:
             return (255, 255, 255)
 
@@ -203,31 +120,7 @@ class CleanInpaintingPipelineMixin:
         median = np.median(pixels.reshape(-1, 3), axis=0)
         return tuple(int(min(255, max(0, round(float(c))))) for c in median.tolist())
 
-    @staticmethod
-    def _apply_solid_fill(imagen: np.ndarray, mask: np.ndarray, fill_color, sigma: float = 0.9) -> np.ndarray:
-        if cv2.countNonZero(mask) == 0:
-            return imagen
-        salida = imagen.copy()
-        blur = cv2.GaussianBlur((mask > 0).astype(np.uint8) * 255, (0, 0), sigmaX=sigma, sigmaY=sigma)
-        alpha = (blur.astype(np.float32) / 255.0)[..., None]
-        color = np.array(fill_color, dtype=np.float32)
-        patch = salida.astype(np.float32)
-        salida = patch * (1.0 - alpha) + color * alpha
-        return np.clip(salida, 0, 255).astype(np.uint8)
 
-    @staticmethod
-    def _mask_bounding_rect(mask: np.ndarray, image_shape, padding: int = 0) -> Tuple[int, int, int, int]:
-        points = cv2.findNonZero((mask > 0).astype(np.uint8)) if mask is not None and getattr(mask, "size", 0) else None
-        if points is None:
-            return (0, 0, 0, 0)
-        x, y, w, h = cv2.boundingRect(points)
-        height, width = image_shape[:2]
-        padding = max(0, int(padding))
-        x1 = max(0, x - padding)
-        y1 = max(0, y - padding)
-        x2 = min(width, x + w + padding)
-        y2 = min(height, y + h + padding)
-        return (x1, y1, max(0, x2 - x1), max(0, y2 - y1))
 
     @staticmethod
     def _safe_debug_token(value: object, fallback: str = "page") -> str:
@@ -301,7 +194,7 @@ class CleanInpaintingPipelineMixin:
         padding: int = 12,
     ) -> Tuple[int, int, int, int]:
         bbox_mask = safe_mask if safe_mask is not None and cv2.countNonZero(safe_mask) > 0 else clean_mask
-        return self._mask_bounding_rect(bbox_mask, image_shape, padding=padding)
+        return InpainterRunner.mask_bounding_rect(bbox_mask, image_shape, padding=padding)
 
     def _write_visual_inpaint_debug_image(
         self,
@@ -325,7 +218,7 @@ class CleanInpaintingPipelineMixin:
 
         safe_label = self._safe_debug_token(label, "crop")
         path = page_dir / f"r{int(region_index):03d}_{safe_label}.png"
-        cv2.imwrite(str(path), crop)
+        try_write_image(path, crop, logger=logger)
         return self._visual_inpaint_debug_relpath(path)
 
     def _write_visual_inpaint_debug_manifest(self) -> Optional[str]:
@@ -411,135 +304,10 @@ class CleanInpaintingPipelineMixin:
             "visual_inpaint_debug_files": files,
         }
 
-    def _normalize_inpaint_candidate(self, model_name: str) -> str:
-        model_name = str(model_name or "").strip()
-        aliases = {
-            "": "opencv-tela",
-            "opencv": "opencv-tela",
-            "cv2": "opencv-tela",
-            "opencv_ns": "opencv-tela",
-            "opencv-tela": "opencv-tela",
-            "tela": "opencv-tela",
-            "solid_color": "solid",
-            "solid-fill": "solid",
-            "bn": "solid",
-            "b/n": "solid",
-            "B/N": "solid",
-            "lama": "lama_mpe",
-            "lama-mpe": "lama_mpe",
-            "lama_mpe": "lama_mpe",
-            "lama_large": "lama_large_512px",
-            "lama_large_512px": "lama_large_512px",
-            "aot": "aot",
-            "auto": "auto",
-        }
-        return aliases.get(model_name, aliases.get(model_name.lower(), model_name))
 
-    def _get_inpainter_instance_for_retry(self, model_name: str):
-        if model_name == self._normalize_inpaint_candidate(str(getattr(self, "inpaint_model", ""))):
-            current = getattr(self, "inpainter", None)
-            if current is not None:
-                return current
 
-        cache = getattr(self, "_visual_retry_inpainters", None)
-        if cache is None:
-            cache = {}
-            self._visual_retry_inpainters = cache
-        if model_name not in cache:
-            cache[model_name] = self._build_inpainter(model_name)
-        return cache[model_name]
 
-    def _run_configured_inpaint_on_mask(
-        self,
-        imagen: np.ndarray,
-        mask: np.ndarray,
-        context_mask: Optional[np.ndarray] = None,
-        model_name: Optional[str] = None,
-    ) -> tuple[np.ndarray, str]:
-        """Aplica un modelo de inpainting sobre una máscara pequeña."""
-        if mask is None or cv2.countNonZero(mask) == 0:
-            return imagen, "empty_mask"
 
-        selected_model = str(model_name or getattr(self, "inpaint_model", "opencv-tela") or "opencv-tela")
-        selected_model = self._normalize_inpaint_candidate(selected_model)
-        if selected_model == "auto":
-            selected_model = self._normalize_inpaint_candidate(self._resolve_auto_inpaint_model(imagen))
-        if selected_model == "solid":
-            return imagen, "solid_candidate_requires_fill_color"
-        if selected_model not in self.INPAINTER_FACTORIES:
-            return imagen, f"unsupported_inpaint_model:{selected_model}"
-
-        padding_cfg = int(getattr(self, "bubble_fill_inpaint_padding", 18) or 18)
-        bbox_mask = context_mask if context_mask is not None and cv2.countNonZero(context_mask) > 0 else mask
-        x, y, w, h = self._mask_bounding_rect(bbox_mask, imagen.shape, padding_cfg)
-        if w <= 0 or h <= 0:
-            return imagen, "empty_crop"
-
-        crop = imagen[y:y + h, x:x + w].copy()
-        local_mask = (mask[y:y + h, x:x + w] > 0).astype(np.uint8) * 255
-        if cv2.countNonZero(local_mask) == 0:
-            return imagen, "empty_local_mask"
-
-        try:
-            inpainter_inst = self._get_inpainter_instance_for_retry(selected_model)
-            if selected_model == "opencv-tela":
-                result_crop = inpainter_inst.inpaint(crop, local_mask)
-            else:
-                result_crop = self._run_async_inpaint(crop, local_mask, inpainter_instance=inpainter_inst)
-        except Exception as exc:  # pragma: no cover
-            logger.warning("No se pudo aplicar inpainting '%s' en globo; se probará otro candidato. Error: %s", selected_model, exc)
-            return imagen, f"inpaint_failed:{selected_model}"
-
-        salida = imagen.copy()
-        if result_crop.shape[:2] != crop.shape[:2]:
-            result_crop = cv2.resize(result_crop, (w, h), interpolation=cv2.INTER_LINEAR)
-        salida[y:y + h, x:x + w] = result_crop
-        return salida, f"configured_inpaint:{selected_model}"
-
-    def _visual_retry_candidates(self, initial_candidate: str) -> List[str]:
-        candidates: List[str] = []
-
-        def _add(raw_name: str) -> None:
-            name = self._normalize_inpaint_candidate(raw_name)
-            if name == "auto":
-                # auto se resuelve contra la página/crop al ejecutar; se conserva solo una vez.
-                name = "auto"
-            if name and name not in candidates:
-                candidates.append(name)
-
-        _add(initial_candidate)
-        if bool(getattr(self, "visual_inpaint_retry", True)):
-            raw_models = str(getattr(self, "visual_inpaint_retry_models", "solid,opencv-tela,lama_mpe,aot") or "")
-            for token in raw_models.replace(";", ",").split(","):
-                token = token.strip()
-                if token:
-                    _add(token)
-
-        max_retries = max(0, int(getattr(self, "visual_inpaint_max_retries", 4) or 0))
-        max_attempts = 1 + max_retries if bool(getattr(self, "visual_inpaint_retry", True)) else 1
-        return candidates[:max_attempts]
-
-    def _apply_visual_inpaint_candidate(
-        self,
-        imagen: np.ndarray,
-        clean_mask: np.ndarray,
-        safe_mask: np.ndarray,
-        fill_color,
-        candidate: str,
-        *,
-        sigma: float,
-    ) -> tuple[Optional[np.ndarray], str]:
-        candidate = self._normalize_inpaint_candidate(candidate)
-        if candidate == "auto":
-            candidate = self._normalize_inpaint_candidate(self._resolve_auto_inpaint_model(imagen))
-        if candidate == "solid":
-            return self._apply_solid_fill(imagen, clean_mask, fill_color, sigma=sigma), "solid_color"
-        if candidate not in self.INPAINTER_FACTORIES:
-            return None, f"unsupported_inpaint_model:{candidate}"
-        result, method = self._run_configured_inpaint_on_mask(imagen, clean_mask, safe_mask, model_name=candidate)
-        if not method.startswith("configured_inpaint"):
-            return None, method
-        return result, method
 
     def _apply_bubble_cleaning_with_visual_verifier(
         self,
@@ -558,10 +326,10 @@ class CleanInpaintingPipelineMixin:
             fill_strategy == "auto" and background_variation >= variation_threshold
         )
         initial_candidate = str(getattr(self, "inpaint_model", "auto") or "auto") if should_use_inpaint else "solid"
-        initial_candidate = self._normalize_inpaint_candidate(initial_candidate)
+        initial_candidate = self.fill_policy.normalize_inpaint_candidate(initial_candidate)
         if initial_candidate == "auto":
-            initial_candidate = self._normalize_inpaint_candidate(
-                self._auto_inpaint_candidate(imagen, background_variation, variation_threshold)
+            initial_candidate = self.fill_policy.normalize_inpaint_candidate(
+                self.fill_policy.auto_inpaint_candidate(imagen, background_variation, variation_threshold)
             )
         if initial_candidate == "solid" and should_use_inpaint:
             initial_candidate = "opencv-tela"
@@ -581,9 +349,9 @@ class CleanInpaintingPipelineMixin:
         best_report = None
         best_score = float("inf")
 
-        for candidate in self._visual_retry_candidates(initial_candidate):
-            candidate = self._normalize_inpaint_candidate(candidate)
-            candidate_image, method = self._apply_visual_inpaint_candidate(
+        for candidate in self.fill_policy.visual_retry_candidates(initial_candidate):
+            candidate = self.fill_policy.normalize_inpaint_candidate(candidate)
+            candidate_image, method = self.inpainter_runner.apply_visual_inpaint_candidate(
                 imagen, clean_mask, safe_mask, fill_color, candidate, sigma=sigma
             )
             if candidate_image is None:
@@ -624,7 +392,7 @@ class CleanInpaintingPipelineMixin:
             sufijo = "best_of_candidates" if bool(getattr(best_report, "passed", False)) else "best_failed_visual_score"
             return best_image, f"{best_method}:{sufijo}", best_report, attempts, best_candidate
 
-        fallback = self._apply_solid_fill(imagen, clean_mask, fill_color, sigma=sigma)
+        fallback = InpainterRunner.apply_solid_fill(imagen, clean_mask, fill_color, sigma=sigma)
         if verifier is not None:
             best_report = verifier.evaluate(imagen, fallback, clean_mask, context_mask=safe_mask)
         fallback_attempt = {
@@ -649,16 +417,16 @@ class CleanInpaintingPipelineMixin:
     def _fill_bubble_interiors(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> np.ndarray:
         salida = imagen.copy()
         for region_index, region in enumerate(regiones):
-            safe_mask = self._safe_bubble_mask(region.mask, salida.shape, self.bubble_fill_edge_margin)
+            safe_mask = self.mask_strategy.safe_bubble_mask(region.mask, salida.shape, self.bubble_fill_edge_margin)
             if cv2.countNonZero(safe_mask) == 0:
                 continue
 
             clean_mask = getattr(region, "clean_mask", None)
             if clean_mask is None or getattr(clean_mask, "size", 0) == 0:
-                clean_mask, _source = self._build_clean_mask_for_region(salida, region)
-                region.clean_mask = self._binary_mask(clean_mask, salida.shape)
+                clean_mask, _source = self.mask_strategy.build_clean_mask_for_region(salida, region)
+                region.clean_mask = self.mask_strategy.binary_mask(clean_mask, salida.shape)
             else:
-                clean_mask = self._binary_mask(clean_mask, salida.shape)
+                clean_mask = self.mask_strategy.binary_mask(clean_mask, salida.shape)
 
             if cv2.countNonZero(clean_mask) == 0:
                 continue
@@ -666,13 +434,6 @@ class CleanInpaintingPipelineMixin:
             salida = self._clean_region_with_masks(salida, region, region_index, clean_mask, safe_mask)
         return salida
 
-    def _normalized_fill_strategy(self) -> str:
-        fill_strategy = str(getattr(self, "bubble_fill_strategy", "inpaint") or "inpaint").strip().lower()
-        if fill_strategy in {"configured_inpaint", "config_inpaint", "lama"}:
-            return "inpaint"
-        if fill_strategy in {"adaptive"}:
-            return "auto"
-        return fill_strategy if fill_strategy in {"inpaint", "auto", "solid"} else "inpaint"
 
     @staticmethod
     def _free_text_context_mask(clean_mask: np.ndarray, image_shape) -> np.ndarray:
@@ -711,7 +472,7 @@ class CleanInpaintingPipelineMixin:
         """
         salida = imagen
         for offset, region in enumerate(regiones or []):
-            clean_mask = self._binary_mask(getattr(region, "clean_mask", None), salida.shape)
+            clean_mask = self.mask_strategy.binary_mask(getattr(region, "clean_mask", None), salida.shape)
             if cv2.countNonZero(clean_mask) == 0:
                 continue
             context_mask = self._free_text_context_mask(clean_mask, salida.shape)
@@ -736,9 +497,9 @@ class CleanInpaintingPipelineMixin:
         ``clean_mask``.
         """
         fill_color = self._dominant_fill_color(salida, safe_mask, clean_mask)
-        background_variation = self._background_variation_score(salida, safe_mask, clean_mask)
+        background_variation = self.fill_policy.background_variation_score(salida, safe_mask, clean_mask)
         variation_threshold = float(getattr(self, "bubble_fill_background_std_threshold", 18.0) or 18.0)
-        fill_strategy = self._normalized_fill_strategy()
+        fill_strategy = self.fill_policy.normalized_fill_strategy()
 
         metadata = getattr(region, "metadata", None)
         if isinstance(metadata, dict):
@@ -768,6 +529,11 @@ class CleanInpaintingPipelineMixin:
             salida = salida_verificada
             if isinstance(metadata, dict):
                 metadata["bubble_fill_method"] = method
+                # El verificador puede sustituir el candidato que pidió la estrategia.
+                # Se deja constancia por región para que sea auditable en el JSON.
+                metadata["bubble_fill_strategy_honored"] = strategy_honored(
+                    requested=fill_strategy, method=method
+                )
                 metadata["visual_inpaint_candidate"] = chosen_candidate
                 metadata["visual_inpaint_retries"] = max(0, len([a for a in attempts if not a.get("skipped")]) - 1)
                 if report is not None:
@@ -799,79 +565,28 @@ class CleanInpaintingPipelineMixin:
             fill_strategy == "auto" and background_variation >= variation_threshold
         )
         if should_use_configured_inpaint:
-            salida_inpaint, method = self._run_configured_inpaint_on_mask(salida, clean_mask, safe_mask)
+            salida_inpaint, method = self.inpainter_runner.run_configured_inpaint_on_mask(salida, clean_mask, safe_mask)
             if method.startswith("configured_inpaint"):
                 salida = salida_inpaint
                 if isinstance(metadata, dict):
                     metadata["bubble_fill_method"] = "configured_inpaint"
+                    metadata["bubble_fill_strategy_honored"] = strategy_honored(
+                        requested=fill_strategy, method="configured_inpaint"
+                    )
                     metadata["bubble_fill_inpaint_model"] = str(getattr(self, "inpaint_model", ""))
                 return salida
             if isinstance(metadata, dict):
                 metadata["bubble_fill_inpaint_fallback"] = method
 
-        salida = self._apply_solid_fill(salida, clean_mask, fill_color, sigma=sigma)
+        salida = InpainterRunner.apply_solid_fill(salida, clean_mask, fill_color, sigma=sigma)
         if isinstance(metadata, dict):
             metadata["bubble_fill_method"] = "solid_color"
+            metadata["bubble_fill_strategy_honored"] = strategy_honored(
+                requested=fill_strategy, method="solid_color"
+            )
         return salida
 
-    def _ejecutar_inpainting(self, imagen, mascara_capa, resultados):
-        model_name = getattr(self, "inpaint_model", "auto")
-        if model_name == "auto":
-            model_name = self._resolve_auto_inpaint_model(imagen)
-            inpainter = self._build_inpainter(model_name)
-        else:
-            inpainter = getattr(self, "inpainter", None)
-            if inpainter is None:
-                inpainter = self._build_inpainter(model_name)
 
-        if model_name == "B/N":
-            bn_inpainter = self.INPAINTER_FACTORIES["B/N"]()
-            return bn_inpainter.inpaint(imagen, resultados)
-
-        if model_name == "opencv-tela":
-            tela_inpainter = self.INPAINTER_FACTORIES["opencv-tela"]()
-            return tela_inpainter.inpaint(imagen, mascara_capa)
-
-        return self._run_async_inpaint(imagen, mascara_capa, inpainter_instance=inpainter)
-
-    def _run_async_inpaint(self, imagen: np.ndarray, mascara_capa: np.ndarray, inpainter_instance=None):
-        if inpainter_instance is None:
-            model_name = getattr(self, "inpaint_model", "auto")
-            if model_name == "auto":
-                model_name = self._resolve_auto_inpaint_model(imagen)
-            inpainter_instance = getattr(self, "inpainter", None)
-            if inpainter_instance is None:
-                inpainter_instance = self._build_inpainter(model_name)
-
-        async def _do_inpaint():
-            # Los modelos neurales comparten GPU con YOLO/OCR. La compuerta FIFO
-            # serializa solo este tramo y deja libre el resto del procesamiento CPU.
-            neural_inpainter = hasattr(inpainter_instance, "_load")
-            with gpu_slot("inpainting.inference", enabled=neural_inpainter):
-                if hasattr(inpainter_instance, "_load"):
-                    await inpainter_instance._load()
-
-                if hasattr(inpainter_instance, "_inpaint"):
-                    result = inpainter_instance._inpaint(imagen, mascara_capa)
-                    if asyncio.iscoroutine(result):
-                        return await result
-                    return result
-                if hasattr(inpainter_instance, "inpaint"):
-                    result = inpainter_instance.inpaint(imagen, mascara_capa)
-                    if asyncio.iscoroutine(result):
-                        return await result
-                    return result
-                raise AttributeError(
-                    f"El modelo {type(inpainter_instance).__name__} no tiene métodos de inpainting válidos"
-                )
-
-        loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(loop)
-            return loop.run_until_complete(_do_inpaint())
-        finally:
-            loop.close()
-            asyncio.set_event_loop(None)
 
     def convertir_a_imagen_limpia(self, res_impainting: np.ndarray, imagen: np.ndarray) -> np.ndarray:
         pil_image_camuflada_limpieza = Image.fromarray(cv2.cvtColor(res_impainting, cv2.COLOR_BGR2RGB))

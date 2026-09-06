@@ -21,6 +21,83 @@ from parallel_manga_translator.language.onomatopoeia_manager import Onomatopoeia
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.processing.translate_manga import TranslateManga
+from parallel_manga_translator.config.app_config import OnomatopoeiaConfig, QualityConfig
+
+
+class _DetectorDeGlobosFalso:
+    """Cumple `RegionDetectorPort` sin cargar YOLO."""
+
+    def detect_regions(self, image, detections):
+        return []
+
+    def set_debug_page_context(self, page_index, *, source_filename=None, output_filename=None):
+        pass
+
+    def clear_debug_page_context(self):
+        pass
+
+
+class _DetectorDeTextoFalso:
+    """Cumple `TextDetectionPort` sin cargar EasyOCR ni Paddle."""
+
+    @property
+    def engine_id(self):
+        return "falso"
+
+    def detect_text_boxes(self, image):
+        return []
+
+
+#: Nombres que estos tests venían fijando a mano y el campo de configuración real.
+#: El verificador visual **anula** la estrategia y el modelo de inpaint configurados,
+#: así que hay que elegir qué capa se está midiendo. Medido sobre los escenarios de
+#: `CleanMaskStrategySolaTests`: con `bubble_fill_strategy: solid` producción acaba en
+#: `configured_inpaint:aot`, y con `inpaint` sobre fondo uniforme acaba en `solid_color`.
+SIN_VERIFICADOR = {"visual_inpaint_verifier": False, "visual_inpaint_retry": False}
+COMO_PRODUCCION = {"visual_inpaint_verifier": True, "visual_inpaint_retry": True}
+
+_ALIAS_QUALITY = {"visual_inpaint_verifier_enabled": "visual_inpaint_verifier"}
+_ALIAS_ONOMATOPEYA = {
+    "onomatopoeia_mode": "mode",
+    "translate_onomatopoeia": "translate",
+    "clean_onomatopoeia": "clean",
+}
+
+
+def _cleaner_de_prueba(*, modelo_inpaint="opencv-tela", idioma_entrada="Japonés",
+                       verificador_visual=SIN_VERIFICADOR, **ajustes):
+    """Construye un `CleanManga` **real** sin cargar modelos.
+
+    Antes estos tests hacían `object.__new__(CleanManga)` y rellenaban los atributos a
+    mano, porque el constructor cargaba YOLO, el detector de texto y un inpainter. Eso
+    tenía dos costes: ninguno de ellos probaba lo que hace el constructor, y cualquier
+    cambio de composición en `CleanManga` los rompía en bloque aunque el pipeline real
+    siguiera intacto. Ahora las tres etapas pesadas se inyectan.
+    """
+    campos_q = dict(verificador_visual)
+    campos_o, sobrantes = {}, []
+    for clave, valor in ajustes.items():
+        if clave in _ALIAS_ONOMATOPEYA:
+            campos_o[_ALIAS_ONOMATOPEYA[clave]] = valor
+        elif clave in OnomatopoeiaConfig.__dataclass_fields__:
+            campos_o[clave] = valor
+        elif clave in _ALIAS_QUALITY:
+            campos_q[_ALIAS_QUALITY[clave]] = valor
+        elif clave in QualityConfig.__dataclass_fields__:
+            campos_q[clave] = valor
+        else:
+            sobrantes.append(clave)
+    if sobrantes:
+        raise TypeError(f"Ajustes que no son configuración: {sorted(sobrantes)}")
+
+    return CleanManga(
+        modelo_inpaint,
+        idioma_entrada=idioma_entrada,
+        quality_config=QualityConfig(**campos_q),
+        onomatopoeia_config=OnomatopoeiaConfig(**campos_o),
+        bubble_detector=_DetectorDeGlobosFalso(),
+        text_detector=_DetectorDeTextoFalso(),
+    )
 
 
 class StrictLLMJsonTests(unittest.TestCase):
@@ -269,9 +346,7 @@ class SourceLanguageFilterTests(unittest.TestCase):
         self.assertEqual(region.metadata["source_language_filter"], "pista_global_en_idioma_distinto")
 
     def test_cleaner_filters_non_source_text_region_before_cleaning(self):
-        cleaner = object.__new__(CleanManga)
-        cleaner.idioma_entrada = "Japonés"
-        cleaner.source_language_filter = SourceLanguageFilter("Japonés")
+        cleaner = _cleaner_de_prueba()
         region = OnomatopoeiaKeepModeTests._region("free_text")
         region.source_text_hint = "EAST"
 
@@ -299,9 +374,7 @@ class SourceLanguageFilterTests(unittest.TestCase):
         self.assertTrue(filtro.should_process_region(region, allow_unknown=True))
 
     def test_cleaner_keeps_dialogue_onomatopoeia_in_processing_pipeline(self):
-        cleaner = object.__new__(CleanManga)
-        cleaner.idioma_entrada = "Japonés"
-        cleaner.source_language_filter = SourceLanguageFilter("Japonés")
+        cleaner = _cleaner_de_prueba()
         region = OnomatopoeiaKeepModeTests._region("dialogue")
         region.source_text_hint = "は"
         region.metadata.update({"free_text_onomatopoeia": True, "onomatopoeia": True})
@@ -313,8 +386,7 @@ class SourceLanguageFilterTests(unittest.TestCase):
         self.assertNotIn("processing_skipped", region.metadata)
 
     def test_cleaner_skips_region_when_specialized_ocr_finds_no_text(self):
-        cleaner = object.__new__(CleanManga)
-        cleaner.idioma_entrada = "Japonés"
+        cleaner = _cleaner_de_prueba()
         cleaner._ocr_text_for_processing_guard = lambda _imagen, _region: ""
         region = OnomatopoeiaKeepModeTests._region("dialogue")
         imagen = np.full((80, 80, 3), 255, dtype=np.uint8)
@@ -421,12 +493,9 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
         return TextRegion(bbox=(10, 10, 30, 30), text_bbox=(10, 10, 30, 30), mask=mask, kind=kind, confidence=0.9)
 
     def test_cleaner_does_not_clean_sfx_when_keep_mode_is_requested(self):
-        cleaner = object.__new__(CleanManga)
-        cleaner.onomatopoeia_mode = "keep"
-        cleaner.translate_onomatopoeia = False
-        cleaner.clean_onomatopoeia = False
-        cleaner.idioma_entrada = "Japonés"
-        cleaner.onomatopoeia_manager = OnomatopoeiaManager()
+        cleaner = _cleaner_de_prueba(
+            onomatopoeia_mode="keep", translate_onomatopoeia=False, clean_onomatopoeia=False
+        )
 
         self.assertFalse(cleaner._should_clean_non_bubble_region(self._region("sfx")))
         self.assertFalse(cleaner._should_clean_non_bubble_region(self._region("onomatopoeia")))
@@ -442,12 +511,9 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
         self.assertEqual(translator._traducir_onomatopeyas_con_diccionario(["texto raro"]), ["texto raro"])
 
     def test_cleaner_uses_free_text_onomatopoeia_metadata(self):
-        cleaner = object.__new__(CleanManga)
-        cleaner.onomatopoeia_mode = "translate"
-        cleaner.translate_onomatopoeia = True
-        cleaner.clean_onomatopoeia = False
-        cleaner.idioma_entrada = "Japonés"
-        cleaner.onomatopoeia_manager = OnomatopoeiaManager()
+        cleaner = _cleaner_de_prueba(
+            onomatopoeia_mode="translate", translate_onomatopoeia=True, clean_onomatopoeia=False
+        )
         region = self._region("free_text")
         region.metadata["free_text_onomatopoeia"] = True
 
@@ -455,12 +521,9 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
 
 
     def test_cleaner_rechecks_free_text_with_region_ocr_before_erasing(self):
-        cleaner = object.__new__(CleanManga)
-        cleaner.onomatopoeia_mode = "keep"
-        cleaner.translate_onomatopoeia = False
-        cleaner.clean_onomatopoeia = False
-        cleaner.idioma_entrada = "Japonés"
-        cleaner.onomatopoeia_manager = OnomatopoeiaManager()
+        cleaner = _cleaner_de_prueba(
+            onomatopoeia_mode="keep", translate_onomatopoeia=False, clean_onomatopoeia=False
+        )
         region = self._region("free_text")
         region.source_text_hint = "A 、 附A"
         cleaner._ocr_text_for_clean_guard = lambda _imagen, _region: "ハッハッ"
@@ -562,17 +625,16 @@ if __name__ == "__main__":
 
 class CleanMaskSeparationTests(unittest.TestCase):
     def _cleaner(self):
-        cleaner = object.__new__(CleanManga)
-        cleaner.bubble_fill_edge_margin = 3
-        cleaner.bubble_fill_text_dilate = 1
-        cleaner.bubble_fill_feather = 1.0
-        cleaner.bubble_fill_whole_interior = False
-        cleaner.bubble_fill_flat_max_rectangularity = 0.86
-        cleaner.bubble_fill_strategy = "solid"
-        cleaner.bubble_fill_background_std_threshold = 18.0
-        cleaner.bubble_fill_inpaint_padding = 8
-        cleaner.inpaint_model = "opencv-tela"
-        return cleaner
+        return _cleaner_de_prueba(
+            bubble_fill_edge_margin=3,
+            bubble_fill_text_dilate=1,
+            bubble_fill_feather=1.0,
+            bubble_fill_whole_interior=False,
+            bubble_fill_flat_max_rectangularity=0.86,
+            bubble_fill_strategy="solid",
+            bubble_fill_background_std_threshold=18.0,
+            bubble_fill_inpaint_padding=8,
+        )
 
     def test_bubble_region_mask_and_ink_clean_mask_are_separate(self):
         image = np.full((120, 120, 3), 255, dtype=np.uint8)
@@ -589,7 +651,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         )
 
         cleaner = self._cleaner()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
 
         bubble_pixels = int(np.count_nonzero(prepared.mask))
         clean_pixels = int(np.count_nonzero(prepared.clean_mask))
@@ -621,7 +683,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         )
 
         cleaner = self._cleaner()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
 
         self.assertEqual(int(np.count_nonzero(prepared.clean_mask)), 0)
         self.assertEqual(int(np.count_nonzero(BubbleDetector.compose_clean_mask([prepared], image.shape))), 0)
@@ -648,7 +710,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         )
 
         cleaner = self._cleaner()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
 
         clean_pixels = int(np.count_nonzero(prepared.clean_mask))
         self.assertGreater(clean_pixels, 300)
@@ -675,7 +737,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         )
 
         cleaner = self._cleaner()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
 
         self.assertEqual(int(np.count_nonzero(prepared.clean_mask)), 0)
         self.assertEqual(prepared.metadata["clean_mask_source"], "empty_text_ink_inside_bubble")
@@ -696,7 +758,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         )
 
         cleaner = self._cleaner()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
 
         clean_pixels = int(np.count_nonzero(prepared.clean_mask))
         self.assertGreater(clean_pixels, 0)
@@ -719,7 +781,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         )
 
         cleaner = self._cleaner()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
         filled = cleaner._fill_bubble_interiors(image, [prepared])
 
         self.assertLess(float(np.mean(filled[45:52, 42:60])), 55.0)
@@ -742,7 +804,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         )
 
         cleaner = self._cleaner()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
         filled = cleaner._fill_bubble_interiors(image, [prepared])
 
         self.assertGreater(float(np.mean(filled[45:52, 42:60])), 215.0)
@@ -776,7 +838,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         cleaner.bubble_fill_strategy = "inpaint"
         cleaner.bubble_fill_background_std_threshold = 999.0
         cleaner.inpainter = DummyConfiguredInpainter()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
         filled = cleaner._fill_bubble_interiors(image, [prepared])
 
         self.assertEqual(cleaner.inpainter.calls, 1)
@@ -817,7 +879,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         cleaner.bubble_fill_strategy = "auto"
         cleaner.bubble_fill_background_std_threshold = 4.0
         cleaner.inpainter = DummyConfiguredInpainter()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
         filled = cleaner._fill_bubble_interiors(image, [prepared])
 
         self.assertEqual(cleaner.inpainter.calls, 1)
@@ -826,15 +888,9 @@ class CleanMaskSeparationTests(unittest.TestCase):
         self.assertGreater(prepared.metadata["background_variation_score"], 4.0)
         self.assertAlmostEqual(float(np.mean(filled[50:58, 48:65])), 123.0, delta=6.0)
 
-    def test_bubble_fill_strategy_solid_forces_solid_fill(self):
-        class DummyConfiguredInpainter:
-            def __init__(self):
-                self.calls = 0
-
-            def inpaint(self, img, mask):
-                self.calls += 1
-                return img.copy()
-
+    @staticmethod
+    def _globo_sobre_fondo_con_trama():
+        """Globo con textura de fondo: el relleno sólido no la reproduce."""
         image = np.full((120, 120, 3), 255, dtype=np.uint8)
         for y in range(18, 102):
             for x in range(18, 102):
@@ -851,17 +907,56 @@ class CleanMaskSeparationTests(unittest.TestCase):
             detections_count=1,
             metadata={},
         )
+        return image, region
 
+    class _InpainterEspia:
+        def __init__(self):
+            self.calls = 0
+
+        def inpaint(self, img, mask):
+            self.calls += 1
+            return img.copy()
+
+    def test_la_estrategia_solid_gana_cuando_no_hay_verificador(self):
+        """Capa de estrategia aislada: `solid` elige el primer candidato y no inpainta."""
+        image, region = self._globo_sobre_fondo_con_trama()
         cleaner = self._cleaner()
         cleaner.bubble_fill_strategy = "solid"
         cleaner.bubble_fill_background_std_threshold = 4.0
-        cleaner.inpainter = DummyConfiguredInpainter()
-        [prepared] = cleaner._attach_clean_masks(image, [region])
+        cleaner.inpainter = self._InpainterEspia()
+
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
         cleaner._fill_bubble_interiors(image, [prepared])
 
         self.assertEqual(cleaner.inpainter.calls, 0)
         self.assertEqual(prepared.metadata["bubble_fill_method"], "solid_color")
         self.assertGreater(prepared.metadata["background_variation_score"], 4.0)
+
+    def test_en_produccion_el_verificador_visual_anula_la_estrategia_solid(self):
+        """Con los valores por defecto reales, `solid` NO se respeta.
+
+        El verificador rechaza el relleno plano sobre una trama y el reintento lo
+        sustituye por un inpaint. Es decir, `quality.bubble_fill_strategy` elige el
+        primer candidato, no el resultado: la última palabra la tiene el verificador.
+        Este test existe porque el anterior medía un `CleanManga` con el verificador
+        apagado, que es una configuración que nadie ejecuta.
+        """
+        image, region = self._globo_sobre_fondo_con_trama()
+        cleaner = _cleaner_de_prueba(
+            verificador_visual=COMO_PRODUCCION,
+            bubble_fill_strategy="solid",
+            bubble_fill_background_std_threshold=4.0,
+        )
+        cleaner.inpainter = self._InpainterEspia()
+
+        [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
+        cleaner._fill_bubble_interiors(image, [prepared])
+
+        self.assertEqual(cleaner.inpainter.calls, 1)
+        self.assertTrue(
+            prepared.metadata["bubble_fill_method"].startswith("configured_inpaint:"),
+            f'se esperaba un inpaint de reintento, no {prepared.metadata["bubble_fill_method"]!r}',
+        )
 
 class MaturePrecisionAdaptationsTests(unittest.TestCase):
     def test_fine_text_mask_uses_ocr_polygon_not_full_bbox(self):
@@ -944,19 +1039,16 @@ class FreeTextRegionCleaningTests(unittest.TestCase):
 
     @staticmethod
     def _cleaner():
-        cleaner = object.__new__(CleanManga)
-        cleaner.bubble_fill_feather = 1.0
-        cleaner.bubble_fill_background_std_threshold = 18.0
-        cleaner.bubble_fill_strategy = "solid"
-        cleaner.bubble_fill_inpaint_padding = 8
-        cleaner.inpaint_model = "opencv-tela"
-        cleaner.visual_inpaint_verifier_enabled = False
-        cleaner.idioma_entrada = "Japonés"
-        cleaner.onomatopoeia_mode = "translate"
-        cleaner.translate_onomatopoeia = True
-        cleaner.clean_onomatopoeia = True
-        cleaner.onomatopoeia_manager = OnomatopoeiaManager()
-        return cleaner
+        return _cleaner_de_prueba(
+            bubble_fill_feather=1.0,
+            bubble_fill_background_std_threshold=18.0,
+            bubble_fill_strategy="solid",
+            bubble_fill_inpaint_padding=8,
+            visual_inpaint_verifier_enabled=False,
+            onomatopoeia_mode="translate",
+            translate_onomatopoeia=True,
+            clean_onomatopoeia=True,
+        )
 
     @staticmethod
     def _free_text_region(image_shape, rect):
@@ -1069,18 +1161,18 @@ class FreeTextInkMaskTests(unittest.TestCase):
 
     @staticmethod
     def _cleaner():
-        cleaner = object.__new__(CleanManga)
-        cleaner.bubble_fill_edge_margin = 3
-        cleaner.bubble_fill_text_dilate = 2
-        cleaner.bubble_fill_whole_interior = False
-        cleaner.bubble_fill_flat_max_rectangularity = 0.86
-        cleaner.fine_text_detection = True
-        cleaner.fine_text_mask_dilate = 2
-        cleaner.ink_mask_refinement = True
-        cleaner.ink_mask_min_component_area = 3
-        cleaner.ink_mask_component_anchor_overlap = 0.03
-        cleaner.ink_mask_component_anchor_max_gap_ratio = 0.45
-        return cleaner
+        return _cleaner_de_prueba(
+            bubble_fill_edge_margin=3,
+            bubble_fill_text_dilate=2,
+            bubble_fill_whole_interior=False,
+            bubble_fill_flat_max_rectangularity=0.86,
+            fine_text_detection=True,
+            fine_text_mask_dilate=2,
+            ink_mask_refinement=True,
+            ink_mask_min_component_area=3,
+            ink_mask_component_anchor_overlap=0.03,
+            ink_mask_component_anchor_max_gap_ratio=0.45,
+        )
 
     def test_la_mascara_de_borrado_no_es_la_caja_ocr(self):
         """Sembrar el refinamiento con la propia caja lo anulaba: devolvía el bloque entero.
@@ -1088,7 +1180,7 @@ class FreeTextInkMaskTests(unittest.TestCase):
         Con un bloque sólido, cualquier inpainter barre el fondo en vez de borrar el texto.
         """
         image = self._pagina_con_rotulo_claro()
-        [prepared] = self._cleaner()._attach_clean_masks(image, [self._region_de_caja_ocr()])
+        [prepared] = self._cleaner().mask_strategy.attach_clean_masks(image, [self._region_de_caja_ocr()])
 
         pixeles_caja = self.CAJA[2] * self.CAJA[3]
         pixeles_tinta = int(np.count_nonzero(prepared.clean_mask))
@@ -1106,7 +1198,7 @@ class FreeTextInkMaskTests(unittest.TestCase):
         return image
 
     def _cobertura_de_tinta(self, image, tinta_es_clara: bool) -> float:
-        [prepared] = self._cleaner()._attach_clean_masks(image, [self._region_de_caja_ocr()])
+        [prepared] = self._cleaner().mask_strategy.attach_clean_masks(image, [self._region_de_caja_ocr()])
         gris = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         trazos = (gris >= 235) if tinta_es_clara else (gris <= 60)
         x, y, w, h = self.CAJA
@@ -1146,7 +1238,7 @@ class FreeTextInkMaskTests(unittest.TestCase):
         gris = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         self.assertLess(abs(int(np.median(gris)) - 150), 20, "el test debe ser ambiguo en luma")
 
-        [prepared] = self._cleaner()._attach_clean_masks(image, [self._region_de_caja_ocr()])
+        [prepared] = self._cleaner().mask_strategy.attach_clean_masks(image, [self._region_de_caja_ocr()])
         trazos = np.all(image == np.array(tinta, dtype=np.uint8), axis=-1)
         cubiertos = int(np.count_nonzero(trazos & (prepared.clean_mask > 0)))
         self.assertGreater(cubiertos / max(1, int(np.count_nonzero(trazos))), 0.9)
@@ -1154,7 +1246,7 @@ class FreeTextInkMaskTests(unittest.TestCase):
     def test_la_mascara_cubre_los_trazos_claros_sobre_gris(self):
         """La polaridad la decide el contraste: sobre gris medio la tinta puede ser clara."""
         image = self._pagina_con_rotulo_claro()
-        [prepared] = self._cleaner()._attach_clean_masks(image, [self._region_de_caja_ocr()])
+        [prepared] = self._cleaner().mask_strategy.attach_clean_masks(image, [self._region_de_caja_ocr()])
 
         gris = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         trazos = gris >= 235
@@ -1169,24 +1261,24 @@ class AutoInpaintCandidateTests(unittest.TestCase):
 
     @staticmethod
     def _cleaner():
-        return object.__new__(CleanManga)
+        return _cleaner_de_prueba()
 
     def test_pagina_a_color_usa_lama(self):
         color = np.zeros((80, 80, 3), dtype=np.uint8)
         color[:, :, 2] = 220  # canal rojo dominante: página a color
-        elegido = self._cleaner()._auto_inpaint_candidate(color, 0.0, self.UMBRAL)
+        elegido = self._cleaner().fill_policy.auto_inpaint_candidate(color, 0.0, self.UMBRAL)
         self.assertEqual(elegido, "lama_mpe")
 
     def test_fondo_monocromo_con_trama_usa_lama(self):
         """Una página B/N con trama es fondo complejo aunque no tenga color."""
         gris = np.full((80, 80, 3), 200, dtype=np.uint8)
-        elegido = self._cleaner()._auto_inpaint_candidate(gris, self.UMBRAL + 5, self.UMBRAL)
+        elegido = self._cleaner().fill_policy.auto_inpaint_candidate(gris, self.UMBRAL + 5, self.UMBRAL)
         self.assertEqual(elegido, "lama_mpe")
 
     def test_fondo_monocromo_plano_no_usa_lama(self):
         """Interior de globo blanco: LaMa no aporta y cuesta GPU."""
         gris = np.full((80, 80, 3), 245, dtype=np.uint8)
-        elegido = self._cleaner()._auto_inpaint_candidate(gris, 2.0, self.UMBRAL)
+        elegido = self._cleaner().fill_policy.auto_inpaint_candidate(gris, 2.0, self.UMBRAL)
         self.assertEqual(elegido, "solid")
 
 
@@ -1391,20 +1483,21 @@ class BestOfInpaintCandidateTests(unittest.TestCase):
                     to_dict=lambda: {},
                 )
 
-        cleaner = object.__new__(CleanManga)
-        cleaner.inpaint_model = "opencv-tela"
-        cleaner.visual_inpaint_retry = True
-        cleaner.visual_inpaint_retry_models = "solid,opencv-tela,lama_mpe,aot"
-        cleaner.visual_inpaint_max_retries = 4
-        cleaner.visual_inpaint_debug = False
-        cleaner.visual_inpaint_best_of_textured = best_of
+        cleaner = _cleaner_de_prueba(
+            visual_inpaint_retry=True,
+            visual_inpaint_retry_models="solid,opencv-tela,lama_mpe,aot",
+            visual_inpaint_max_retries=4,
+            visual_inpaint_debug=False,
+            visual_inpaint_best_of_textured=best_of,
+        )
+        # Dobles de prueba de verdad: no son configuración.
         cleaner.visual_inpaint_verifier = VerificadorFalso()
 
         def aplicar(imagen, clean_mask, safe_mask, fill_color, candidate, *, sigma):
             aplicados.append(candidate)
             return np.full((8, 8, 3), 10, dtype=np.uint8), f"configured_inpaint:{candidate}"
 
-        cleaner._apply_visual_inpaint_candidate = aplicar
+        cleaner.inpainter_runner.apply_visual_inpaint_candidate = aplicar
         return cleaner
 
     def _ejecutar(self, best_of: bool, variacion: float):

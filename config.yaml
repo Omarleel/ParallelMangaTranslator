@@ -56,10 +56,15 @@ quality:
   # Opciones avanzadas para suavizado y relleno de máscara.
   bubble_fill_feather: 1.0
   bubble_fill_flat_max_rectangularity: 0.82
-  # Cómo borrar la tinta dentro del globo usando clean_mask:
-  # - inpaint: usa siempre translation.inpaint_model, por ejemplo lama_mpe, sobre la tinta.
-  # - auto: usa relleno sólido en fondos uniformes e inpaint configurado en fondos complejos.
-  # - solid: usa siempre color sólido local.
+  # Como borrar la tinta dentro del globo usando clean_mask. Elige el PRIMER candidato,
+  # no el resultado final: con visual_inpaint_verifier activo (el valor por defecto) el
+  # verificador puede rechazarlo y visual_inpaint_retry sustituirlo por otro, incluso
+  # por un modelo distinto del configurado. Medido: con 'solid' sobre una trama acaba
+  # en aot, y con 'inpaint' sobre fondo uniforme acaba en relleno solido.
+  # - inpaint: parte de translation.inpaint_model, por ejemplo lama_mpe, sobre la tinta.
+  # - auto: parte de relleno solido en fondos uniformes y de inpaint en fondos complejos.
+  # - solid: parte de color solido local.
+  # Para que la estrategia sea la ultima palabra, pon visual_inpaint_retry: false.
   bubble_fill_strategy: inpaint
   # Solo se usa con bubble_fill_strategy: auto.
   # Sube si inpainta demasiados globos blancos; baja si quedan manchas planas en tramas/degradados.
