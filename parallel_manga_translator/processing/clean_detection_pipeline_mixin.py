@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Sequence, Tuple
 
 import cv2
 import numpy as np
 
-from parallel_manga_translator.detection.bubble_detector import BubbleDetector
+from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 from parallel_manga_translator.infrastructure.logging_config import get_logger
-from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
-from parallel_manga_translator.models.processing_models import TextRegion
-from parallel_manga_translator.ocr.ocr_manager import OcrManager
 
 logger = get_logger(__name__)
 Detection = Tuple[Sequence[Sequence[float]], str, float]
@@ -26,7 +23,7 @@ class CleanDetectionPipelineMixin:
 
     @staticmethod
     def _area(rect: Tuple[int, int, int, int]) -> int:
-        return max(0, rect[2]) * max(0, rect[3])
+        return BoxGeometry.area(rect)
 
     @staticmethod
     def _iou(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:

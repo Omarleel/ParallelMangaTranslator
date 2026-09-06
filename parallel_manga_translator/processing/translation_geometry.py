@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-import os
-from collections import deque
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import List, Sequence, Tuple
 
 import cv2
 import numpy as np
-import torch
 
-from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
-from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
-from parallel_manga_translator.models.processing_models import TextRegion
-from parallel_manga_translator.translation.text_normalization import OcrTextNormalizer
+from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
 Box = Tuple[int, int, int, int]
@@ -41,7 +35,7 @@ class TranslationGeometry:
 
     @staticmethod
     def box_area(box: Box) -> int:
-        return max(0, box[2]) * max(0, box[3])
+        return BoxGeometry.area(box)
 
     @staticmethod
     def union(a: Box, b: Box) -> Box:
@@ -164,9 +158,4 @@ class TranslationGeometry:
 
     @staticmethod
     def clip_box_to_image(box: Box, width_img: int, height_img: int) -> Box:
-        x, y, w, h = box
-        x = int(max(0, min(width_img - 1, x)))
-        y = int(max(0, min(height_img - 1, y)))
-        x2 = int(max(x + 1, min(width_img, x + max(1, w))))
-        y2 = int(max(y + 1, min(height_img, y + max(1, h))))
-        return x, y, x2 - x, y2 - y
+        return BoxGeometry.clip_box_to_image(box, width_img, height_img)

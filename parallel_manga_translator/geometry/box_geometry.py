@@ -89,6 +89,25 @@ class BoxGeometry:
         return x1, y1, max(1, x2 - x1), max(1, y2 - y1)
 
     @staticmethod
+    def clip_box_to_image(box: Box, width_img: int, height_img: int) -> Box:
+        """Recorta conservando el ancho util cuando la caja empieza fuera de la imagen.
+
+        No es lo mismo que `clip`, aunque lo parezca: `clip` recorta el extremo desde la
+        coordenada ya ajustada, asi que una caja que empieza en negativo se le colapsa a
+        1 px. Aqui se ajusta primero el origen y se mide el ancho desde ahi. Las dos
+        semanticas estaban duplicadas en detection/ y processing/; se conservan ambas
+        porque tienen usos distintos, pero cada una vive en un solo sitio.
+        """
+        x, y, w, h = box
+        if width_img <= 0 or height_img <= 0:
+            return 0, 0, 1, 1
+        x = int(max(0, min(width_img - 1, x)))
+        y = int(max(0, min(height_img - 1, y)))
+        x2 = int(max(x + 1, min(width_img, x + max(1, w))))
+        y2 = int(max(y + 1, min(height_img, y + max(1, h))))
+        return x, y, x2 - x, y2 - y
+
+    @staticmethod
     def clip(box: Box, width: int, height: int) -> Box:
         x, y, w, h = box
         x1 = max(0, min(width - 1, x))

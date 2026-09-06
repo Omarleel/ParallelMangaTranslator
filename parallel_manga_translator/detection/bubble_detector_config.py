@@ -6,6 +6,11 @@ from pathlib import Path
 from parallel_manga_translator.config.app_config import ProcessingConfig, QualityConfig
 
 
+#: Version del volcado de depuracion de division de globos. Estaba copiada en 7
+#: modulos con el mismo valor y solo se usaba en 2.
+BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
+
+
 @dataclass(frozen=True)
 class BubbleSplitSettings:
     enabled: bool

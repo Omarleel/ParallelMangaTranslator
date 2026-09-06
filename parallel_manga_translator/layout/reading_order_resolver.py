@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, List, Sequence, Tuple, TypeVar
+from typing import Any, Callable, List, Sequence, Tuple, TypeVar
 
 import numpy as np
 
+from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 
 T = TypeVar("T")
@@ -104,9 +105,7 @@ class ReadingOrderResolver:
 
     @staticmethod
     def _overlap_ratio_1d(a1: float, a2: float, b1: float, b2: float) -> float:
-        inter = max(0.0, min(a2, b2) - max(a1, b1))
-        denom = max(1.0, min(a2 - a1, b2 - b1))
-        return inter / denom
+        return BoxGeometry.overlap_ratio_1d(a1, a2, b1, b2)
 
     def _horizontal_row_key(self, box: Box, *, right_to_left: bool = False, ratio: float | None = None) -> Tuple[int, float, float]:
         x, y, w, h = box
@@ -128,10 +127,10 @@ class ReadingOrderResolver:
         return [self.normalize_box(box) for box in sorted(boxes, key=lambda b: self.key_for_page_box(self.normalize_box(b)))]
 
     def sort_regions(self, regions: Sequence[TextRegion]) -> List[TextRegion]:
-        return list(sorted(regions, key=lambda r: self.key_for_page_box(r.bbox)))
+        return sorted(regions, key=lambda r: self.key_for_page_box(r.bbox))
 
     def sort_by_box(self, items: Sequence[T], box_getter: Callable[[T], Box]) -> List[T]:
-        return list(sorted(items, key=lambda item: self.key_for_page_box(box_getter(item))))
+        return sorted(items, key=lambda item: self.key_for_page_box(box_getter(item)))
 
     def _looks_vertical_layout(self, boxes: Sequence[Box]) -> bool:
         if not boxes:

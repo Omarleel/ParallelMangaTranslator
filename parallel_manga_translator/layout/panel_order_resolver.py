@@ -6,6 +6,7 @@ from typing import List, Sequence, Tuple
 import cv2
 import numpy as np
 
+from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 from parallel_manga_translator.config.app_config import QualityConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
@@ -46,8 +47,7 @@ class PanelAwareReadingOrderResolver:
 
     @staticmethod
     def _center(box: Box) -> Tuple[float, float]:
-        x, y, w, h = box
-        return x + w / 2.0, y + h / 2.0
+        return BoxGeometry.center(box)
 
     @staticmethod
     def _distance_to_box(point: Tuple[float, float], box: Box) -> float:

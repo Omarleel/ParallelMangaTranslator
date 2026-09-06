@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import json
-import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
-from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
-from parallel_manga_translator.models.processing_models import Box, TextRegion
+from parallel_manga_translator.models.processing_models import Box
 from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 
 logger = get_logger(__name__)
-BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 
 class DetectionGeometry:
@@ -114,14 +110,7 @@ class DetectionGeometry:
 
     @staticmethod
     def clip_box_to_image(box: Box, width_img: int, height_img: int) -> Box:
-        x, y, w, h = box
-        if width_img <= 0 or height_img <= 0:
-            return 0, 0, 1, 1
-        x = int(max(0, min(width_img - 1, x)))
-        y = int(max(0, min(height_img - 1, y)))
-        x2 = int(max(x + 1, min(width_img, x + max(1, w))))
-        y2 = int(max(y + 1, min(height_img, y + max(1, h))))
-        return x, y, x2 - x, y2 - y
+        return BoxGeometry.clip_box_to_image(box, width_img, height_img)
 
     def detections_box(self, detections: Sequence) -> Box:
         boxes = [self.to_rect(det) for det in detections]
