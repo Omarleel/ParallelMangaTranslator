@@ -74,6 +74,9 @@ class TraditionalTranslationProvider(TraditionalTranslationMixin):
         self.idioma_entrada = config.source_language
         self.idioma_salida = config.target_language
         self.traditional_provider = (config.traditional_provider or "auto").strip().lower()
+        self.traditional_min_interval = max(0.0, float(config.traditional_min_interval))
+        self.traditional_block_cooldown = max(0.0, float(config.traditional_block_cooldown))
+        self.traditional_block_max_wait = max(0.0, float(config.traditional_block_max_wait))
         self.deepl_api_key = config.deepl_api_key
         self.max_retries = max(1, int(config.max_retries))
         self._translation_cache = {}

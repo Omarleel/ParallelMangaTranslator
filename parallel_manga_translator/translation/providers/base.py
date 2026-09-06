@@ -10,6 +10,11 @@ class TranslationProviderConfig:
     target_language: str
     method: str = "Tradicional"
     traditional_provider: str = "auto"
+    # Segundos mínimos entre peticiones al proveedor tradicional y pausa base
+    # al detectar que nos está limitando. Ver `traditional_translation_mixin`.
+    traditional_min_interval: float = 0.5
+    traditional_block_cooldown: float = 6.0
+    traditional_block_max_wait: float = 180.0
     llm_provider: str = "groq"
     llm_model: str = "llama-3.3-70b-versatile"
     strict_json_schema: bool = True

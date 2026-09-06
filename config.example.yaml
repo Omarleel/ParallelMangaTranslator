@@ -3,6 +3,11 @@ translation:
   target_language: Español
   method: LLM          # LLM | Tradicional
   traditional_provider: auto  # auto | google | deepl
+  # Ritmo de salida hacia el proveedor tradicional. Google no usa API oficial ni
+  # responde 429 cuando limita: devuelve 200 sin resultado, asi que este es el unico freno.
+  traditional_min_interval: 0.5     # segundos minimos entre peticiones
+  traditional_block_cooldown: 6.0   # pausa base al detectar bloqueo (se duplica por bloqueo, hasta x8)
+  traditional_block_max_wait: 180.0  # tiempo maximo esperando a que pase un bloqueo antes de rendirse
   inpaint_model: lama_mpe
   lore: ""
   glossary: ""

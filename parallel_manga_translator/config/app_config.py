@@ -42,6 +42,11 @@ class TranslationConfig:
     groq_api_key: str = ""
     deepl_api_key: str = ""
     traditional_provider: str = "auto"
+    # Ritmo de salida hacia Google/DeepL. Google no responde 429 cuando limita, así que
+    # el único freno posible es este. Ver `translation/traditional_translation_mixin.py`.
+    traditional_min_interval: float = 0.5
+    traditional_block_cooldown: float = 6.0
+    traditional_block_max_wait: float = 180.0
     llm: LlmConfig = field(default_factory=LlmConfig)
     project_dir: Optional[str] = None
 

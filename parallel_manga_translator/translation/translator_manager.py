@@ -59,6 +59,9 @@ class TranslatorManager:
             max_retries = translation_config.llm.max_retries
             lore_manga = translation_config.lore_manga
             traditional_provider = translation_config.traditional_provider
+            traditional_min_interval = translation_config.traditional_min_interval
+            traditional_block_cooldown = translation_config.traditional_block_cooldown
+            traditional_block_max_wait = translation_config.traditional_block_max_wait
             llm_provider = translation_config.llm.provider
             strict_json_schema = translation_config.llm.strict_json_schema
             project_dir = translation_config.project_dir
@@ -68,6 +71,9 @@ class TranslatorManager:
             project_dir = None
             deepl_api_key = os.getenv("DEEPL_API_KEY", "")
             glossary_path = ""
+            traditional_min_interval = TranslationConfig.traditional_min_interval
+            traditional_block_cooldown = TranslationConfig.traditional_block_cooldown
+            traditional_block_max_wait = TranslationConfig.traditional_block_max_wait
 
         if character_memory_config is None:
             from parallel_manga_translator.config.runtime_config import get_active_config
@@ -82,6 +88,9 @@ class TranslatorManager:
             target_language=idioma_salida,
             method=self.metodo,
             traditional_provider=traditional_provider,
+            traditional_min_interval=float(traditional_min_interval),
+            traditional_block_cooldown=float(traditional_block_cooldown),
+            traditional_block_max_wait=float(traditional_block_max_wait),
             llm_provider=llm_provider,
             llm_model=groq_model,
             strict_json_schema=bool(strict_json_schema),

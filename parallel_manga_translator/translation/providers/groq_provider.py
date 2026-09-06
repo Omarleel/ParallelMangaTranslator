@@ -38,6 +38,9 @@ class GroqTranslationProvider(TraditionalTranslationMixin, LlmTranslationMixin):
         self.seed = int(config.seed)
         self.max_retries = max(1, int(config.max_retries))
         self.traditional_provider = (config.traditional_provider or "auto").strip().lower()
+        self.traditional_min_interval = max(0.0, float(config.traditional_min_interval))
+        self.traditional_block_cooldown = max(0.0, float(config.traditional_block_cooldown))
+        self.traditional_block_max_wait = max(0.0, float(config.traditional_block_max_wait))
         self.deepl_api_key = config.deepl_api_key
         self.groq_api_key = config.groq_api_key
         self.lore_manga = (config.lore or "").strip()

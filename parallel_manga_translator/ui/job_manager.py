@@ -47,6 +47,13 @@ _PAGE_PATH_FIELDS = (
 )
 PROJECT_JOBS_DIR = Path(os.getenv("PMT_UI_JOBS_DIR", ".pmt_ui_jobs")).resolve()
 
+# En Windows, el escáner on-access del antivirus abre los archivos recién escritos y,
+# mientras sostiene el handle, renombrar sobre el destino devuelve ERROR_ACCESS_DENIED
+# (WinError 5): renombrar sobre un archivo existente necesita acceso de borrado sobre él.
+# Es transitorio, y perder el guardado aborta el trabajo entero, así que se reintenta.
+_MANIFEST_REPLACE_RETRIES = 6
+_MANIFEST_REPLACE_BACKOFF = 0.05
+
 
 def normalize_choice(value: Any, default: str = "auto") -> str:
     normalized = str(value or default).strip().lower()
@@ -667,10 +674,11 @@ class JobManager:
             elif job.status in {"ready", "failed", "cancelled"}:
                 self._queue.remove(job_id)
 
-            if changed:
-                job.updated_at = time.time()
-                self._save_manifest(job)
-            self._jobs[job_id] = job
+            with self._lock:
+                if changed:
+                    job.updated_at = time.time()
+                    self._save_manifest(job)
+                self._jobs[job_id] = job
 
         for stale_id in set(self._queue.all_ids()) - manifest_ids:
             self._queue.remove(stale_id)
@@ -1109,12 +1117,13 @@ class JobManager:
 
     def reset_manual_render(self, job_id: str, page_index: int) -> Dict[str, Any]:
         job = self.get_job(job_id)
-        page = self._page(job, page_index)
-        self._discard_manual_edits(job, page)
-        page.updated_at = time.time()
-        job.updated_at = page.updated_at
-        self._save_manifest(job)
-        return page_to_public(page, job_id)
+        with self._lock:
+            page = self._page(job, page_index)
+            self._discard_manual_edits(job, page)
+            page.updated_at = time.time()
+            job.updated_at = page.updated_at
+            self._save_manifest(job)
+            return page_to_public(page, job_id)
 
     def _discard_manual_edits(self, job: JobState, page: PageState) -> None:
         """Borra la corrección manual de una página y la devuelve a la salida automática."""
@@ -1869,7 +1878,22 @@ class JobManager:
         payload = asdict(job)
         tmp_path = manifest.with_suffix(".json.tmp")
         tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp_path.replace(manifest)
+
+        for intento in range(1, _MANIFEST_REPLACE_RETRIES + 1):
+            try:
+                tmp_path.replace(manifest)
+                return
+            except PermissionError:
+                if intento == _MANIFEST_REPLACE_RETRIES:
+                    logger.warning(
+                        "No se pudo reemplazar %s tras %s intentos. Suele ser un antivirus "
+                        "sosteniendo el archivo recién escrito; excluir la carpeta de trabajos "
+                        "del escaneo en tiempo real lo evita.",
+                        manifest,
+                        intento,
+                    )
+                    raise
+                time.sleep(_MANIFEST_REPLACE_BACKOFF * (2 ** (intento - 1)))
 
     def _load_manifest(self, job_id: str) -> JobState:
         manifest = self.jobs_root / job_id / "manifest.json"
@@ -1894,7 +1918,9 @@ class JobManager:
         job = JobState(**{k: v for k, v in data.items() if k in job_fields})
         if self._rebase_job_paths(job):
             logger.info("Rutas del trabajo %s reancladas a %s.", job_id, job.root_dir)
-            self._save_manifest(job)
+            # `list_jobs` llega aquí sin el lock; `get_job` ya lo tiene y el RLock es reentrante.
+            with self._lock:
+                self._save_manifest(job)
         return job
 
     def _rebase_job_paths(self, job: JobState) -> bool:

@@ -124,6 +124,9 @@ class ConfigManager:
             groq_api_key=os.getenv("GROQ_API_KEY", ""),
             deepl_api_key=os.getenv("DEEPL_API_KEY", ""),
             traditional_provider=str(translation_section.get("traditional_provider", "auto")),
+            traditional_min_interval=max(0.0, float_value(translation_section.get("traditional_min_interval", 0.5), 0.5)),
+            traditional_block_cooldown=max(0.0, float_value(translation_section.get("traditional_block_cooldown", 6.0), 6.0)),
+            traditional_block_max_wait=max(0.0, float_value(translation_section.get("traditional_block_max_wait", 180.0), 180.0)),
             project_dir=project_dir,
             llm=LlmConfig(
                 provider=str(llm_section.get("provider", "groq")),
