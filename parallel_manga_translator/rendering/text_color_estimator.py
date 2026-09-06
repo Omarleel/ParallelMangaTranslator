@@ -27,6 +27,22 @@ detiene antes de traducir y rotular.
 
 Nota de formato: OpenCV trabaja en BGR y PIL dibuja en RGB. Los colores salen de aquí ya
 en **RGB**, listos para `ImageDraw.text(fill=...)`.
+
+Sobre el contorno, medido
+-------------------------
+En `dataset_eval/ja_01` **no se afirma ni un solo contorno en 121 regiones**, y está
+comprobado que es correcto, no un umbral mal puesto. De las 50 regiones con anillo
+medible, la separación entre el anillo y el fondo tiene mediana 0.0 y **máximo 17.3**;
+con un umbral de 20 —un tercio del actual— seguirían pasando cero. Ese tomo no tiene texto
+perfilado.
+
+La señal contraria confirma que el criterio discrimina: la separación entre el anillo y el
+relleno llega a 438 sobre un máximo teórico de 441. Anillo muy distinto de la tinta e
+idéntico al fondo es exactamente la firma de "no hay contorno, es papel".
+
+Queda por tanto **sin ejercitar sobre datos reales**: haría falta un tomo a color o con
+SFX perfilados para saber si acierta cuando sí hay contorno. El test sintético cubre el
+caso, la realidad no.
 """
 
 from __future__ import annotations
@@ -65,6 +81,11 @@ class ColoresDeTexto:
     contorno: Optional[Color]
     #: Cuántos píxeles de tinta sostienen la estimación del relleno.
     pixeles_tinta: int
+    #: Diagnóstico: cuánto se separaba el anillo exterior del relleno y del fondo, aunque
+    #: se haya rechazado. Sirve para saber si un contorno no se afirma porque no lo hay o
+    #: porque el umbral es demasiado estricto. `None` si no había anillo medible.
+    separacion_relleno: Optional[float] = None
+    separacion_fondo: Optional[float] = None
 
     def as_tuple(self) -> Tuple[Color, Optional[Color]]:
         return self.relleno, self.contorno
@@ -127,18 +148,26 @@ def estimar_colores(
         fondo = cv2.bitwise_and(fondo, segura)
 
     contorno: Optional[Color] = None
+    sep_relleno: Optional[float] = None
+    sep_fondo: Optional[float] = None
     if cv2.countNonZero(anillo) >= MIN_PIXELES_ANILLO:
         candidato = _mediana_rgb(imagen_original, anillo)
         color_fondo = _mediana_rgb(imagen_original, fondo)
         if candidato is not None:
             # Un contorno de verdad se separa del relleno Y del fondo. Si sólo se separa
             # del relleno, lo que se ha medido es el papel, no un contorno.
-            separado_del_relleno = _separacion(candidato, relleno) >= separacion_minima
-            separado_del_fondo = color_fondo is None or _separacion(candidato, color_fondo) >= separacion_minima
-            if separado_del_relleno and separado_del_fondo:
+            sep_relleno = _separacion(candidato, relleno)
+            sep_fondo = _separacion(candidato, color_fondo) if color_fondo is not None else None
+            if sep_relleno >= separacion_minima and (sep_fondo is None or sep_fondo >= separacion_minima):
                 contorno = candidato
 
-    return ColoresDeTexto(relleno=relleno, contorno=contorno, pixeles_tinta=pixeles_tinta)
+    return ColoresDeTexto(
+        relleno=relleno,
+        contorno=contorno,
+        pixeles_tinta=pixeles_tinta,
+        separacion_relleno=sep_relleno,
+        separacion_fondo=sep_fondo,
+    )
 
 
 __all__ = ["Color", "ColoresDeTexto", "estimar_colores"]

@@ -363,6 +363,7 @@ def _region_dump(
             "mask_source": metadata.get("mask_source", ""),
             "text_fill_color": metadata.get("text_fill_color"),
             "text_stroke_color": metadata.get("text_stroke_color"),
+            "text_stroke_sep": metadata.get("text_stroke_sep"),
             "free_text_confidence": metadata.get("free_text_confidence"),
             "free_text_filter_reason": metadata.get("free_text_filter_reason", ""),
             "free_text_onomatopoeia": bool(metadata.get("free_text_onomatopoeia")),

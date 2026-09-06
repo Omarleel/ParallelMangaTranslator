@@ -66,6 +66,13 @@ class TranslationOrchestratorMixin:
             region.metadata["text_fill_color"] = list(colores.relleno)
             if colores.contorno is not None:
                 region.metadata["text_stroke_color"] = list(colores.contorno)
+            if colores.separacion_relleno is not None:
+                # Diagnostico, no se usa para rotular: dice si un contorno se descarto por
+                # poco o por mucho.
+                region.metadata["text_stroke_sep"] = [
+                    round(colores.separacion_relleno, 1),
+                    round(colores.separacion_fondo, 1) if colores.separacion_fondo is not None else None,
+                ]
 
     def traducir_manga(self, imagen, imagen_limpia, mascara_capa, text_regions=None):
         """Los cuatro pasos encadenados. Cada uno se puede invocar por separado:
