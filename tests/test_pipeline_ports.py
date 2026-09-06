@@ -28,7 +28,14 @@ METODOS_CLEANER = (
     "set_visual_inpaint_debug_context",
     "clear_visual_inpaint_debug_context",
 )
-METODOS_TRANSLATOR = ("insertar_json_queue", "traducir_manga")
+METODOS_TRANSLATOR = (
+    "insertar_json_queue",
+    "traducir_manga",
+    "extraer_regiones",
+    "obtener_textos",
+    "traducir_textos_de_regiones",
+    "rotular",
+)
 
 
 class _CleanerFalso:
@@ -53,10 +60,24 @@ class _CleanerFalso:
 
 
 class _TranslatorFalso:
+    ultimas_regiones = ()
+
     def insertar_json_queue(self, indice_imagen, transcripcion_queue, traduccion_queue):
         pass
 
     def traducir_manga(self, imagen, imagen_limpia, mascara_capa, text_regions=None):
+        return imagen_limpia
+
+    def extraer_regiones(self, imagen, mascara_capa, text_regions=None):
+        return [], []
+
+    def obtener_textos(self, imagenes_interes):
+        return []
+
+    def traducir_textos_de_regiones(self, cuadros_delimitadores, textos):
+        return []
+
+    def rotular(self, imagen_limpia, cuadros_delimitadores, textos_para_render):
         return imagen_limpia
 
 
@@ -94,12 +115,39 @@ class PuertosDelPipelineTests(unittest.TestCase):
         self.assertIn("PageTranslatorPort", str(ctx.exception))
 
     def test_el_orquestador_ya_no_construye_implementaciones(self):
-        """Su firma es la frontera: dos abstracciones, ninguna configuración."""
+        """Su firma es la frontera: abstracciones, ninguna configuración.
+
+        Posicionales siguen siendo sólo las dos etapas. Las dos composiciones son de
+        palabra clave y opcionales: son `Pipeline`, no valores de configuración, y su
+        defecto reproduce la secuencia que este orquestador ya ejecutaba. Si alguna vez
+        aparece aquí un parámetro con un valor de config, este test debe fallar.
+        """
         import inspect
 
-        params = list(inspect.signature(ImageProcessor.__init__).parameters)
+        firma = inspect.signature(ImageProcessor.__init__)
+        params = firma.parameters
 
-        self.assertEqual(params, ["self", "cleaner", "translator"])
+        posicionales = [
+            nombre
+            for nombre, p in params.items()
+            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        self.assertEqual(posicionales, ["self", "cleaner", "translator"])
+
+        por_clave = {nombre: p for nombre, p in params.items() if p.kind is p.KEYWORD_ONLY}
+        self.assertEqual(sorted(por_clave), ["pipeline_limpieza", "pipeline_traduccion"])
+        for nombre, p in por_clave.items():
+            self.assertIsNone(p.default, f"{nombre} trae un valor por defecto que no es None")
+
+    def test_las_composiciones_por_defecto_son_las_que_ya_se_ejecutaban(self):
+        """El defecto no puede ser una secuencia nueva: sería un cambio de comportamiento."""
+        procesador = ImageProcessor(_CleanerFalso(), _TranslatorFalso())
+
+        self.assertEqual(procesador.pipeline_limpieza.nombres, ["limpieza"])
+        self.assertEqual(
+            procesador.pipeline_traduccion.nombres,
+            ["extraer_regiones", "transcribir", "traducir", "rotular"],
+        )
 
     def test_las_etapas_reales_cumplen_su_puerto(self):
         """Comprobado sobre la clase: instanciarlas cargaría modelos."""

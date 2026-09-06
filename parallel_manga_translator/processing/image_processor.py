@@ -16,6 +16,12 @@ import torch
 from parallel_manga_translator.io.image_io import write_image
 from parallel_manga_translator.architecture.ports import PageCleanerPort, PageTranslatorPort
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
+from parallel_manga_translator.processing.pipeline import (
+    PageContext,
+    Pipeline,
+    pipeline_limpieza as pipeline_limpieza_por_defecto,
+    pipeline_traduccion as pipeline_traduccion_por_defecto,
+)
 from parallel_manga_translator.quality.metrics_manager import MetricsWriter, PageMetrics
 from parallel_manga_translator.infrastructure.error_handling import (
     PageFailureReport,
@@ -52,7 +58,14 @@ _PIPELINE_STOP = object()
 
 
 class ImageProcessor:
-    def __init__(self, cleaner: PageCleanerPort, translator: PageTranslatorPort) -> None:
+    def __init__(
+        self,
+        cleaner: PageCleanerPort,
+        translator: PageTranslatorPort,
+        *,
+        pipeline_limpieza: Pipeline | None = None,
+        pipeline_traduccion: Pipeline | None = None,
+    ) -> None:
         """Orquesta las etapas que recibe; no sabe construirlas ni cuáles son.
 
         El cableado de los motores concretos vive en `cli.build_image_processor`, que es
@@ -72,6 +85,13 @@ class ImageProcessor:
             )
         self.clean_manga = cleaner
         self.translate_manga = translator
+        # La secuencia de etapas es un dato, no codigo: por defecto las dos que este
+        # orquestador ya ejecutaba, separadas porque `procesar_pipeline` las corre en
+        # hilos distintos. Sustituir `pipeline_traduccion` por una composicion parcial
+        # —por ejemplo sin rotular— es lo que hace posible un modo solo-OCR sin tocar
+        # este fichero.
+        self.pipeline_limpieza = pipeline_limpieza if pipeline_limpieza is not None else pipeline_limpieza_por_defecto(cleaner)
+        self.pipeline_traduccion = pipeline_traduccion if pipeline_traduccion is not None else pipeline_traduccion_por_defecto(translator)
 
     @staticmethod
     def _read_image(image_path: str):
@@ -350,7 +370,8 @@ class ImageProcessor:
                         )
                     else:
                         self.clean_manga.clear_visual_inpaint_debug_context()
-                    mascara_capa, imagen_limpia, regiones = self.clean_manga.limpiar_manga(imagen_actual)
+                    contexto = self.pipeline_limpieza.run(PageContext(imagen=imagen_actual))
+                mascara_capa, imagen_limpia, regiones = contexto.mascara_capa, contexto.imagen_limpia, contexto.regiones
 
                 metrics.timings["limpieza"] = round(time.perf_counter() - t0, 4)
                 metrics.detected_regions = len(regiones)
@@ -420,12 +441,13 @@ class ImageProcessor:
             page_index=item.indice_imagen,
             filename=item.output_filename,
         ):
-            imagen_traducida = self.translate_manga.traducir_manga(
-                item.imagen_original,
-                item.imagen_limpia,
-                item.mascara_capa,
-                text_regions=item.regiones,
-            )
+            contexto = self.pipeline_traduccion.run(PageContext(
+                imagen=item.imagen_original,
+                imagen_limpia=item.imagen_limpia,
+                mascara_capa=item.mascara_capa,
+                regiones=list(item.regiones),
+            ))
+            imagen_traducida = contexto.imagen_final
         item.metrics.timings["ocr_traduccion_render"] = round(time.perf_counter() - t0, 4)
         item.metrics.ocr_empty = sum(
             1
@@ -438,14 +460,24 @@ class ImageProcessor:
             if not str(texto).strip()
         )
 
-        archivo_traduccion = os.path.join(ruta_traduccion_salida, item.output_filename)
-        with processing_stage(
-            PipelineStage.GUARDAR_TRADUCCION,
-            logger=logger,
-            page_index=item.indice_imagen,
-            filename=item.output_filename,
-        ):
-            self._write_image(archivo_traduccion, imagen_traducida)
+        if imagen_traducida is None:
+            # La composicion no incluye rotulado (por ejemplo, un pipeline solo-OCR):
+            # no hay pagina traducida que guardar. Es un resultado valido, no un fallo,
+            # y decirlo aqui evita que `write_image` reviente con un None.
+            logger.info(
+                "Sin rotulado en la composicion (%s): no se guarda pagina traducida de %s",
+                " -> ".join(self.pipeline_traduccion.nombres),
+                item.output_filename,
+            )
+        else:
+            archivo_traduccion = os.path.join(ruta_traduccion_salida, item.output_filename)
+            with processing_stage(
+                PipelineStage.GUARDAR_TRADUCCION,
+                logger=logger,
+                page_index=item.indice_imagen,
+                filename=item.output_filename,
+            ):
+                self._write_image(archivo_traduccion, imagen_traducida)
 
         output_root = str(Path(ruta_traduccion_salida).parent)
         MetricsWriter(output_root).write_page(item.metrics)
@@ -523,7 +555,8 @@ class ImageProcessor:
                         )
                     else:
                         self.clean_manga.clear_visual_inpaint_debug_context()
-                    mascara_capa, imagen_limpia, regiones = self.clean_manga.limpiar_manga(imagen_actual)
+                    contexto = self.pipeline_limpieza.run(PageContext(imagen=imagen_actual))
+                mascara_capa, imagen_limpia, regiones = contexto.mascara_capa, contexto.imagen_limpia, contexto.regiones
                 metrics.timings["limpieza"] = round(time.perf_counter() - t0, 4)
                 metrics.detected_regions = len(regiones)
                 metrics.detected_bubbles = sum(1 for r in regiones if r.kind in {"dialogue", "narration", "unknown"})
@@ -540,14 +573,27 @@ class ImageProcessor:
                 )
                 t1 = time.perf_counter()
                 with processing_stage(PipelineStage.OCR_TRADUCCION_RENDER, logger=logger, page_index=indice_imagen, filename=archivo):
-                    imagen_traducida = self.translate_manga.traducir_manga(imagen_actual, imagen_limpia, mascara_capa, text_regions=regiones)
+                    contexto = self.pipeline_traduccion.run(PageContext(
+                        imagen=imagen_actual,
+                        imagen_limpia=imagen_limpia,
+                        mascara_capa=mascara_capa,
+                        regiones=list(regiones),
+                    ))
+                    imagen_traducida = contexto.imagen_final
                 metrics.timings["ocr_traduccion_render"] = round(time.perf_counter() - t1, 4)
                 metrics.ocr_empty = sum(1 for t in getattr(self.translate_manga, "ultimos_textos_originales", []) if not str(t).strip())
                 metrics.translations_empty = sum(1 for t in getattr(self.translate_manga, "ultimos_textos_traducidos", []) if not str(t).strip())
 
-                archivo_traduccion_salida = os.path.join(ruta_traduccion_salida, archivo)
-                with processing_stage(PipelineStage.GUARDAR_TRADUCCION, logger=logger, page_index=indice_imagen, filename=archivo):
-                    self._write_image(archivo_traduccion_salida, imagen_traducida)
+                if imagen_traducida is None:
+                    logger.info(
+                        "Sin rotulado en la composicion (%s): no se guarda pagina traducida de %s",
+                        " -> ".join(self.pipeline_traduccion.nombres),
+                        archivo,
+                    )
+                else:
+                    archivo_traduccion_salida = os.path.join(ruta_traduccion_salida, archivo)
+                    with processing_stage(PipelineStage.GUARDAR_TRADUCCION, logger=logger, page_index=indice_imagen, filename=archivo):
+                        self._write_image(archivo_traduccion_salida, imagen_traducida)
                 metrics.retries = intento - 1
                 MetricsWriter(output_root).write_page(metrics)
                 return

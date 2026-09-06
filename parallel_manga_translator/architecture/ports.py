@@ -134,6 +134,10 @@ class PageCleanerPort(Protocol):
 class PageTranslatorPort(Protocol):
     """Etapa de OCR + traducción + rotulado vista por el orquestador de páginas."""
 
+    #: Regiones que sobrevivieron a `extraer_regiones`, en orden de lectura. Los pasos
+    #: siguientes las leen de aquí, así que es contrato entre etapas, no estado privado.
+    ultimas_regiones: Sequence[TextRegion]
+
     def insertar_json_queue(self, indice_imagen: int, transcripcion_queue: Any, traduccion_queue: Any) -> None:
         ...
 
@@ -143,5 +147,34 @@ class PageTranslatorPort(Protocol):
         imagen_limpia: np.ndarray,
         mascara_capa: np.ndarray,
         text_regions: Optional[Sequence[TextRegion]] = None,
+    ):
+        ...
+
+    # Los cuatro pasos que compone `traducir_manga`. Estan en el contrato porque
+    # `processing.pipeline` los ejecuta por separado: una composicion parcial —solo-OCR—
+    # llama a unos y no a otros, asi que exigir solo el metodo compuesto dejaria fuera
+    # justo lo que el orquestador necesita para componer.
+
+    def extraer_regiones(
+        self,
+        imagen: np.ndarray,
+        mascara_capa: Optional[np.ndarray],
+        text_regions: Optional[Sequence[TextRegion]] = None,
+    ):
+        ...
+
+    def obtener_textos(self, imagenes_interes: Sequence[np.ndarray]) -> Sequence[str]:
+        ...
+
+    def traducir_textos_de_regiones(
+        self, cuadros_delimitadores: Sequence[Any], textos: Sequence[str]
+    ) -> Sequence[str]:
+        ...
+
+    def rotular(
+        self,
+        imagen_limpia: np.ndarray,
+        cuadros_delimitadores: Sequence[Any],
+        textos_para_render: Sequence[str],
     ):
         ...
