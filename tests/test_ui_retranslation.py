@@ -12,13 +12,17 @@ import numpy as np
 from parallel_manga_translator.ui.job_manager import JobManager, JobOptions, JobState, PageState
 from parallel_manga_translator.ui.retranslator import JobRetranslator, RetranslatedRegion
 
-MODULE = "parallel_manga_translator.ui.job_manager"
+# Cada simbolo se parchea en el modulo que lo usa, y tras el reparto de
+# responsabilidades ese ya no es `job_manager`: preparar runtime y fuentes es del
+# andamiaje compartido, y `JobRetranslator` lo usa el runner de retraduccion.
+EJECUCION = "parallel_manga_translator.ui.job_execution"
+RETRADUCCION = "parallel_manga_translator.ui.retranslation_runner"
 
 
 def _offline_assets():
     return (
-        mock.patch(f"{MODULE}.prepare_runtime"),
-        mock.patch(f"{MODULE}.prepare_assets"),
+        mock.patch(f"{EJECUCION}.prepare_runtime"),
+        mock.patch(f"{EJECUCION}.prepare_assets"),
     )
 
 
@@ -157,7 +161,7 @@ class RetranslationJobTests(unittest.TestCase):
             self.assertEqual(job.options.translator, "google")
 
             runtime, assets = _offline_assets()
-            with runtime, assets, mock.patch(f"{MODULE}.JobRetranslator", _FakeRetranslator):
+            with runtime, assets, mock.patch(f"{RETRADUCCION}.JobRetranslator", _FakeRetranslator):
                 manager._run_job(job.job_id)
 
             completed = manager.get_job(job.job_id)
@@ -228,7 +232,7 @@ class RetranslationJobTests(unittest.TestCase):
             manager, job = _manager_with_ready_job(tmp)
             manager.retranslate_job(job.job_id, translator="google")
             runtime, assets = _offline_assets()
-            with runtime, assets, mock.patch(f"{MODULE}.JobRetranslator", _BrokenRetranslator):
+            with runtime, assets, mock.patch(f"{RETRADUCCION}.JobRetranslator", _BrokenRetranslator):
                 manager._run_job(job.job_id)
 
             completed = manager.get_job(job.job_id)
@@ -272,7 +276,7 @@ class RetranslationFallbackTests(unittest.TestCase):
             self.assertEqual(job.retranslate_pages, [0, 1])
 
             runtime, assets = _offline_assets()
-            with runtime, assets, mock.patch(f"{MODULE}.JobRetranslator", _DegradedRetranslator):
+            with runtime, assets, mock.patch(f"{RETRADUCCION}.JobRetranslator", _DegradedRetranslator):
                 manager._run_job(job.job_id)
 
             completed = manager.get_job(job.job_id)
@@ -290,7 +294,7 @@ class RetranslationFallbackTests(unittest.TestCase):
             manager.retranslate_job(job.job_id, translator="google")
 
             runtime, assets = _offline_assets()
-            with runtime, assets, mock.patch(f"{MODULE}.JobRetranslator", _DegradedRetranslator):
+            with runtime, assets, mock.patch(f"{RETRADUCCION}.JobRetranslator", _DegradedRetranslator):
                 manager._run_job(job.job_id)
 
             completed = manager.get_job(job.job_id)

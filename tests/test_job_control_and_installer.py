@@ -163,11 +163,12 @@ class JobRecoveryAndRetryTests(unittest.TestCase):
             second = self._new_job(manager, jobs_root, job_id="job-2")
             started = threading.Event()
             processors = [PausableProcessor(started), SuccessProcessor(second.pages[0].output_filename)]
-            module = "parallel_manga_translator.ui.job_manager"
+            ejecucion = "parallel_manga_translator.ui.job_execution"
+            runner = "parallel_manga_translator.ui.job_runner"
             with (
-                mock.patch(f"{module}.prepare_runtime"),
-                mock.patch(f"{module}.prepare_assets"),
-                mock.patch(f"{module}.build_image_processor", side_effect=processors),
+                mock.patch(f"{ejecucion}.prepare_runtime"),
+                mock.patch(f"{ejecucion}.prepare_assets"),
+                mock.patch(f"{runner}.build_image_processor", side_effect=processors),
             ):
                 manager._worker_thread = threading.Thread(target=manager._worker_loop, daemon=True)
                 manager._worker_thread.start()
@@ -202,11 +203,12 @@ class JobRecoveryAndRetryTests(unittest.TestCase):
             manager = JobManager(jobs_root=jobs_root, start_worker=False)
             job = self._new_job(manager, jobs_root, retries=1)
             processor = FlakyProcessor(job.pages[0].output_filename)
-            module = "parallel_manga_translator.ui.job_manager"
+            ejecucion = "parallel_manga_translator.ui.job_execution"
+            runner = "parallel_manga_translator.ui.job_runner"
             with (
-                mock.patch(f"{module}.prepare_runtime"),
-                mock.patch(f"{module}.prepare_assets"),
-                mock.patch(f"{module}.build_image_processor", return_value=processor),
+                mock.patch(f"{ejecucion}.prepare_runtime"),
+                mock.patch(f"{ejecucion}.prepare_assets"),
+                mock.patch(f"{runner}.build_image_processor", return_value=processor),
             ):
                 manager._run_job(job.job_id)
 

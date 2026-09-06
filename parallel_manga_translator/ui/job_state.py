@@ -203,14 +203,47 @@ def job_to_public(job: JobState) -> Dict[str, Any]:
     }
 
 
+def is_retranslating(job: "JobState") -> bool:
+    """¿Este trabajo vuelve a la cola para retraducir, no para procesar?"""
+    return str(job.pending_operation or "process") == "retranslate"
+
+
+def recount(job: "JobState") -> None:
+    """Recalcula los contadores derivados del estado de las páginas."""
+    job.processed_count = sum(1 for item in job.pages if item.status == "ready")
+    job.failed_count = sum(1 for item in job.pages if item.status == "failed")
+
+
+def finalize_cancelled(job: "JobState") -> None:
+    """Deja el trabajo en su estado terminal cancelado, conservando lo ya terminado."""
+    now = time.time()
+    for page in job.pages:
+        if page.status in {"pending", "processing"}:
+            page.status = "cancelled"
+            page.message = "Cancelada por el usuario."
+            page.completed_at = now
+            page.updated_at = now
+    job.status = "cancelled"
+    job.message = "Trabajo cancelado. Las páginas ya terminadas se conservaron."
+    job.cancel_requested = True
+    job.pause_requested = False
+    job.resume_requested = False
+    job.finished_at = now
+    job.updated_at = now
+    recount(job)
+
+
 __all__ = [
     "PAGE_PATH_FIELDS",
     "JobOptions",
     "JobState",
     "PageState",
+    "finalize_cancelled",
+    "is_retranslating",
     "job_to_public",
     "normalize_choice",
     "page_to_public",
+    "recount",
     "normalized_output_name",
     "page_of",
     "rebase_stored_path",
