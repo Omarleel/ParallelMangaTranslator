@@ -17,7 +17,7 @@ from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.config.constants import RUTA_FUENTE, TAMANIO_MINIMO_FUENTE
-from parallel_manga_translator.config.app_config import CharacterMemoryConfig, OcrConfig, OnomatopoeiaConfig, QualityConfig, TranslationConfig
+from parallel_manga_translator.config.app_config import CharacterMemoryConfig, OcrConfig, OnomatopoeiaConfig, ProcessingConfig, QualityConfig, TranslationConfig
 
 
 Box = Tuple[int, int, int, int]
@@ -27,12 +27,12 @@ logger = get_logger(__name__)
 
 from parallel_manga_translator.processing.translation_source_filter_mixin import TranslationSourceFilterMixin
 from parallel_manga_translator.processing.translation_orchestrator_mixin import TranslationOrchestratorMixin
-from parallel_manga_translator.processing.translation_geometry_mixin import TranslationGeometryMixin
+from parallel_manga_translator.processing.translation_geometry import TranslationGeometry
 from parallel_manga_translator.processing.region_extraction_mixin import RegionExtractionMixin
 from parallel_manga_translator.processing.ocr_text_pipeline_mixin import OcrTextPipelineMixin
 from parallel_manga_translator.processing.translation_pipeline_mixin import TranslationPipelineMixin
 from parallel_manga_translator.processing.rendering_pipeline_mixin import RenderingPipelineMixin
-class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin, TranslationGeometryMixin, RegionExtractionMixin, OcrTextPipelineMixin, TranslationPipelineMixin, RenderingPipelineMixin):
+class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin, RegionExtractionMixin, OcrTextPipelineMixin, TranslationPipelineMixin, RenderingPipelineMixin):
     def __init__(
         self,
         idioma_entrada,
@@ -45,25 +45,22 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
         quality_config: QualityConfig | None = None,
         onomatopoeia_config: OnomatopoeiaConfig | None = None,
         character_memory_config: CharacterMemoryConfig | None = None,
+        processing_config: ProcessingConfig | None = None,
+        geometry: TranslationGeometry | None = None,
     ):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.idioma_entrada = idioma_entrada
         self.idioma_salida = idioma_salida
         self.metodo_traduccion = metodo_traduccion
 
-        if translation_config is not None and quality_config is None:
-            # Mantiene compatibilidad cuando se usa solo TranslationConfig desde código externo.
-            from parallel_manga_translator.config.runtime_config import get_active_config
-
-            quality_config = get_active_config().quality
-        if onomatopoeia_config is None:
-            from parallel_manga_translator.config.runtime_config import get_active_config
-
-            onomatopoeia_config = get_active_config().onomatopoeia
+        # Por defecto, los valores del dataclass; nunca el estado global del proceso.
         if quality_config is None:
-            from parallel_manga_translator.config.runtime_config import get_active_config
-
-            quality_config = get_active_config().quality
+            quality_config = QualityConfig()
+        if onomatopoeia_config is None:
+            onomatopoeia_config = OnomatopoeiaConfig()
+        if processing_config is None:
+            processing_config = ProcessingConfig()
+        self.processing_config = processing_config
 
         self.translator_manager = TranslatorManager(
             idioma_entrada,
@@ -73,8 +70,13 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
             lore_manga=lore_manga,
             translation_config=translation_config,
             character_memory_config=character_memory_config,
+            cache_dir=processing_config.cache_dir,
+            cache_enabled=processing_config.cache,
         )
-        self.ocr_manager = OcrManager(idioma_entrada=idioma_entrada, config=ocr_config)
+        self.ocr_manager = OcrManager(idioma_entrada=idioma_entrada, config=ocr_config, cache_dir=processing_config.cache_dir)
+        # Colaborador explícito: siete de sus métodos son puros y los otros dos sólo
+        # necesitan el idioma, que ahora recibe en vez de tomarlo del `self` ajeno.
+        self.geometry = geometry if geometry is not None else TranslationGeometry(idioma_entrada)
         self.reading_order_resolver = ReadingOrderResolver(idioma_entrada)
         self.text_renderer = TextRenderer(
             font_path=RUTA_FUENTE,

@@ -25,7 +25,7 @@ class BubbleRegionBuilderMixin:
         items: List[Dict[str, object]] = []
         for det_idx, det in enumerate(detections or []):
             try:
-                box = self._to_rect(det)
+                box = self.geometry.to_rect(det)
             except Exception:
                 continue
             raw_polygon = det[0] if isinstance(det, (list, tuple)) and det else []
@@ -34,8 +34,8 @@ class BubbleRegionBuilderMixin:
                 "bbox": list(map(int, box)),
                 "polygon": [[round(float(x), 2), round(float(y), 2)] for x, y in np.asarray(raw_polygon, dtype=np.float32).reshape((-1, 2))[:4]] if np.asarray(raw_polygon).size else [],
                 "angle": polygon_text_angle(raw_polygon),
-                "text": self._text(det),
-                "confidence": round(float(self._confidence(det)), 4),
+                "text": self.geometry.text(det),
+                "confidence": round(float(self.geometry.confidence(det)), 4),
             })
         return items
 
@@ -43,7 +43,7 @@ class BubbleRegionBuilderMixin:
         boxes: List[Tuple[int, Box, object]] = []
         for det_idx, det in enumerate(detections or []):
             try:
-                boxes.append((det_idx, self._to_rect(det), det))
+                boxes.append((det_idx, self.geometry.to_rect(det), det))
             except Exception:
                 continue
         decisions: List[Dict[str, object]] = []
@@ -57,8 +57,8 @@ class BubbleRegionBuilderMixin:
                 decision.update({
                     "detection_a": det_i,
                     "detection_b": det_j,
-                    "text_a": self._text(raw_i),
-                    "text_b": self._text(raw_j),
+                    "text_a": self.geometry.text(raw_i),
+                    "text_b": self.geometry.text(raw_j),
                 })
                 decisions.append(decision)
         return decisions, truncated
@@ -67,9 +67,9 @@ class BubbleRegionBuilderMixin:
         """Máscara para texto libre/SFX; no intenta detectar globos."""
         height, width = image_shape[:2]
         if kind == "sfx":
-            expanded = self._expand_box(box, width, height, ratio_x=0.16, ratio_y=0.20, min_pad=8)
+            expanded = self.geometry.expand_box(box, width, height, ratio_x=0.16, ratio_y=0.20, min_pad=8)
         else:
-            expanded = self._expand_box(box, width, height, ratio_x=0.10, ratio_y=0.12, min_pad=6)
+            expanded = self.geometry.expand_box(box, width, height, ratio_x=0.10, ratio_y=0.12, min_pad=6)
         x, y, w, h = expanded
         mask = np.zeros((height, width), dtype=np.uint8)
         cv2.rectangle(mask, (x, y), (x + w, y + h), 255, -1)
@@ -100,8 +100,8 @@ class BubbleRegionBuilderMixin:
     ) -> Tuple[int, YoloBubbleCandidate] | Tuple[None, None]:
         if not candidates:
             return None, None
-        text_center = self._center(text_box)
-        text_area = max(1, self._area(text_box))
+        text_center = self.geometry.center(text_box)
+        text_area = max(1, self.geometry.area(text_box))
         best_idx = None
         best_score = -1.0
         for idx, candidate in enumerate(candidates):
@@ -110,13 +110,13 @@ class BubbleRegionBuilderMixin:
             label_sfx = self._label_is_sfx(candidate.label)
             if label_sfx and not allow_sfx:
                 continue
-            inter_box = self._intersection_area(candidate.bbox, text_box)
+            inter_box = self.geometry.intersection_area(candidate.bbox, text_box)
             text_overlap = inter_box / text_area
-            center_in_mask = self._point_inside_mask(text_center, candidate.mask)
-            center_in_box = self._point_inside_box(text_center, candidate.bbox)
+            center_in_mask = self.geometry.point_inside_mask(text_center, candidate.mask)
+            center_in_box = self.geometry.point_inside_box(text_center, candidate.bbox)
             if text_overlap < 0.06 and not center_in_mask and not center_in_box:
                 continue
-            cand_area = max(1, int(cv2.countNonZero(candidate.mask)) or self._area(candidate.bbox))
+            cand_area = max(1, int(cv2.countNonZero(candidate.mask)) or self.geometry.area(candidate.bbox))
             relative_size = cand_area / text_area
             size_score = 1.0 if 1.1 <= relative_size <= 42 else 0.55
             score = text_overlap * 2.6 + (1.25 if center_in_mask else 0.0) + (0.55 if center_in_box else 0.0)
@@ -195,11 +195,11 @@ class BubbleRegionBuilderMixin:
         return self._merge_region_masks(regions)
 
     def _detection_assignment_score(self, text_box: Box, region: TextRegion) -> float:
-        text_area = max(1, self._area(text_box))
-        inter = self._intersection_area(region.bbox, text_box) / text_area
-        center = self._center(text_box)
-        center_in_mask = self._point_inside_mask(center, region.mask)
-        center_in_box = self._point_inside_box(center, region.bbox)
+        text_area = max(1, self.geometry.area(text_box))
+        inter = self.geometry.intersection_area(region.bbox, text_box) / text_area
+        center = self.geometry.center(text_box)
+        center_in_mask = self.geometry.point_inside_mask(center, region.mask)
+        center_in_box = self.geometry.point_inside_box(center, region.bbox)
         if inter < 0.05 and not center_in_mask:
             return -1.0
         return inter * 2.4 + (1.2 if center_in_mask else 0.0) + (0.35 if center_in_box else 0.0)
@@ -209,7 +209,7 @@ class BubbleRegionBuilderMixin:
         grouped: dict[int, List] = {idx: [] for idx in range(len(regions))}
         for det_idx, det in enumerate(detections or []):
             try:
-                text_box = self._to_rect(det)
+                text_box = self.geometry.to_rect(det)
             except Exception:
                 continue
             best_idx = None
@@ -227,15 +227,15 @@ class BubbleRegionBuilderMixin:
         for idx, group in grouped.items():
             if not group:
                 continue
-            boxes = [self._to_rect(det) for det in group]
+            boxes = [self.geometry.to_rect(det) for det in group]
             text_box = boxes[0]
             for box in boxes[1:]:
-                text_box = self._union(text_box, box)
+                text_box = self.geometry.union(text_box, box)
             regions[idx].text_bbox = text_box
-            regions[idx].source_text_hint = " ".join(self._text(det).strip() for det in group if self._text(det).strip())
+            regions[idx].source_text_hint = " ".join(self.geometry.text(det).strip() for det in group if self.geometry.text(det).strip())
             regions[idx].detections_count = len(group)
             try:
-                regions[idx].confidence = max(regions[idx].confidence, float(np.mean([self._confidence(det) for det in group])))
+                regions[idx].confidence = max(regions[idx].confidence, float(np.mean([self.geometry.confidence(det) for det in group])))
             except Exception:
                 pass
             if getattr(self, "fine_text_detection", True):
@@ -262,12 +262,12 @@ class BubbleRegionBuilderMixin:
         return assigned, grouped
 
     def _is_inside_existing_region(self, text_box: Box, regions: Sequence[TextRegion]) -> bool:
-        center = self._center(text_box)
+        center = self.geometry.center(text_box)
         for region in regions:
             if region.kind in {"sfx", "free_text"}:
                 continue
-            if self._point_inside_mask(center, region.mask):
+            if self.geometry.point_inside_mask(center, region.mask):
                 return True
-            if self._intersection_area(region.bbox, text_box) / max(1, self._area(text_box)) > 0.18:
+            if self.geometry.intersection_area(region.bbox, text_box) / max(1, self.geometry.area(text_box)) > 0.18:
                 return True
         return False

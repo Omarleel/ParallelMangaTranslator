@@ -35,8 +35,8 @@ class BubbleSplitterMixin:
         globos diferentes dentro de una detección grande.
         """
         decisions: List[Dict[str, object]] = []
-        min_gap = int(self.split_min_gap_px if min_gap_px is None else min_gap_px)
-        ratio = float(self.split_gap_ratio if gap_ratio is None else gap_ratio)
+        min_gap = int(self.split.min_gap_px if min_gap_px is None else min_gap_px)
+        ratio = float(self.split.gap_ratio if gap_ratio is None else gap_ratio)
         for i, a in enumerate(group_boxes):
             for j in range(i + 1, len(group_boxes)):
                 b = group_boxes[j]
@@ -48,8 +48,8 @@ class BubbleSplitterMixin:
                 gap_y = max(0, max(by - ay2, ay - by2))
                 avg_h = max(1.0, (ah + bh) / 2)
                 avg_w = max(1.0, (aw + bw) / 2)
-                x_overlap = self._overlap_ratio_1d(ax, ax2, bx, bx2)
-                y_overlap = self._overlap_ratio_1d(ay, ay2, by, by2)
+                x_overlap = self.geometry.overlap_ratio_1d(ax, ax2, bx, bx2)
+                y_overlap = self.geometry.overlap_ratio_1d(ay, ay2, by, by2)
                 horizontal_gap_limit = max(float(min_gap), avg_w * ratio)
                 vertical_gap_limit = max(float(min_gap), avg_h * ratio)
                 separated_horizontal = gap_x >= horizontal_gap_limit and y_overlap >= 0.08
@@ -84,14 +84,14 @@ class BubbleSplitterMixin:
         return decisions
 
     def _should_split_region_from_groups(self, region: TextRegion, grouped_detections: Sequence[Sequence]) -> Tuple[bool, List[Dict[str, object]], str]:
-        if not self.split_merged_bubbles:
+        if not self.split.enabled:
             return False, [], "split_desactivado"
         if region.kind not in {"dialogue", "narration", "unknown"}:
             return False, [], "tipo_no_divisible"
-        if len(grouped_detections) < max(2, self.split_min_ocr_groups):
+        if len(grouped_detections) < max(2, self.split.min_ocr_groups):
             return False, [], "grupos_ocr_insuficientes"
-        group_boxes = [self._detections_box(group) for group in grouped_detections if group]
-        if len(group_boxes) < max(2, self.split_min_ocr_groups):
+        group_boxes = [self.geometry.detections_box(group) for group in grouped_detections if group]
+        if len(group_boxes) < max(2, self.split.min_ocr_groups):
             return False, [], "cajas_ocr_insuficientes"
         decisions = self._split_group_decisions(group_boxes)
         should_split = any(bool(item.get("split")) for item in decisions)
@@ -170,22 +170,22 @@ class BubbleSplitterMixin:
                 continue
             comp_mask = np.zeros_like(region.mask, dtype=np.uint8)
             comp_mask[labels == label_idx] = 255
-            bbox = self._mask_bbox(comp_mask)
+            bbox = self.geometry.mask_bbox(comp_mask)
             if bbox:
                 components.append((comp_mask, bbox, area))
         return sorted(components, key=lambda item: item[2], reverse=True)
 
     def _expanded_group_box(self, text_box: Box, region_box: Box, image_shape) -> Box:
         height, width = image_shape[:2]
-        expanded = self._expand_box(
+        expanded = self.geometry.expand_box(
             text_box,
             width,
             height,
-            ratio_x=self.split_group_pad_x,
-            ratio_y=self.split_group_pad_y,
-            min_pad=self.split_group_min_pad,
+            ratio_x=self.split.group_pad_x,
+            ratio_y=self.split.group_pad_y,
+            min_pad=self.split.group_min_pad,
         )
-        return self._box_intersection(expanded, region_box) or expanded
+        return self.geometry.box_intersection(expanded, region_box) or expanded
 
     def _split_mask_by_group_centers(
         self,
@@ -194,7 +194,7 @@ class BubbleSplitterMixin:
         image_shape,
     ) -> List[Tuple[np.ndarray, Box, str]]:
         components = self._significant_mask_components(region)
-        centers = [self._center(box) for box in group_boxes]
+        centers = [self.geometry.center(box) for box in group_boxes]
 
         if len(components) >= 2:
             used_components: set[int] = set()
@@ -205,9 +205,9 @@ class BubbleSplitterMixin:
                 for idx, (_mask, bbox, _area) in enumerate(components):
                     if idx in used_components:
                         continue
-                    cx, cy = self._center(bbox)
+                    cx, cy = self.geometry.center(bbox)
                     dist = (center[0] - cx) ** 2 + (center[1] - cy) ** 2
-                    if self._point_inside_box(center, bbox):
+                    if self.geometry.point_inside_box(center, bbox):
                         dist *= 0.25
                     if dist < best_dist:
                         best_dist = dist
@@ -244,7 +244,7 @@ class BubbleSplitterMixin:
             mask = cv2.bitwise_and(mask, clip)
             if cv2.countNonZero(mask) == 0:
                 mask = clip
-            bbox = self._mask_bbox(mask) or expanded
+            bbox = self.geometry.mask_bbox(mask) or expanded
             split_masks.append((mask, bbox, "ocr_voronoi"))
         return split_masks
 
@@ -262,7 +262,7 @@ class BubbleSplitterMixin:
             merge_trace: List[Dict[str, object]] = []
             grouped_detections = self._group_detections(assigned_detections, trace_decisions=merge_trace) if assigned_detections else []
             raw_pair_decisions, raw_pair_truncated = self._debug_pairwise_raw_merge_decisions(assigned_detections)
-            group_boxes = [self._detections_box(group) for group in grouped_detections if group]
+            group_boxes = [self.geometry.detections_box(group) for group in grouped_detections if group]
             should_split, pair_decisions, reason = self._should_split_region_from_groups(region, grouped_detections)
 
             record: Dict[str, object] = {
@@ -280,7 +280,7 @@ class BubbleSplitterMixin:
                     {
                         "group_index": group_idx,
                         "bbox": list(map(int, box)),
-                        "text": self._detections_text(grouped_detections[group_idx]),
+                        "text": self.geometry.detections_text(grouped_detections[group_idx]),
                         "detections": len(grouped_detections[group_idx]),
                     }
                     for group_idx, box in enumerate(group_boxes)
@@ -297,20 +297,20 @@ class BubbleSplitterMixin:
 
             split_clusters = self._cluster_groups_for_split(grouped_detections, pair_decisions)
             clustered_detections = self._merge_detection_groups_by_indices(grouped_detections, split_clusters)
-            cluster_boxes = [self._detections_box(group) for group in clustered_detections if group]
+            cluster_boxes = [self.geometry.detections_box(group) for group in clustered_detections if group]
             record["split_clusters"] = [
                 {
                     "cluster_index": cluster_idx,
                     "group_indices": [int(group_idx) for group_idx in group_indices],
                     "bbox": list(map(int, cluster_boxes[cluster_idx])),
-                    "text": self._detections_text(clustered_detections[cluster_idx]),
+                    "text": self.geometry.detections_text(clustered_detections[cluster_idx]),
                     "detections": len(clustered_detections[cluster_idx]),
                 }
                 for cluster_idx, group_indices in enumerate(split_clusters)
                 if cluster_idx < len(cluster_boxes)
             ]
 
-            if len(clustered_detections) < max(2, self.split_min_ocr_groups):
+            if len(clustered_detections) < max(2, self.split.min_ocr_groups):
                 record["split"] = False
                 record["reason"] = "clusters_logicos_insuficientes"
                 split_regions.append(region)
@@ -319,8 +319,8 @@ class BubbleSplitterMixin:
 
             cluster_decisions = self._split_group_decisions(
                 cluster_boxes,
-                min_gap_px=self.split_cluster_min_gap_px,
-                gap_ratio=self.split_cluster_gap_ratio,
+                min_gap_px=self.split.cluster_min_gap_px,
+                gap_ratio=self.split.cluster_gap_ratio,
                 decision_scope="clusters_logicos",
             )
             record["cluster_pair_decisions"] = cluster_decisions
@@ -343,8 +343,8 @@ class BubbleSplitterMixin:
             for cluster_idx, group in enumerate(clustered_detections):
                 mask, bbox, split_method = split_masks[cluster_idx]
                 text_box = cluster_boxes[cluster_idx]
-                text_hint = self._detections_text(group)
-                conf = max(region.confidence, self._detections_confidence(group))
+                text_hint = self.geometry.detections_text(group)
+                conf = max(region.confidence, self.geometry.detections_confidence(group))
                 metadata = dict(region.metadata or {})
                 metadata.update({
                     "split_from_merged_bubble": True,
@@ -355,8 +355,8 @@ class BubbleSplitterMixin:
                     "split_groups_total": len(grouped_detections),
                     "split_method": split_method,
                     "split_reason": reason,
-                    "split_cluster_gap_ratio": self.split_cluster_gap_ratio,
-                    "split_cluster_min_gap_px": self.split_cluster_min_gap_px,
+                    "split_cluster_gap_ratio": self.split.cluster_gap_ratio,
+                    "split_cluster_min_gap_px": self.split.cluster_min_gap_px,
                     "ocr_group_text": text_hint,
                 })
                 metadata.update(text_rotation_metadata(

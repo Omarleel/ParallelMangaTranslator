@@ -104,7 +104,7 @@ class RegionExtractionMixin:
             and region.kind in {"dialogue", "narration", "unknown"}
         )
         box = region.text_bbox if use_text_hint else region.ocr_bbox
-        x, y, w, h = self._clip_box_to_image(box, width_img, height_img)
+        x, y, w, h = self.geometry.clip_box_to_image(box, width_img, height_img)
         crop = imagen[y:y + h, x:x + w]
         if crop.size == 0:
             return crop
@@ -138,10 +138,10 @@ class RegionExtractionMixin:
         imagenes_interes = []
         height_img, width_img = imagen.shape[:2]
 
-        boxes = self._mask_to_boxes(mascara_capa)
+        boxes = self.geometry.mask_to_boxes(mascara_capa)
 
         for box in self._sort_boxes_for_reading(boxes):
-            x, y, w, h = self._expand_box(box, width_img, height_img)
+            x, y, w, h = self.geometry.expand_box(box, width_img, height_img)
             area_interes = imagen[y:y + h, x:x + w]
             area_limpia = self._prepare_crop_for_ocr(area_interes)
 

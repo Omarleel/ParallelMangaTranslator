@@ -18,20 +18,33 @@ Box = Tuple[int, int, int, int]
 logger = get_logger(__name__)
 
 
-class TranslationGeometryMixin:
-    """Operaciones geométricas puras para cajas y máscaras."""
+class TranslationGeometry:
+    """Geometría de cajas y máscaras de la etapa de traducción.
+
+    Era `TranslationGeometryMixin`. Siete de sus nueve métodos son funciones puras y
+    los otros dos sólo necesitan el idioma de origen, así que heredarla no aportaba
+    nada: obligaba a `TranslateManga` a llevarla en sus bases para que un mixin
+    hermano la llamara por `self`. Ahora el idioma es una dependencia declarada.
+
+    Ojo: `detection/detection_geometry.py` tiene helpers con los mismos nombres y
+    **no son equivalentes** —`expand_box` recibe otros argumentos—, así que no se
+    pueden unificar sin comprobarlo caso por caso.
+    """
+
+    def __init__(self, idioma_entrada: str) -> None:
+        self.idioma_entrada = idioma_entrada
 
     @staticmethod
-    def _rect_from_contour(contour) -> Box:
+    def rect_from_contour(contour) -> Box:
         x, y, w, h = cv2.boundingRect(contour)
         return int(x), int(y), int(w), int(h)
 
     @staticmethod
-    def _box_area(box: Box) -> int:
+    def box_area(box: Box) -> int:
         return max(0, box[2]) * max(0, box[3])
 
     @staticmethod
-    def _union(a: Box, b: Box) -> Box:
+    def union(a: Box, b: Box) -> Box:
         ax, ay, aw, ah = a
         bx, by, bw, bh = b
         x1 = min(ax, bx)
@@ -41,12 +54,12 @@ class TranslationGeometryMixin:
         return x1, y1, x2 - x1, y2 - y1
 
     @staticmethod
-    def _overlap_ratio_1d(a1: int, a2: int, b1: int, b2: int) -> float:
+    def overlap_ratio_1d(a1: int, a2: int, b1: int, b2: int) -> float:
         inter = max(0, min(a2, b2) - max(a1, b1))
         denom = max(1, min(a2 - a1, b2 - b1))
         return inter / denom
 
-    def _should_merge_boxes(self, a: Box, b: Box) -> bool:
+    def should_merge_boxes(self, a: Box, b: Box) -> bool:
         ax, ay, aw, ah = a
         bx, by, bw, bh = b
         ax2, ay2 = ax + aw, ay + ah
@@ -56,8 +69,8 @@ class TranslationGeometryMixin:
         gap_y = max(0, max(by - ay2, ay - by2))
         avg_h = max(1, (ah + bh) / 2)
         avg_w = max(1, (aw + bw) / 2)
-        x_overlap = self._overlap_ratio_1d(ax, ax2, bx, bx2)
-        y_overlap = self._overlap_ratio_1d(ay, ay2, by, by2)
+        x_overlap = self.overlap_ratio_1d(ax, ax2, bx, bx2)
+        y_overlap = self.overlap_ratio_1d(ay, ay2, by, by2)
 
         # Líneas de un mismo globo suelen estar una debajo de otra y comparten rango X.
         if x_overlap >= 0.22 and gap_y <= max(12, avg_h * 1.45):
@@ -80,7 +93,7 @@ class TranslationGeometryMixin:
 
         return False
 
-    def _merge_boxes(self, boxes: Sequence[Box]) -> List[Box]:
+    def merge_boxes(self, boxes: Sequence[Box]) -> List[Box]:
         merged = list(boxes)
         changed = True
         while changed:
@@ -95,15 +108,15 @@ class TranslationGeometryMixin:
                 for j in range(i + 1, len(merged)):
                     if consumed[j]:
                         continue
-                    if self._should_merge_boxes(current, merged[j]):
-                        current = self._union(current, merged[j])
+                    if self.should_merge_boxes(current, merged[j]):
+                        current = self.union(current, merged[j])
                         consumed[j] = True
                         changed = True
                 result.append(current)
             merged = result
         return merged
 
-    def _mask_to_boxes(self, mascara_capa: np.ndarray) -> List[Box]:
+    def mask_to_boxes(self, mascara_capa: np.ndarray) -> List[Box]:
         height, width = mascara_capa.shape[:2]
         _, mascara_binaria = cv2.threshold(mascara_capa, 127, 255, cv2.THRESH_BINARY)
         mascara_binaria = np.uint8(mascara_binaria)
@@ -124,15 +137,15 @@ class TranslationGeometryMixin:
         min_area = max(20, int(area_img * 0.00003))
         boxes = []
         for contour in contours:
-            x, y, w, h = self._rect_from_contour(contour)
-            if w < 3 or h < 3 or self._box_area((x, y, w, h)) < min_area:
+            x, y, w, h = self.rect_from_contour(contour)
+            if w < 3 or h < 3 or self.box_area((x, y, w, h)) < min_area:
                 continue
             boxes.append((x, y, w, h))
 
-        return self._merge_boxes(boxes)
+        return self.merge_boxes(boxes)
 
     @staticmethod
-    def _expand_box(box: Box, width_img: int, height_img: int) -> Box:
+    def expand_box(box: Box, width_img: int, height_img: int) -> Box:
         x, y, w, h = box
         # Margen proporcional: más grande en globos complejos, pero acotado para no invadir viñetas vecinas.
         aspect = max(w, h) / max(1, min(w, h))
@@ -150,7 +163,7 @@ class TranslationGeometryMixin:
         return x1, y1, max(1, x2 - x1), max(1, y2 - y1)
 
     @staticmethod
-    def _clip_box_to_image(box: Box, width_img: int, height_img: int) -> Box:
+    def clip_box_to_image(box: Box, width_img: int, height_img: int) -> Box:
         x, y, w, h = box
         x = int(max(0, min(width_img - 1, x)))
         y = int(max(0, min(height_img - 1, y)))

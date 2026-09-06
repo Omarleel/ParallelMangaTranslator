@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+from parallel_manga_translator.io.image_io import try_write_image
 from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
@@ -103,7 +104,7 @@ class BubbleDebugMixin:
 
             png_path = self.merge_debug_dir / f"{stem}_globos.png"
             json_path = self.merge_debug_dir / f"{stem}_decisiones.json"
-            cv2.imwrite(str(png_path), canvas)
+            try_write_image(png_path, canvas, logger=logger)
             payload = {
                 "bubble_split_debug_version": BUBBLE_SPLIT_DEBUG_VERSION,
                 "page_index": page_number,
@@ -119,30 +120,30 @@ class BubbleDebugMixin:
                     "red_thick_box": "texto libre/SFX identificado como onomatopeya; se etiqueta ONOMATOPEYA en la imagen debug",
                 },
                 "thresholds": {
-                    "split_min_ocr_groups": self.split_min_ocr_groups,
-                    "split_min_gap_px": self.split_min_gap_px,
-                    "split_gap_ratio": self.split_gap_ratio,
-                    "split_pad_x": self.split_group_pad_x,
-                    "split_pad_y": self.split_group_pad_y,
-                    "ocr_group_merge_x_overlap": self.ocr_merge_x_overlap,
-                    "ocr_group_merge_y_gap_ratio": self.ocr_merge_y_gap_ratio,
-                    "ocr_group_merge_cjk_y_overlap": self.ocr_merge_cjk_y_overlap,
-                    "ocr_group_merge_cjk_x_gap_ratio": self.ocr_merge_cjk_x_gap_ratio,
-                    "ocr_group_merge_cjk_columns": self.ocr_merge_cjk_columns,
-                    "ocr_group_merge_line_y_overlap": self.ocr_merge_line_y_overlap,
-                    "ocr_group_merge_line_x_gap_ratio": self.ocr_merge_line_x_gap_ratio,
-                    "ocr_group_merge_line_horizontal_only": self.ocr_merge_line_horizontal_only,
-                    "free_text_max_area_ratio": self.free_text_max_area_ratio,
-                    "free_text_hard_max_area_ratio": self.free_text_hard_max_area_ratio,
-                    "free_text_max_width_ratio": self.free_text_max_width_ratio,
-                    "free_text_max_height_ratio": self.free_text_max_height_ratio,
-                    "free_text_min_confidence": self.free_text_min_confidence,
-                    "free_text_large_min_confidence": self.free_text_large_min_confidence,
-                    "free_text_gap_recovery": self.free_text_gap_recovery,
-                    "free_text_gap_max_px": self.free_text_gap_max_px,
-                    "free_text_gap_min_y_overlap": self.free_text_gap_min_y_overlap,
-                    "free_text_gap_min_ink_density": self.free_text_gap_min_density,
-                    "free_text_gap_max_ink_density": self.free_text_gap_max_density,
+                    "split_min_ocr_groups": self.split.min_ocr_groups,
+                    "split_min_gap_px": self.split.min_gap_px,
+                    "split_gap_ratio": self.split.gap_ratio,
+                    "split_pad_x": self.split.group_pad_x,
+                    "split_pad_y": self.split.group_pad_y,
+                    "ocr_group_merge_x_overlap": self.ocr_merge.x_overlap,
+                    "ocr_group_merge_y_gap_ratio": self.ocr_merge.y_gap_ratio,
+                    "ocr_group_merge_cjk_y_overlap": self.ocr_merge.cjk_y_overlap,
+                    "ocr_group_merge_cjk_x_gap_ratio": self.ocr_merge.cjk_x_gap_ratio,
+                    "ocr_group_merge_cjk_columns": self.ocr_merge.cjk_columns,
+                    "ocr_group_merge_line_y_overlap": self.ocr_merge.line_y_overlap,
+                    "ocr_group_merge_line_x_gap_ratio": self.ocr_merge.line_x_gap_ratio,
+                    "ocr_group_merge_line_horizontal_only": self.ocr_merge.line_horizontal_only,
+                    "free_text_max_area_ratio": self.free_text.max_area_ratio,
+                    "free_text_hard_max_area_ratio": self.free_text.hard_max_area_ratio,
+                    "free_text_max_width_ratio": self.free_text.max_width_ratio,
+                    "free_text_max_height_ratio": self.free_text.max_height_ratio,
+                    "free_text_min_confidence": self.free_text.min_confidence,
+                    "free_text_large_min_confidence": self.free_text.large_min_confidence,
+                    "free_text_gap_recovery": self.free_text.gap_recovery,
+                    "free_text_gap_max_px": self.free_text.gap_max_px,
+                    "free_text_gap_min_y_overlap": self.free_text.gap_min_y_overlap,
+                    "free_text_gap_min_ink_density": self.free_text.gap_min_density,
+                    "free_text_gap_max_ink_density": self.free_text.gap_max_density,
                     "bubble_merge_debug_pair_limit": self.merge_debug_pair_limit,
                 },
                 "regions": debug_region_rows,

@@ -22,10 +22,10 @@ class FreeTextRecoveryMixin:
 
     def _fine_text_region_mask_from_group(self, image_shape, group: Sequence, kind: str) -> Tuple[np.ndarray, Box, float, str]:
         if not getattr(self, "fine_text_detection", True):
-            boxes = [self._to_rect(det) for det in group]
+            boxes = [self.geometry.to_rect(det) for det in group]
             text_box = boxes[0]
             for box in boxes[1:]:
-                text_box = self._union(text_box, box)
+                text_box = self.geometry.union(text_box, box)
             return self._text_box_mask(image_shape, text_box, kind=kind)
 
         mask = TextInkMaskRefiner.mask_from_detections(
@@ -35,10 +35,10 @@ class FreeTextRecoveryMixin:
             min_pad=1,
         )
         if cv2.countNonZero(mask) == 0:
-            boxes = [self._to_rect(det) for det in group]
+            boxes = [self.geometry.to_rect(det) for det in group]
             text_box = boxes[0]
             for box in boxes[1:]:
-                text_box = self._union(text_box, box)
+                text_box = self.geometry.union(text_box, box)
             return self._text_box_mask(image_shape, text_box, kind=kind)
 
         padding = 8 if kind == "sfx" else 5
@@ -55,13 +55,13 @@ class FreeTextRecoveryMixin:
             logger.warning("No se pudo ordenar grupos de texto libre por lectura: %s", exc)
 
         for i, group in enumerate(grouped_detections):
-            boxes = [self._to_rect(det) for det in group]
+            boxes = [self.geometry.to_rect(det) for det in group]
             text_box = boxes[0]
             for box in boxes[1:]:
-                text_box = self._union(text_box, box)
+                text_box = self.geometry.union(text_box, box)
 
-            text_hint = " ".join(self._text(det).strip() for det in group if self._text(det).strip())
-            conf = float(np.mean([self._confidence(det) for det in group])) if group else 0.0
+            text_hint = " ".join(self.geometry.text(det).strip() for det in group if self.geometry.text(det).strip())
+            conf = float(np.mean([self.geometry.confidence(det) for det in group])) if group else 0.0
 
             free_text_onomatopoeia_metadata = self._free_text_onomatopoeia_metadata(text_hint)
             looks_sfx = self._looks_like_sfx(group) or bool(free_text_onomatopoeia_metadata)
@@ -143,7 +143,7 @@ class FreeTextRecoveryMixin:
         se limita a huecos entre textos libres ya encontrados.
         """
         img_h, img_w = image.shape[:2]
-        x, y, w, h = self._clip_box_to_image(gap_box, img_w, img_h)
+        x, y, w, h = self.geometry.clip_box_to_image(gap_box, img_w, img_h)
         if w < 16 or h < 42:
             return None
 
@@ -177,7 +177,7 @@ class FreeTextRecoveryMixin:
             # outline ni aceptar bloques sólidos por accidente.
             original_ink = int(cv2.countNonZero(dark[cy:cy + ch, cx:cx + cw]))
             density = original_ink / max(1, cw * ch)
-            if density < self.free_text_gap_min_density or density > self.free_text_gap_max_density:
+            if density < self.free_text.gap_min_density or density > self.free_text.gap_max_density:
                 continue
             # Rechaza líneas de panel muy finas o masas enormes que cubren casi todo el hueco.
             if cw <= 6 or (cw > w * 0.92 and ch > h * 0.92):
@@ -189,7 +189,7 @@ class FreeTextRecoveryMixin:
 
         merged = candidates[0]
         for box in candidates[1:]:
-            merged = self._union(merged, box)
+            merged = self.geometry.union(merged, box)
 
         mx, my, mw, mh = merged
         # Validación final contra el tamaño del hueco.
@@ -200,7 +200,7 @@ class FreeTextRecoveryMixin:
 
         pad_x = max(4, min(12, int(round(mw * 0.12))))
         pad_y = max(5, min(18, int(round(mh * 0.08))))
-        return self._clip_box_to_image((mx - pad_x, my - pad_y, mw + 2 * pad_x, mh + 2 * pad_y), img_w, img_h)
+        return self.geometry.clip_box_to_image((mx - pad_x, my - pad_y, mw + 2 * pad_x, mh + 2 * pad_y), img_w, img_h)
 
     def _order_regions_for_reading(self, regions: Sequence[TextRegion], image: np.ndarray | None = None) -> List[TextRegion]:
         try:
@@ -218,7 +218,7 @@ class FreeTextRecoveryMixin:
         return ordered
 
     def _recover_free_text_gaps(self, image: np.ndarray, regions: Sequence[TextRegion]) -> List[TextRegion]:
-        if not self.free_text_gap_recovery:
+        if not self.free_text.gap_recovery:
             return []
         text_regions = [r for r in regions if r.kind in {"free_text", "sfx"}]
         if len(text_regions) < 2:
@@ -237,11 +237,11 @@ class FreeTextRecoveryMixin:
                 if rx <= lx + lw:
                     continue
                 gap_x = rx - (lx + lw)
-                if gap_x < 10 or gap_x > self.free_text_gap_max_px:
+                if gap_x < 10 or gap_x > self.free_text.gap_max_px:
                     continue
 
-                y_overlap = self._overlap_ratio_1d(ly, ly + lh, ry, ry + rh)
-                if y_overlap < self.free_text_gap_min_y_overlap:
+                y_overlap = self.geometry.overlap_ratio_1d(ly, ly + lh, ry, ry + rh)
+                if y_overlap < self.free_text.gap_min_y_overlap:
                     continue
 
                 y1 = max(0, min(ly, ry) - max(8, int(round(min(lh, rh) * 0.05))))
@@ -257,16 +257,16 @@ class FreeTextRecoveryMixin:
                     continue
 
                 # Evita duplicar o invadir regiones ya existentes.
-                candidate_area = max(1, self._area(candidate_box))
+                candidate_area = max(1, self.geometry.area(candidate_box))
                 duplicate = False
                 for existing in list(regions) + recovered:
-                    overlap = self._intersection_area(candidate_box, existing.bbox) / candidate_area
+                    overlap = self.geometry.intersection_area(candidate_box, existing.bbox) / candidate_area
                     if overlap > 0.20:
                         duplicate = True
                         break
                 if duplicate:
                     continue
-                if any(self._intersection_area(candidate_box, box) / candidate_area > 0.20 for box in seen_boxes):
+                if any(self.geometry.intersection_area(candidate_box, box) / candidate_area > 0.20 for box in seen_boxes):
                     continue
 
                 mask, bbox, score, source = self._text_box_mask(image.shape, candidate_box, kind="free_text")
@@ -308,7 +308,7 @@ class FreeTextRecoveryMixin:
             if idx in assigned:
                 continue
             try:
-                text_box = self._to_rect(det)
+                text_box = self.geometry.to_rect(det)
             except Exception:
                 continue
             if regions and self._is_inside_existing_region(text_box, regions):

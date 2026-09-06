@@ -17,7 +17,7 @@ from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleC
 from parallel_manga_translator.config.app_config import ProcessingConfig, QualityConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
-from parallel_manga_translator.detection.bubble_geometry_mixin import BubbleGeometryMixin
+from parallel_manga_translator.detection.detection_geometry import DetectionGeometry
 from parallel_manga_translator.detection.bubble_text_rules_mixin import BubbleTextRulesMixin
 from parallel_manga_translator.detection.bubble_region_builder_mixin import BubbleRegionBuilderMixin
 from parallel_manga_translator.detection.bubble_splitter_mixin import BubbleSplitterMixin
@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 
-class BubbleDetector(BubbleGeometryMixin, BubbleTextRulesMixin, BubbleRegionBuilderMixin, BubbleSplitterMixin, BubbleDebugMixin, FreeTextRecoveryMixin):
+class BubbleDetector(BubbleTextRulesMixin, BubbleRegionBuilderMixin, BubbleSplitterMixin, BubbleDebugMixin, FreeTextRecoveryMixin):
     """Detector de regiones basado SOLO en modelos preentrenados para globos.
 
     Ya no existe fallback heurístico para globos de texto. El flujo YOLO es:
@@ -46,7 +46,18 @@ class BubbleDetector(BubbleGeometryMixin, BubbleTextRulesMixin, BubbleRegionBuil
         idioma_entrada: str = "Japonés",
         quality_config: QualityConfig | None = None,
         processing_config: ProcessingConfig | None = None,
+        geometry: DetectionGeometry | None = None,
     ) -> None:
+        # Los valores por defecto salen del dataclass, no del estado global del proceso.
+        # Antes se caía a `get_active_config()`, así que construir un detector sin
+        # configuración leía el config.yaml del usuario: los tests dejaban de ser
+        # deterministas y dos trabajos de la UI compartían ajustes sin saberlo.
+        quality_config = quality_config if quality_config is not None else QualityConfig()
+        processing_config = processing_config if processing_config is not None else ProcessingConfig()
+        # Colaborador explícito en vez de clase base: sus métodos son funciones puras,
+        # así que heredarlas sólo servía para que los mixins hermanos las llamaran por
+        # `self` sin declarar la dependencia.
+        self.geometry = geometry if geometry is not None else DetectionGeometry()
         self.idioma_entrada = idioma_entrada
         self.quality_config = quality_config
         self.processing_config = processing_config
@@ -100,98 +111,50 @@ class BubbleDetector(BubbleGeometryMixin, BubbleTextRulesMixin, BubbleRegionBuil
         """Aplica la configuración del detector de globos."""
         self.enabled = settings.enabled
 
-        self.split_merged_bubbles = settings.split.enabled
-        self.split_min_ocr_groups = settings.split.min_ocr_groups
-        self.split_min_gap_px = settings.split.min_gap_px
-        self.split_gap_ratio = settings.split.gap_ratio
-        self.split_cluster_min_gap_px = settings.split.cluster_min_gap_px
-        self.split_cluster_gap_ratio = settings.split.cluster_gap_ratio
-        self.split_group_pad_x = settings.split.group_pad_x
-        self.split_group_pad_y = settings.split.group_pad_y
-        self.split_group_min_pad = settings.split.group_min_pad
+        # Se guardan los grupos de ajustes, no sus campos sueltos. Aplanarlos
+        # destruía el contrato que estos dataclasses ya expresan y obligaba a los
+        # mixins a leer 28 atributos que nadie declaraba.
+        self.split = settings.split
+        self.ocr_merge = settings.ocr_merge
+        self.free_text = settings.free_text
 
-        self.ocr_merge_x_overlap = settings.ocr_merge.x_overlap
-        self.ocr_merge_y_gap_ratio = settings.ocr_merge.y_gap_ratio
-        self.ocr_merge_cjk_y_overlap = settings.ocr_merge.cjk_y_overlap
-        self.ocr_merge_cjk_x_gap_ratio = settings.ocr_merge.cjk_x_gap_ratio
-        self.ocr_merge_cjk_columns = settings.ocr_merge.cjk_columns
-        self.ocr_merge_line_y_overlap = settings.ocr_merge.line_y_overlap
-        self.ocr_merge_line_x_gap_ratio = settings.ocr_merge.line_x_gap_ratio
-        self.ocr_merge_line_horizontal_only = settings.ocr_merge.line_horizontal_only
 
-        self.free_text_max_area_ratio = settings.free_text.max_area_ratio
-        self.free_text_hard_max_area_ratio = settings.free_text.hard_max_area_ratio
-        self.free_text_max_width_ratio = settings.free_text.max_width_ratio
-        self.free_text_max_height_ratio = settings.free_text.max_height_ratio
-        self.free_text_min_confidence = settings.free_text.min_confidence
-        self.free_text_large_min_confidence = settings.free_text.large_min_confidence
-        self.free_text_gap_recovery = settings.free_text.gap_recovery
-        self.free_text_gap_max_px = settings.free_text.gap_max_px
-        self.free_text_gap_min_y_overlap = settings.free_text.gap_min_y_overlap
-        self.free_text_gap_min_density = settings.free_text.gap_min_density
-        self.free_text_gap_max_density = settings.free_text.gap_max_density
 
         self.merge_debug = settings.merge_debug.enabled
         self.merge_debug_pair_limit = settings.merge_debug.pair_limit
         self.merge_debug_dir = settings.merge_debug.directory
 
+    @staticmethod
+    def compose_mask(regions: Sequence[TextRegion], image_shape) -> np.ndarray:
+        """Compone la máscara de región segura.
 
+        En globos esta máscara representa el interior/área permitida para OCR y
+        renderizado. No debe asumirse que es la máscara de limpieza.
+        """
+        height, width = image_shape[:2]
+        mask = np.zeros((height, width), dtype=np.uint8)
+        for region in regions:
+            if region.mask is not None and region.mask.size:
+                mask = cv2.bitwise_or(mask, region.mask)
+        return mask
 
+    @staticmethod
+    def compose_clean_mask(regions: Sequence[TextRegion], image_shape) -> np.ndarray:
+        """Compone únicamente la máscara de tinta/texto a borrar.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-
+        Para globos se usa ``region.clean_mask``. Si una región de globo no tiene
+        clean_mask, se considera vacía para evitar limpiar todo el globo por
+        accidente. Para texto libre/SFX se conserva ``region.mask`` como fallback
+        porque esa máscara ya representa el texto expandido, no un globo completo.
+        """
+        height, width = image_shape[:2]
+        mask = np.zeros((height, width), dtype=np.uint8)
+        bubble_kinds = {"dialogue", "narration", "unknown"}
+        for region in regions:
+            region_clean = getattr(region, "clean_mask", None)
+            if region_clean is not None and getattr(region_clean, "size", 0):
+                mask = cv2.bitwise_or(mask, (region_clean > 0).astype(np.uint8) * 255)
+                continue
+            if region.kind not in bubble_kinds and region.mask is not None and region.mask.size:
+                mask = cv2.bitwise_or(mask, region.mask)
+        return mask
