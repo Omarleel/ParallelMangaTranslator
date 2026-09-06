@@ -46,7 +46,7 @@ class FreeTextRecoveryMixin:
 
         grouped_detections = self._group_detections(detections)
         try:
-            grouped_detections = self.reading_order_resolver.sort_detection_groups(grouped_detections, self._to_rect)
+            grouped_detections = self.reading_order_resolver.sort_detection_groups(grouped_detections, self.geometry.to_rect)
         except Exception as exc:
             logger.warning("No se pudo ordenar grupos de texto libre por lectura: %s", exc)
 
