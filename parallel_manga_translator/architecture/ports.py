@@ -88,10 +88,60 @@ class TextRendererPort(Protocol):
 
 @runtime_checkable
 class InpainterPort(Protocol):
-    """Contrato para motores de inpainting."""
+    """Contrato para motores de inpainting.
 
-    async def _load(self) -> None:
+    Es el método público y síncrono que llama el pipeline, no la carga perezosa interna
+    de cada motor. `BNInpainter` queda fuera a propósito: recibe la lista de detecciones
+    en vez de una máscara, así que no es el mismo contrato.
+    """
+
+    def inpaint(self, img: np.ndarray, mask: np.ndarray) -> np.ndarray:
         ...
 
-    async def _inpaint(self, imagen: np.ndarray, mascara_capa: np.ndarray) -> np.ndarray:
+
+@runtime_checkable
+class PageCleanerPort(Protocol):
+    """Etapa de limpieza vista por el orquestador de páginas.
+
+    El contrato es exactamente lo que `ImageProcessor` necesita, ni más ni menos: limpiar
+    una página y acotar el contexto de los artefactos de depuración. Todo lo demás que
+    hoy expone `CleanManga` es detalle interno suyo.
+    """
+
+    def limpiar_manga(self, imagen: np.ndarray):
+        ...
+
+    def set_debug_page_context(
+        self,
+        page_index: int,
+        *,
+        source_filename: Optional[str] = None,
+        output_filename: Optional[str] = None,
+    ) -> None:
+        ...
+
+    def clear_debug_page_context(self) -> None:
+        ...
+
+    def set_visual_inpaint_debug_context(self, output_root: str, page_index: int, filename: str) -> None:
+        ...
+
+    def clear_visual_inpaint_debug_context(self) -> None:
+        ...
+
+
+@runtime_checkable
+class PageTranslatorPort(Protocol):
+    """Etapa de OCR + traducción + rotulado vista por el orquestador de páginas."""
+
+    def insertar_json_queue(self, indice_imagen: int, transcripcion_queue: Any, traduccion_queue: Any) -> None:
+        ...
+
+    def traducir_manga(
+        self,
+        imagen: np.ndarray,
+        imagen_limpia: np.ndarray,
+        mascara_capa: np.ndarray,
+        text_regions: Optional[Sequence[TextRegion]] = None,
+    ):
         ...

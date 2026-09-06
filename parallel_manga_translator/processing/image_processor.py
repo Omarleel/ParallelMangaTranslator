@@ -13,13 +13,13 @@ import cv2
 import numpy as np
 import torch
 
-from parallel_manga_translator.processing.clean_manga import CleanManga
-from parallel_manga_translator.io.file_manager import FileManager
+from parallel_manga_translator.io.image_io import write_image
+from parallel_manga_translator.architecture.ports import PageCleanerPort, PageTranslatorPort
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
-from parallel_manga_translator.processing.translate_manga import TranslateManga
 from parallel_manga_translator.quality.metrics_manager import MetricsWriter, PageMetrics
 from parallel_manga_translator.infrastructure.error_handling import (
     PageFailureReport,
+    PipelineStage,
     StageProcessingError,
     processing_stage,
     unwrap_original_exception,
@@ -31,7 +31,6 @@ from parallel_manga_translator.infrastructure.gpu_scheduler import (
     gpu_scheduler_snapshot,
     reset_gpu_scheduler_stats,
 )
-from parallel_manga_translator.config.app_config import CharacterMemoryConfig, OcrConfig, OnomatopoeiaConfig, ProcessingConfig, QualityConfig, TranslationConfig
 
 logger = get_logger(__name__)
 
@@ -53,42 +52,26 @@ _PIPELINE_STOP = object()
 
 
 class ImageProcessor:
-    def __init__(
-        self,
-        idioma_entrada,
-        idioma_salida,
-        modelo_inpaint,
-        metodo_traduccion="Tradicional",
-        groq_api_key="",
-        lore_manga="",
-        ocr_config: OcrConfig | None = None,
-        translation_config: TranslationConfig | None = None,
-        processing_config: ProcessingConfig | None = None,
-        quality_config: QualityConfig | None = None,
-        onomatopoeia_config: OnomatopoeiaConfig | None = None,
-        character_memory_config: CharacterMemoryConfig | None = None,
-    ):
-        self.file_manager = FileManager()
-        self.clean_manga = CleanManga(
-            modelo_inpaint,
-            idioma_entrada=idioma_entrada,
-            quality_config=quality_config,
-            onomatopoeia_config=onomatopoeia_config,
-            processing_config=processing_config,
-            ocr_config=ocr_config,
-        )
-        self.translate_manga = TranslateManga(
-            idioma_entrada,
-            idioma_salida,
-            metodo_traduccion=metodo_traduccion,
-            groq_api_key=groq_api_key,
-            lore_manga=lore_manga,
-            ocr_config=ocr_config,
-            translation_config=translation_config,
-            quality_config=quality_config,
-            onomatopoeia_config=onomatopoeia_config,
-            character_memory_config=character_memory_config,
-        )
+    def __init__(self, cleaner: PageCleanerPort, translator: PageTranslatorPort) -> None:
+        """Orquesta las etapas que recibe; no sabe construirlas ni cuáles son.
+
+        El cableado de los motores concretos vive en `cli.build_image_processor`, que es
+        el composition root. Aquí sólo se exige que lo inyectado cumpla el contrato: sin
+        esta comprobación los puertos volverían a ser documentación, que es justo lo que
+        eran cuando nadie los referenciaba.
+        """
+        if not isinstance(cleaner, PageCleanerPort):
+            raise TypeError(
+                "El limpiador inyectado no cumple PageCleanerPort. "
+                f"Faltan métodos en {type(cleaner).__name__}."
+            )
+        if not isinstance(translator, PageTranslatorPort):
+            raise TypeError(
+                "El traductor inyectado no cumple PageTranslatorPort. "
+                f"Faltan métodos en {type(translator).__name__}."
+            )
+        self.clean_manga = cleaner
+        self.translate_manga = translator
 
     @staticmethod
     def _read_image(image_path: str):
@@ -99,8 +82,9 @@ class ImageProcessor:
 
     @staticmethod
     def _write_image(output_path: str, imagen) -> None:
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(output_path, imagen)
+        # Falla ruidosamente: `cv2.imwrite` devuelve False sin lanzar, y una página
+        # perdida en silencio es el peor fallo posible aquí.
+        write_image(output_path, imagen)
 
     @staticmethod
     def _is_retryable_memory_error(exc: Exception) -> bool:
@@ -356,7 +340,7 @@ class ImageProcessor:
             try:
                 t0 = time.perf_counter()
                 with processing_stage(
-                    "limpieza", logger=logger, page_index=indice_imagen, filename=output_filename
+                    PipelineStage.LIMPIEZA, logger=logger, page_index=indice_imagen, filename=output_filename
                 ):
                     if bool(getattr(self.clean_manga, "visual_inpaint_debug", False)):
                         self.clean_manga.set_visual_inpaint_debug_context(
@@ -380,7 +364,7 @@ class ImageProcessor:
 
                 archivo_limpieza = os.path.join(ruta_limpieza_salida, output_filename)
                 with processing_stage(
-                    "guardar_limpieza", logger=logger, page_index=indice_imagen, filename=output_filename
+                    PipelineStage.GUARDAR_LIMPIEZA, logger=logger, page_index=indice_imagen, filename=output_filename
                 ):
                     self._write_image(archivo_limpieza, imagen_limpia)
 
@@ -431,7 +415,7 @@ class ImageProcessor:
         )
         t0 = time.perf_counter()
         with processing_stage(
-            "ocr_traduccion_render",
+            PipelineStage.OCR_TRADUCCION_RENDER,
             logger=logger,
             page_index=item.indice_imagen,
             filename=item.output_filename,
@@ -456,7 +440,7 @@ class ImageProcessor:
 
         archivo_traduccion = os.path.join(ruta_traduccion_salida, item.output_filename)
         with processing_stage(
-            "guardar_traduccion",
+            PipelineStage.GUARDAR_TRADUCCION,
             logger=logger,
             page_index=item.indice_imagen,
             filename=item.output_filename,
@@ -530,7 +514,7 @@ class ImageProcessor:
         for intento in range(1, max_retries + 1):
             try:
                 t0 = time.perf_counter()
-                with processing_stage("limpieza", logger=logger, page_index=indice_imagen, filename=archivo):
+                with processing_stage(PipelineStage.LIMPIEZA, logger=logger, page_index=indice_imagen, filename=archivo):
                     if bool(getattr(self.clean_manga, "visual_inpaint_debug", False)):
                         self.clean_manga.set_visual_inpaint_debug_context(
                             output_root=output_root,
@@ -546,7 +530,7 @@ class ImageProcessor:
                 metrics.detected_sfx = sum(1 for r in regiones if r.kind in {"sfx", "free_text"})
 
                 archivo_limpieza_salida = os.path.join(ruta_limpieza_salida, archivo)
-                with processing_stage("guardar_limpieza", logger=logger, page_index=indice_imagen, filename=archivo):
+                with processing_stage(PipelineStage.GUARDAR_LIMPIEZA, logger=logger, page_index=indice_imagen, filename=archivo):
                     self._write_image(archivo_limpieza_salida, imagen_limpia)
 
                 self.translate_manga.insertar_json_queue(
@@ -555,14 +539,14 @@ class ImageProcessor:
                     traduccion_queue=traduccion_queue,
                 )
                 t1 = time.perf_counter()
-                with processing_stage("ocr_traduccion_render", logger=logger, page_index=indice_imagen, filename=archivo):
+                with processing_stage(PipelineStage.OCR_TRADUCCION_RENDER, logger=logger, page_index=indice_imagen, filename=archivo):
                     imagen_traducida = self.translate_manga.traducir_manga(imagen_actual, imagen_limpia, mascara_capa, text_regions=regiones)
                 metrics.timings["ocr_traduccion_render"] = round(time.perf_counter() - t1, 4)
                 metrics.ocr_empty = sum(1 for t in getattr(self.translate_manga, "ultimos_textos_originales", []) if not str(t).strip())
                 metrics.translations_empty = sum(1 for t in getattr(self.translate_manga, "ultimos_textos_traducidos", []) if not str(t).strip())
 
                 archivo_traduccion_salida = os.path.join(ruta_traduccion_salida, archivo)
-                with processing_stage("guardar_traduccion", logger=logger, page_index=indice_imagen, filename=archivo):
+                with processing_stage(PipelineStage.GUARDAR_TRADUCCION, logger=logger, page_index=indice_imagen, filename=archivo):
                     self._write_image(archivo_traduccion_salida, imagen_traducida)
                 metrics.retries = intento - 1
                 MetricsWriter(output_root).write_page(metrics)

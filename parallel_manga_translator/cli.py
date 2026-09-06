@@ -9,10 +9,11 @@ from loguru import logger as loguru_logger
 
 from parallel_manga_translator.config.app_config import ApplicationConfig
 from parallel_manga_translator.config.config_manager import ConfigManager
-from parallel_manga_translator.config.runtime_config import set_active_config
 from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
 from parallel_manga_translator.io.utilities import Utilities
+from parallel_manga_translator.processing.clean_manga import CleanManga
 from parallel_manga_translator.processing.image_processor import ImageProcessor
+from parallel_manga_translator.processing.translate_manga import TranslateManga
 from parallel_manga_translator.processing.parallel_processor import ParallelProcessor
 
 loguru_logger.remove()
@@ -26,7 +27,6 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 def build_default_config(config_path: str = "config.yaml") -> ApplicationConfig:
     """Build the application configuration from YAML."""
     config = ConfigManager(config_path).build_application_config()
-    set_active_config(config)
     configure_logging(log_file=config.logging.file, level=config.logging.level)
     return config
 
@@ -46,21 +46,34 @@ def prepare_assets(utilities: Utilities | None = None) -> None:
 
 
 def build_image_processor(config: ApplicationConfig) -> ImageProcessor:
-    """Create the processing pipeline for a configured translation run."""
-    return ImageProcessor(
+    """Composition root: el único sitio que sabe qué motores concretos se usan.
+
+    `ImageProcessor` recibe las etapas ya construidas y sólo conoce sus contratos
+    (`PageCleanerPort`, `PageTranslatorPort`). Para sustituir una etapa —o inyectar una
+    falsa en un test— se cambia aquí, no dentro del orquestador.
+    """
+    cleaner = CleanManga(
+        config.translation.modelo_inpaint,
         idioma_entrada=config.translation.idioma_entrada,
-        idioma_salida=config.translation.idioma_salida,
-        modelo_inpaint=config.translation.modelo_inpaint,
+        quality_config=config.quality,
+        onomatopoeia_config=config.onomatopoeia,
+        processing_config=config.processing,
+        ocr_config=config.ocr,
+    )
+    translator = TranslateManga(
+        config.translation.idioma_entrada,
+        config.translation.idioma_salida,
         metodo_traduccion=config.translation.metodo_traduccion,
         groq_api_key=config.translation.groq_api_key,
         lore_manga=config.translation.lore_manga,
         ocr_config=config.ocr,
         translation_config=config.translation,
-        processing_config=config.processing,
         quality_config=config.quality,
         onomatopoeia_config=config.onomatopoeia,
         character_memory_config=config.character_memory,
+        processing_config=config.processing,
     )
+    return ImageProcessor(cleaner, translator)
 
 
 def ensure_output_directories(config: ApplicationConfig) -> None:
@@ -85,7 +98,7 @@ def run_pipeline(config: ApplicationConfig) -> bool:
         config.translation.modelo_inpaint,
     )
 
-    return ParallelProcessor().procesar(
+    return ParallelProcessor(config).procesar(
         ruta_carpeta_entrada=config.processing.ruta_carpeta_entrada,
         ruta_carpeta_salida=config.processing.ruta_carpeta_salida,
         process_func=image_processor.procesar,
