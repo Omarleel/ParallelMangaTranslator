@@ -117,7 +117,12 @@ class RenderingPipelineMixin:
                 }
             })
 
-    def incrustar_textos(self, imagen_limpia, cuadros_delimitadores, textos):
+    def traducir_textos_de_regiones(self, cuadros_delimitadores, textos):
+        """Paso 3: normaliza, traduce y deja el rastro en las colas de JSON.
+
+        Devuelve los textos ya resueltos para rotular. El orden de las dos escrituras a
+        las colas es significativo y se conserva tal cual estaba.
+        """
         textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
         self.ultimos_textos_originales = textos_limpios
         textos_traducidos = self.traducir_textos(textos_limpios)
@@ -125,6 +130,15 @@ class RenderingPipelineMixin:
         self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
         textos_para_render = self.resolver_textos_para_render(textos_limpios, textos_traducidos)
         self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos, textos_para_render)
+        return textos_para_render
+
+    def incrustar_textos(self, imagen_limpia, cuadros_delimitadores, textos):
+        """Composición de traducir + rotular. Se conserva porque es la API que usa el pipeline."""
+        textos_para_render = self.traducir_textos_de_regiones(cuadros_delimitadores, textos)
+        return self.rotular(imagen_limpia, cuadros_delimitadores, textos_para_render)
+
+    def rotular(self, imagen_limpia, cuadros_delimitadores, textos_para_render):
+        """Paso 4: dibuja los textos ya resueltos sobre la imagen limpia."""
         clip_masks = [region.local_mask() for region in self.ultimas_regiones] if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores) else None
         return self.text_renderer.render(
             imagen_limpia,

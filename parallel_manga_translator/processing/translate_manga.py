@@ -45,6 +45,8 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
         character_memory_config: CharacterMemoryConfig | None = None,
         processing_config: ProcessingConfig | None = None,
         geometry: TranslationGeometry | None = None,
+        ocr_manager: OcrManager | None = None,
+        translator_manager: TranslatorManager | None = None,
     ):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.idioma_entrada = idioma_entrada
@@ -60,7 +62,10 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
             processing_config = ProcessingConfig()
         self.processing_config = processing_config
 
-        self.translator_manager = TranslatorManager(
+        # Los dos pesados se pueden inyectar: sin esto no se puede componer un modo
+        # solo-OCR (no hace falta traductor) ni probar los pasos por separado sin
+        # cargar el motor OCR. Es el mismo arreglo que ya tiene CleanManga.
+        self.translator_manager = translator_manager if translator_manager is not None else TranslatorManager(
             idioma_entrada,
             idioma_salida,
             metodo=metodo_traduccion,
@@ -71,7 +76,9 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
             cache_dir=processing_config.cache_dir,
             cache_enabled=processing_config.cache,
         )
-        self.ocr_manager = OcrManager(idioma_entrada=idioma_entrada, config=ocr_config, cache_dir=processing_config.cache_dir)
+        self.ocr_manager = ocr_manager if ocr_manager is not None else OcrManager(
+            idioma_entrada=idioma_entrada, config=ocr_config, cache_dir=processing_config.cache_dir
+        )
         # Colaborador explícito: siete de sus métodos son puros y los otros dos sólo
         # necesitan el idioma, que ahora recibe en vez de tomarlo del `self` ajeno.
         self.geometry = geometry if geometry is not None else TranslationGeometry(idioma_entrada)
