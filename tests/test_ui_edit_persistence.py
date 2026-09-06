@@ -355,7 +355,7 @@ def test_inpaint_revision_is_preserved_when_restoring_original_elsewhere(monkeyp
 
     # El fake hace muy visible la zona reconstruida: 205 en cualquier píxel enmascarado.
     monkeypatch.setattr(
-        manager,
+        manager.manual_edits,
         "_manual_inpaint_callable",
         lambda _model: lambda image, mask: np.where((mask > 0)[..., None], 205, image).astype(np.uint8),
     )
@@ -456,7 +456,7 @@ def test_two_consecutive_clean_brush_commits_accumulate_after_inpaint(monkeypatc
     monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
     manager, _job, page = _build_ready_manager(tmp_path)
     monkeypatch.setattr(
-        manager,
+        manager.manual_edits,
         "_manual_inpaint_callable",
         lambda _model: lambda image, mask: np.where((mask > 0)[..., None], 205, image).astype(np.uint8),
     )
@@ -523,7 +523,7 @@ def test_two_consecutive_inpaint_commits_accumulate(monkeypatch, tmp_path: Path)
     monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
     manager, _job, page = _build_ready_manager(tmp_path)
     monkeypatch.setattr(
-        manager,
+        manager.manual_edits,
         "_manual_inpaint_callable",
         lambda _model: lambda image, mask: np.where((mask > 0)[..., None], 205, image).astype(np.uint8),
     )
@@ -603,9 +603,9 @@ def test_manual_neural_inpaint_uses_large_context_crop_and_preserves_pixels_outs
 def test_manual_inpaint_profiles_keep_lama_large_fp32_and_generous_context(tmp_path: Path) -> None:
     """La optimización no reduce precisión ni cambia el modelo seleccionado."""
     manager = JobManager(jobs_root=tmp_path / "jobs", start_worker=False)
-    large_callable = manager._manual_inpaint_callable("lama_large_512px")
-    mpe_callable = manager._manual_inpaint_callable("lama_mpe")
-    aot_callable = manager._manual_inpaint_callable("aot")
+    large_callable = manager.manual_edits._manual_inpaint_callable("lama_large_512px")
+    mpe_callable = manager.manual_edits._manual_inpaint_callable("lama_mpe")
+    aot_callable = manager.manual_edits._manual_inpaint_callable("aot")
 
     assert large_callable._pmt_crop_profile == {
         "enabled": True,
