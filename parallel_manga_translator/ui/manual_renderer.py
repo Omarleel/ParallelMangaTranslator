@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 import cv2
 import numpy as np
 
+from parallel_manga_translator.io.image_io import write_image
 from parallel_manga_translator.rendering.text_renderer import TextRenderer
 
 Box = Tuple[int, int, int, int]
@@ -528,7 +529,7 @@ def apply_pending_inpaint_only(
     if cv2.countNonZero(inpaint_mask) == 0:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(output), base)
+        write_image(str(output), base)
         return False
     padded = cv2.dilate(inpaint_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
     result = (
@@ -542,7 +543,7 @@ def apply_pending_inpaint_only(
         result = cv2.resize(result, (base.shape[1], base.shape[0]))
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), result)
+    write_image(str(output), result)
     return True
 
 
@@ -585,7 +586,7 @@ def restore_mask_erased_pixels(
     if cv2.countNonZero(eraser_mask) == 0:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(output), base)
+        write_image(str(output), base)
         return False
 
     # El usuario espera que todo lo pintado vuelva al manga original, no solo
@@ -596,13 +597,13 @@ def restore_mask_erased_pixels(
     if cv2.countNonZero(target_mask) == 0:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(output), base)
+        write_image(str(output), base)
         return False
 
     base[target_mask > 0] = restore[target_mask > 0]
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), base)
+    write_image(str(output), base)
     return True
 
 
@@ -649,7 +650,7 @@ def apply_background_brush_strokes(
     )
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), result)
+    write_image(str(output), result)
     return bool(effective)
 
 
@@ -708,7 +709,7 @@ def render_manual_composite(
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), base)
+    write_image(str(output), base)
 
 def render_manual_page(
     *,
@@ -797,7 +798,7 @@ def render_manual_page(
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output_path), base)
+    write_image(str(output_path), base)
 
 
 def render_manual_region_preview(
