@@ -10,8 +10,8 @@ que se está tocando es la detección o el inpainting.
 Este runner ejecuta **las mismas funciones que usa el pipeline real** hasta justo antes
 de traducir:
 
-``CleanManga.limpiar_manga`` -> ``TranslateManga.obtener_areas_interes_desde_regiones``
--> ``TranslateManga.obtener_textos`` -> filtro de idioma de origen
+``pipeline_limpieza_y_ocr`` (limpieza -> extraer_regiones -> transcribir) -> filtro de
+idioma de origen
 
 y escribe un ``Transcripción.json`` con el mismo formato que emite
 ``rendering_pipeline_mixin._push_original_texts_to_queue``, de modo que se puntúa con el
@@ -41,6 +41,7 @@ import numpy as np
 from parallel_manga_translator.config.app_config import ApplicationConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import TextRegion
+from parallel_manga_translator.processing.pipeline import PageContext, pipeline_limpieza_y_ocr
 from parallel_manga_translator.quality.eval_dataset import (
     DEFAULT_TOLERANCE,
     EvalCase,
@@ -399,6 +400,10 @@ def run_case(case: EvalCase, settings: RunSettings, *, base_config_path: str = "
     processor = build_image_processor(config)
     clean_manga = processor.clean_manga
     translate_manga = processor.translate_manga
+    # La misma composicion que ejecuta produccion, recortada donde acaba la medicion.
+    # Antes esta secuencia estaba reescrita a mano aqui, y por tanto podia divergir del
+    # pipeline real sin que ningun test lo notara: justo el banco de pruebas.
+    pipeline = pipeline_limpieza_y_ocr(clean_manga, translate_manga)
     verifier = VisualInpaintVerifier(accept_score=float(config.quality.visual_inpaint_accept_score))
 
     transcription_pages: List[Dict[str, Any]] = []
@@ -424,17 +429,18 @@ def run_case(case: EvalCase, settings: RunSettings, *, base_config_path: str = "
             )
         else:
             clean_manga.clear_visual_inpaint_debug_context()
+        translate_manga.insertar_json_queue(index, None, None)
         try:
-            _mascara, imagen_limpia, regiones = clean_manga.limpiar_manga(imagen)
+            contexto = pipeline.run(PageContext(imagen=imagen))
         finally:
             clean_manga.clear_debug_page_context()
 
-        cv2.imencode(".jpg", imagen_limpia)[1].tofile(str(clean_dir / image_path.name))
+        imagen_limpia = contexto.imagen_limpia
+        regiones = contexto.regiones
+        ordenadas = contexto.regiones_ordenadas
+        cuadros, textos = contexto.cuadros, contexto.textos
 
-        translate_manga.insertar_json_queue(index, None, None)
-        cuadros, recortes, ordenadas = translate_manga.obtener_areas_interes_desde_regiones(imagen, regiones)
-        translate_manga.ultimas_regiones = ordenadas
-        textos = translate_manga.obtener_textos(recortes)
+        cv2.imencode(".jpg", imagen_limpia)[1].tofile(str(clean_dir / image_path.name))
 
         rows = _page_rows(translate_manga, cuadros, textos, ordenadas)
         transcription_pages.append({"Página": index + 1, "Globos de texto": rows})
