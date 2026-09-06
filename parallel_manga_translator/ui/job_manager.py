@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import cv2
 
-from parallel_manga_translator.cli import build_default_config, build_image_processor, prepare_assets, prepare_runtime
+from parallel_manga_translator.bootstrap import build_default_config, build_image_processor, prepare_assets, prepare_runtime
 from parallel_manga_translator.config.constants import normalizar_modelo_inpaint
 from parallel_manga_translator.inpainting import AOTInpainter, LamaInpainterMPE, LamaLarge, OpenCVInpainter
 from parallel_manga_translator.infrastructure.execution_control import (

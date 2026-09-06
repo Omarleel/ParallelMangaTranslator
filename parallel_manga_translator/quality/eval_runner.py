@@ -116,7 +116,7 @@ def build_case_config(
     ``baseline.json``; puntuar con otros motores mediría la diferencia entre
     configuraciones, no el efecto de un cambio de código (ver ``dataset_eval/README.md``).
     """
-    from parallel_manga_translator.cli import build_default_config
+    from parallel_manga_translator.bootstrap import build_default_config
 
     config = build_default_config(base_config_path)
     options = _case_options(case)
@@ -393,7 +393,7 @@ def run_case(case: EvalCase, settings: RunSettings, *, base_config_path: str = "
         debug_artifacts=settings.debug_artifacts,
         overrides=settings.overrides,
     )
-    from parallel_manga_translator.cli import build_image_processor, prepare_assets, prepare_runtime
+    from parallel_manga_translator.bootstrap import build_image_processor, prepare_assets, prepare_runtime
 
     prepare_runtime()
     prepare_assets()
