@@ -719,6 +719,8 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         rotation_angles: Optional[Sequence[Optional[float]]] = None,
         *,
         reading_order_right_to_left: bool = False,
+        text_colors: Optional[Sequence[Optional[Tuple[int, int, int]]]] = None,
+        stroke_colors: Optional[Sequence[Optional[Tuple[int, int, int]]]] = None,
     ) -> np.ndarray:
         # OpenCV trabaja en BGR; PIL trabaja en RGB.
         imagen_pil = Image.fromarray(cv2.cvtColor(imagen_limpia, cv2.COLOR_BGR2RGB))
@@ -736,13 +738,32 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
         else:
             rotation_angles = list(rotation_angles) + [None] * max(0, len(textos) - len(rotation_angles))
 
-        for raw_bbox, texto, style, clip_mask, requested_font_size, requested_rotation in zip(
+        def _rellenar(valores):
+            if valores is None:
+                return [None] * len(textos)
+            return list(valores) + [None] * max(0, len(textos) - len(valores))
+
+        text_colors = _rellenar(text_colors)
+        stroke_colors = _rellenar(stroke_colors)
+
+        for (
+            raw_bbox,
+            texto,
+            style,
+            clip_mask,
+            requested_font_size,
+            requested_rotation,
+            color_relleno_pedido,
+            color_contorno_pedido,
+        ) in zip(
             cuadros_delimitadores,
             textos,
             text_styles,
             clip_masks,
             font_sizes,
             rotation_angles,
+            text_colors,
+            stroke_colors,
         ):
             style = style or "dialogo"
             x, y, w, h = self._coerce_box(raw_bbox, ancho_img, alto_img)
@@ -761,6 +782,17 @@ class TextRenderer(FontMetricsMixin, TextFittingMixin, MaskTextAreaMixin, Bubble
                 line_spacing_factor=self.line_spacing_factor,
             )
             color_borde, color_texto = self._resolve_text_colors(imagen_limpia, x, y, w, h)
+            if color_relleno_pedido is not None:
+                # Color estimado del original. El contorno estimado sólo se usa si el
+                # estimador lo afirmó; si no, se elige por contraste contra el relleno, que
+                # es más seguro que arrastrar el del par por defecto (un relleno claro con
+                # borde claro deja el rótulo invisible).
+                color_texto = tuple(int(c) for c in color_relleno_pedido)
+                color_borde = (
+                    tuple(int(c) for c in color_contorno_pedido)
+                    if color_contorno_pedido is not None
+                    else self._contorno_por_contraste(color_texto)
+                )
             capa = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             draw = ImageDraw.Draw(capa)
 

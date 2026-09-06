@@ -110,6 +110,9 @@ class QualityConfig:
     bubble_retina_masks: bool = True
     bubble_model_classes: str = ""
     bubble_include_labels: str = ""
+    # Estima el color real de la tinta y del contorno del texto original y rotula con
+    # ellos, en vez de decidir blanco-o-negro por el brillo del fondo.
+    estimate_text_colors: bool = False
     bubble_exclude_labels: str = "ignore_art,panel,page,background"
     bubble_max_area_ratio: float = 0.55
     inpaint_mode: str = "auto"

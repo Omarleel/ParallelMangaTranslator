@@ -139,7 +139,13 @@ class RenderingPipelineMixin:
 
     def rotular(self, imagen_limpia, cuadros_delimitadores, textos_para_render):
         """Paso 4: dibuja los textos ya resueltos sobre la imagen limpia."""
-        clip_masks = [region.local_mask() for region in self.ultimas_regiones] if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores) else None
+        alineadas = bool(self.ultimas_regiones) and len(self.ultimas_regiones) == len(cuadros_delimitadores)
+        clip_masks = [region.local_mask() for region in self.ultimas_regiones] if alineadas else None
+        # Colores del texto original, si `quality.estimate_text_colors` los estimó en el
+        # paso 1. Las posiciones sin estimación van a None y el renderizador cae a su
+        # regla de contraste de siempre.
+        text_colors = [region.metadata.get("text_fill_color") for region in self.ultimas_regiones] if alineadas else None
+        stroke_colors = [region.metadata.get("text_stroke_color") for region in self.ultimas_regiones] if alineadas else None
         return self.text_renderer.render(
             imagen_limpia,
             cuadros_delimitadores,
@@ -147,7 +153,9 @@ class RenderingPipelineMixin:
             text_styles=self.ultimo_estilos_texto,
             clip_masks=clip_masks,
             rotation_angles=[self._region_rotation_angle(region) for region in self.ultimas_regiones]
-            if self.ultimas_regiones and len(self.ultimas_regiones) == len(cuadros_delimitadores)
+            if alineadas
             else None,
             reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,
+            text_colors=text_colors,
+            stroke_colors=stroke_colors,
         )

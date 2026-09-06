@@ -110,6 +110,14 @@ quality:
   bubble_model_classes: ""
   # Opcional: labels permitidos si tu modelo fine-tuned tiene muchas clases. Vacío = acepta todas salvo excludes.
   bubble_include_labels: ""
+  # --- Color del texto original ---
+  # false: el rotulado elige blanco o negro segun el brillo del fondo (comportamiento
+  # historico). true: estima el color real de la tinta y del contorno mirando la imagen
+  # ORIGINAL a traves de la mascara de tinta, y rotula con ellos. Util en manga a color,
+  # rotulos de color y SFX perfilados. Si no hay senal suficiente en una region, esa cae
+  # a la regla de contraste, no se inventa un color.
+  # OJO: el banco de pruebas NO cubre esto; eval_runner se detiene antes de rotular.
+  estimate_text_colors: false
   # Evita que clases de arte/página/panel entren al limpiador.
   bubble_exclude_labels: "ignore_art,panel,page,background"
   # Rechaza detecciones demasiado grandes respecto a la página completa.

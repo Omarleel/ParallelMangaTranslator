@@ -237,6 +237,17 @@ class TextFittingMixin:
         return COLOR_BLANCO, COLOR_NEGRO
 
     @staticmethod
+    def _contorno_por_contraste(color_relleno) -> tuple:
+        """Blanco o negro, el que más se separe del relleno.
+
+        Se usa cuando se conoce el color del texto original pero no el de su contorno.
+        Arrastrar el contorno del par por defecto puede dejar relleno claro sobre borde
+        claro, y el rotulo desaparece.
+        """
+        luminancia = 0.299 * color_relleno[0] + 0.587 * color_relleno[1] + 0.114 * color_relleno[2]
+        return COLOR_NEGRO if luminancia > 127 else COLOR_BLANCO
+
+    @staticmethod
     def _to_rgba(color):
         if len(color) == 4:
             return color

@@ -107,6 +107,7 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
             self.onomatopoeia_mode = "keep"
         # bubble: OCR sobre el globo completo segmentado; text_hint: recorte más ajustado si hubo OCR global.
         self.ocr_region_mode = str(quality_config.ocr_region_mode or "bubble").strip().lower()
+        self.estimate_text_colors = bool(getattr(quality_config, "estimate_text_colors", False))
         self.indice_imagen = 0
         self.transcripcion_queue = None
         self.traduccion_queue = None

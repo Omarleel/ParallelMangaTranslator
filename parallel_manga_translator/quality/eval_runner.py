@@ -361,6 +361,8 @@ def _region_dump(
             "hint_localizador": str(region.source_text_hint or ""),
             "texto_transcrito": str(textos[idx] if idx < len(textos) else ""),
             "mask_source": metadata.get("mask_source", ""),
+            "text_fill_color": metadata.get("text_fill_color"),
+            "text_stroke_color": metadata.get("text_stroke_color"),
             "free_text_confidence": metadata.get("free_text_confidence"),
             "free_text_filter_reason": metadata.get("free_text_filter_reason", ""),
             "free_text_onomatopoeia": bool(metadata.get("free_text_onomatopoeia")),
