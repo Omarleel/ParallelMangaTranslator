@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Tuple
 
-import cv2
-import numpy as np
 import torch
 
 from parallel_manga_translator.ocr.ocr_manager import OcrManager

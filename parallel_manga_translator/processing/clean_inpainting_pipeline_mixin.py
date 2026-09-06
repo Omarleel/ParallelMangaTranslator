@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -15,10 +14,7 @@ from parallel_manga_translator.processing.inpainter_runner import InpainterRunne
 from parallel_manga_translator.io.image_io import try_write_image
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.infrastructure.logging_config import get_logger
-from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
-from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.models.processing_models import TextRegion
-from parallel_manga_translator.ocr.ocr_manager import OcrManager
 
 logger = get_logger(__name__)
 Detection = Tuple[Sequence[Sequence[float]], str, float]

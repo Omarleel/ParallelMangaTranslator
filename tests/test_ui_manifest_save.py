@@ -78,9 +78,8 @@ class GuardadoDeManifiestoTests(unittest.TestCase):
         job = _job(self.root)
         falso, marcador = _replace_que_falla(fallos=_MANIFEST_REPLACE_RETRIES)
 
-        with unittest.mock.patch.object(Path, "replace", falso):
-            with self.assertRaises(PermissionError):
-                JobManager._save_manifest(None, job)
+        with unittest.mock.patch.object(Path, "replace", falso), self.assertRaises(PermissionError):
+            JobManager._save_manifest(None, job)
 
         self.assertEqual(marcador["intentos"], _MANIFEST_REPLACE_RETRIES)
 

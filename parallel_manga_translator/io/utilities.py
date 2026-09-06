@@ -130,7 +130,6 @@ class Utilities:
         )
 
     def descargar_y_extraer_zip(self, manager, url_archivo: str) -> str | None:
-        from zipfile import ZipFile
         from pathlib import Path
         try:
             ruta_archivo_descargado = manager.download_file_from_link(

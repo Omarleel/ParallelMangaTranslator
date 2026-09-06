@@ -4,7 +4,7 @@ import os
 import re
 import zipfile
 from pathlib import Path
-from typing import Iterable, List
+from typing import List
 
 from PIL import Image
 

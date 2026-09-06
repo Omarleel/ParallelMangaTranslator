@@ -11,7 +11,7 @@ usaban estos métodos.
 from __future__ import annotations
 
 import asyncio
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np

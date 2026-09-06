@@ -1,4 +1,4 @@
-import os, json, tempfile
+import os, json
 import torch.multiprocessing as mp
 
 class JsonGenerator:

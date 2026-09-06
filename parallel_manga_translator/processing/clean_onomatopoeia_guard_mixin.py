@@ -1,20 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-import os
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import cv2
-import nest_asyncio
 import numpy as np
-import torch
-from PIL import Image
 
-from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.infrastructure.logging_config import get_logger
-from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.models.processing_models import TextRegion
-from parallel_manga_translator.ocr.ocr_manager import OcrManager
 
 logger = get_logger(__name__)
 Detection = Tuple[Sequence[Sequence[float]], str, float]

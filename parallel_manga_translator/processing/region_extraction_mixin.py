@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-import os
-from collections import deque
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import List, Sequence, Tuple
 
 import cv2
 import numpy as np
-import torch
 
-from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
-from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.models.processing_models import TextRegion
-from parallel_manga_translator.translation.text_normalization import OcrTextNormalizer
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
 Box = Tuple[int, int, int, int]

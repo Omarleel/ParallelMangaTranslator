@@ -570,7 +570,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p_build.add_argument("--no-reference", action="store_true", help="No copiar los renders corregidos.")
     p_build.add_argument("--baseline", action="store_true", help="Recalcular baseline.json tras construir.")
 
-    p_list = sub.add_parser("list", help="Lista los casos disponibles.")
+    sub.add_parser("list", help="Lista los casos disponibles.")
 
     p_score = sub.add_parser("score", help="Puntúa una ejecución contra la verdad de referencia.")
     p_score.add_argument("--case", default="", help="Nombre del caso; si se omite, todos.")

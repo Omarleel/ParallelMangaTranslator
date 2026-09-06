@@ -230,7 +230,6 @@ class CoreQualityTests(unittest.TestCase):
         self.assertGreater(region.bbox[3], region.text_bbox[3])
 
     def test_yolo_candidate_can_be_associated_to_text_box(self):
-        img = np.zeros((240, 240, 3), dtype=np.uint8)
         mask = np.zeros((240, 240), dtype=np.uint8)
         cv2.ellipse(mask, (120, 110), (72, 48), 0, 0, 360, 255, -1)
         candidate = YoloBubbleCandidate(

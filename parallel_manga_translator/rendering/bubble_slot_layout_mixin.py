@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import re
-from functools import lru_cache
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
-from parallel_manga_translator.config.constants import COLOR_BLANCO, COLOR_NEGRO, FACTOR_ESPACIO, RUTA_FUENTE, TAMANIO_MINIMO_FUENTE
 
 
 class BubbleSlotLayoutMixin:

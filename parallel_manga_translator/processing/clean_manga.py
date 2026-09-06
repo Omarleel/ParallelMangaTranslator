@@ -3,10 +3,8 @@ from __future__ import annotations
 from typing import List
 
 import nest_asyncio
-import numpy as np
 import torch
 
-from parallel_manga_translator.inpainting import AOTInpainter, BNInpainter, LamaInpainterMPE, LamaLarge, OpenCVInpainter
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.models.processing_models import TextRegion

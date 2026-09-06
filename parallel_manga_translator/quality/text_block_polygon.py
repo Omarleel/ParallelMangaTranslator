@@ -21,7 +21,7 @@ excluye las zonas de la caja donde solo hay arte.
 
 from __future__ import annotations
 
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np

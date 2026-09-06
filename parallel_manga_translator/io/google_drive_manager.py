@@ -62,7 +62,7 @@ class GoogleDriveManager:
                     return item['id']
             
             return None
-        except Exception as e:
+        except Exception:
             return None
               
     def create_folder(self, folder_name, parent_folder_id=None):
@@ -178,7 +178,7 @@ class GoogleDriveManager:
             folder.Trash()
 
             return True
-        except Exception as e:
+        except Exception:
             return False
         
     def delete_file(self, file_id):
@@ -186,7 +186,7 @@ class GoogleDriveManager:
             file_to_delete = self.drive.CreateFile({'id': file_id})
             file_to_delete.Trash()
             return True
-        except Exception as e:
+        except Exception:
             return False
 
     def download_folder_by_link(self, folder_link, local_folder_path = None):
@@ -226,5 +226,5 @@ class GoogleDriveManager:
             else:
                 return None
                     
-        except Exception as e:
+        except Exception:
             return None

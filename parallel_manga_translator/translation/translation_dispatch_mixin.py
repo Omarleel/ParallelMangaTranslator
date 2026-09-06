@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
-import re
-import time
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, List, Mapping, Optional, Sequence
 
 try:
     from deep_translator import DeeplTranslator, GoogleTranslator
@@ -16,7 +12,6 @@ except ImportError:  # pragma: no cover
     class AuthorizationException(Exception):
         pass
 
-from parallel_manga_translator.translation.translation_response_schema import LLM_TRANSLATION_RESPONSE_SCHEMA, validate_translation_response
 
 logger = logging.getLogger(__name__)
 

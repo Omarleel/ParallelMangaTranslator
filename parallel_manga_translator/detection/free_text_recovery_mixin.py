@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-import json
-import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
-from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner
 from parallel_manga_translator.geometry.text_orientation import text_rotation_metadata
 
 logger = get_logger(__name__)
-BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 
 class FreeTextRecoveryMixin:
@@ -96,6 +92,7 @@ class FreeTextRecoveryMixin:
                 "region_flow": "bubble_first_pretrained_only",
                 "ocr_scope": "free_text_or_sfx",
                 "free_text_filter_reason": filter_reason,
+                "free_text_reason": razon,
                 "free_text_confidence": round(float(conf), 4),
                 "free_text_original_kind": "free_text",
                 "free_text_sfx_reason": free_text_onomatopoeia_metadata.get("free_text_onomatopoeia_method", "") if free_text_onomatopoeia_metadata else ("shape_candidate" if looks_sfx else ""),

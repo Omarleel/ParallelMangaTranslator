@@ -28,7 +28,7 @@ from parallel_manga_translator.infrastructure.execution_control import (
 from parallel_manga_translator.infrastructure.logging_config import close_log_file, configure_logging, get_logger
 from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
-from parallel_manga_translator.ui.manual_renderer import apply_background_brush_strokes, apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections, read_corrections_payload, render_manual_composite, render_manual_page, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
+from parallel_manga_translator.ui.manual_renderer import apply_background_brush_strokes, apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, read_corrections_payload, render_manual_composite, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
 from parallel_manga_translator.ui.retranslator import JobRetranslator, region_is_retranslatable
 from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
@@ -173,7 +173,6 @@ def safe_flat_name(original_name: str, used: set[str]) -> str:
         raise ValueError("Formato de imagen no soportado.")
     safe_stem = re.sub(r"[^A-Za-z0-9._ -]+", "_", stem).strip(". ") or f"page_{len(used) + 1}"
     candidate = f"{safe_stem}{ext}"
-    base = candidate
     counter = 2
     while candidate.lower() in used:
         candidate = f"{safe_stem}_{counter}{ext}"

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import re
-from functools import lru_cache
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Sequence
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
-from parallel_manga_translator.config.constants import COLOR_BLANCO, COLOR_NEGRO, FACTOR_ESPACIO, RUTA_FUENTE, TAMANIO_MINIMO_FUENTE
+from parallel_manga_translator.config.constants import COLOR_BLANCO, COLOR_NEGRO
 
 
 class TextFittingMixin:
@@ -30,9 +28,7 @@ class TextFittingMixin:
         for i in range(3, len(token) - 3):
             prev_c = token[i - 1]
             curr_c = token[i]
-            if prev_c in vowels and curr_c not in vowels:
-                points.append(i)
-            elif prev_c not in vowels and curr_c in vowels and i >= 4:
+            if prev_c in vowels and curr_c not in vowels or prev_c not in vowels and curr_c in vowels and i >= 4:
                 points.append(i)
         # Prefiere cortes cerca del centro: menos líneas huérfanas.
         center = len(token) / 2.0
@@ -79,7 +75,6 @@ class TextFittingMixin:
             avg = sum(widths) / len(widths)
             for idx in range(len(balanced) - 1):
                 words = balanced[idx].split()
-                next_words = balanced[idx + 1].split()
                 if len(words) <= 1:
                     continue
                 # Si una línea es muy larga y la siguiente muy corta, mueve la última palabra.

@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
-import re
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Optional
 
-from parallel_manga_translator.translation.character_memory_schema import CHARACTER_MEMORY_RESPONSE_SCHEMA, _clamp_confidence, _now, _parse_json_object, validate_character_memory_response
 
 logger = logging.getLogger(__name__)
 

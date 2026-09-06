@@ -5,10 +5,9 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 from dotenv import load_dotenv
 
-from parallel_manga_translator.config.app_config import CharacterMemoryConfig, LlmConfig, TranslationConfig
+from parallel_manga_translator.config.app_config import CharacterMemoryConfig, TranslationConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.translation.providers import TranslationProviderConfig, TranslatorFactory
-from parallel_manga_translator.translation.translation_response_schema import validate_translation_response
 
 load_dotenv()
 logger = get_logger(__name__)

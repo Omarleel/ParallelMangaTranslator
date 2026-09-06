@@ -3,10 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import List, Optional
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 def relu_nf(x) :
 	return F.relu(x) * 1.7139588594436646

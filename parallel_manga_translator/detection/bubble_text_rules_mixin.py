@@ -8,7 +8,6 @@ from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.models.processing_models import Box, TextRegion
 
 logger = get_logger(__name__)
-BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 
 class BubbleTextRulesMixin:

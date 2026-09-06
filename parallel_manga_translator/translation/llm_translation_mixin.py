@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import re
-import time
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 try:
     from deep_translator import DeeplTranslator, GoogleTranslator

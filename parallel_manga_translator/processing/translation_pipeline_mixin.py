@@ -1,17 +1,8 @@
 from __future__ import annotations
 
-import os
-from collections import deque
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
-import cv2
-import numpy as np
-import torch
 
-from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
-from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
-from parallel_manga_translator.models.processing_models import TextRegion
-from parallel_manga_translator.translation.text_normalization import OcrTextNormalizer
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
 Box = Tuple[int, int, int, int]
@@ -86,9 +77,7 @@ class TranslationPipelineMixin:
         ]
         if self.ultimas_regiones and len(self.ultimas_regiones) == len(estilos):
             for i, region in enumerate(self.ultimas_regiones):
-                if region.kind in {"sfx", "onomatopoeia"}:
-                    estilos[i] = "onomatopeya"
-                elif region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(i, textos[i]):
+                if region.kind in {"sfx", "onomatopoeia"} or region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(i, textos[i]):
                     estilos[i] = "onomatopeya"
                 elif region.kind == "narration":
                     estilos[i] = "narracion"

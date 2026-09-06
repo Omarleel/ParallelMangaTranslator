@@ -4,7 +4,7 @@ import cv2
 import sys
 
 from parallel_manga_translator.config.constants import COLOR_BLANCO, COLOR_NEGRO, RUTA_MODELO_AOT, RUTA_MODELO_LAMA, RUTA_MODELO_LAMA_LARGE
-from .modules import DEFAULT_DEVICE, DEVICE_SELECTOR, TORCH_DTYPE_MAP, BF16_SUPPORTED
+from .modules import TORCH_DTYPE_MAP
 
 
 class OpenCVInpainter:
@@ -74,9 +74,12 @@ class PatchmatchInpainter():
 
     def __init__(self):
         super().__init__()
-        from . import patch_match
-    
+
     def _inpaint(self, img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        # El import es perezoso porque patch_match es una extension nativa opcional,
+        # pero vivia en __init__, donde solo era una variable local: aqui daba NameError.
+        from . import patch_match
+
         return patch_match.inpaint(img, mask, patch_size=3)
 
     def is_computational_intensive(self) -> bool:
@@ -293,7 +296,7 @@ class LamaInpainterMPE:
             try:
                 with torch.autocast(device_type=self.device, dtype=precision):
                     img_inpainted_torch = self.model(img_torch, mask_torch, rel_pos, direct)
-            except Exception as e:
+            except Exception:
                 print(f'{precision} inference is not supported for this device, use fp32 instead.')
                 img_inpainted_torch = self.model(img_torch, mask_torch, rel_pos, direct)
         else:

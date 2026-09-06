@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -15,7 +13,6 @@ from parallel_manga_translator.geometry.text_orientation import polygon_text_ang
 from parallel_manga_translator.quality.text_mask_refiner import TextInkMaskRefiner
 
 logger = get_logger(__name__)
-BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 
 class BubbleRegionBuilderMixin:

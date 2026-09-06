@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import json
-import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Optional, Sequence
 
 import cv2
 import numpy as np
 
+from parallel_manga_translator.detection.bubble_detector_config import BUBBLE_SPLIT_DEBUG_VERSION
 from parallel_manga_translator.detection.bubble_detector_config import BubbleDetectorSettings
-from parallel_manga_translator.geometry.box_geometry import BoxGeometry
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
-from parallel_manga_translator.models.processing_models import Box, TextRegion
+from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
 from parallel_manga_translator.layout.panel_order_resolver import PanelAwareReadingOrderResolver, PanelOrderConfig
-from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate, YoloBubbleDetector
+from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleDetector
 from parallel_manga_translator.config.app_config import ProcessingConfig, QualityConfig
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
@@ -25,7 +23,6 @@ from parallel_manga_translator.detection.bubble_debug_mixin import BubbleDebugMi
 from parallel_manga_translator.detection.free_text_recovery_mixin import FreeTextRecoveryMixin
 logger = get_logger(__name__)
 
-BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 
 
 class BubbleDetector(BubbleTextRulesMixin, BubbleRegionBuilderMixin, BubbleSplitterMixin, BubbleDebugMixin, FreeTextRecoveryMixin):

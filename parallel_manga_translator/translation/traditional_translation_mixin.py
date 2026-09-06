@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
 import random
 import re
 import threading
 import time
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 try:
     from deep_translator import DeeplTranslator, GoogleTranslator
@@ -18,7 +16,6 @@ except ImportError:  # pragma: no cover
     class AuthorizationException(Exception):
         pass
 
-from parallel_manga_translator.translation.translation_response_schema import LLM_TRANSLATION_RESPONSE_SCHEMA, validate_translation_response
 
 from parallel_manga_translator.infrastructure.execution_control import JobControlError, get_execution_control, cooperative_sleep
 

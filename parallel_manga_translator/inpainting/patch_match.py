@@ -7,7 +7,7 @@
 #
 # Distributed under terms of the MIT license.
 
-import ctypes, os
+import ctypes
 import sys
 from typing import Optional, Union
 from glob import glob
