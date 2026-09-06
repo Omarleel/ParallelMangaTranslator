@@ -39,6 +39,7 @@ import numpy as np
 
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.quality.eval_dataset import CASE_FILENAME, detection_bbox
+from parallel_manga_translator.quality.text_block_polygon import text_block_polygon
 
 logger = get_logger(__name__)
 
@@ -56,6 +57,15 @@ FLOOD_TOLERANCE = 60
 MIN_AREA_RATIO = 0.25
 MAX_AREA_RATIO = 1.60
 
+#: A partir de aquí el relleno se escapó del globo y el "contorno" es el recorte entero.
+#:
+#: ``bubble_polygon`` busca con ``SEARCH_MARGIN`` por lado, así que un recorte totalmente
+#: inundado mide siempre 1.24² = 1.5376 veces la caja. Contar vértices **no** detecta esto:
+#: medido sobre las 22 páginas del banco, 41 de esas etiquetas tienen ≤4 vértices pero
+#: otras 55 tienen más, por ruido en el borde, y son igual de rectangulares. El área sí lo
+#: ve. Es la métrica de salud honesta del exportador.
+FLOOD_AREA_RATIO = 1.40
+
 
 @dataclass
 class ExportStats:
@@ -65,7 +75,11 @@ class ExportStats:
     regions: int = 0
     labelled: int = 0
     rejected: Dict[str, int] = field(default_factory=dict)
-    near_rectangular: int = 0
+    #: Etiquetas que siguen siendo el recorte entero: ni el globo ni la tinta dieron forma.
+    #: Es la métrica de salud del dataset, medida por área y no por número de vértices.
+    rectangular: int = 0
+    #: Etiquetas rescatadas por el contorno de la tinta cuando el del globo se desbordó.
+    from_ink: int = 0
 
     def reject(self, reason: str) -> None:
         self.rejected[reason] = self.rejected.get(reason, 0) + 1
@@ -118,6 +132,14 @@ def bubble_polygon(image: np.ndarray, box: Sequence[int]) -> Tuple[Optional[np.n
     if len(points) < 3:
         return None, "menos de tres vertices"
     return points.astype(np.int32), "ok"
+
+
+def _area_ratio(points: np.ndarray, box: Sequence[int]) -> float:
+    """Área del polígono relativa a la de su caja. Ver ``FLOOD_AREA_RATIO``."""
+    if points is None or len(points) < 3:
+        return 0.0
+    contorno = np.asarray(points, dtype=np.int32).reshape(-1, 1, 2)
+    return cv2.contourArea(contorno) / max(1.0, float(box[2]) * float(box[3]))
 
 
 def _is_bubble(region: Mapping[str, Any]) -> bool:
@@ -215,11 +237,24 @@ def export_jobs(
                     stats.reject("sin caja")
                     continue
                 points, reason = bubble_polygon(image, box)
+
+                # Cuando el relleno se desborda, la región casi nunca es un globo: es texto
+                # suelto sobre el arte, y ahí el contorno que enseña forma es el de la
+                # tinta, no el del globo. Los dos derivadores son complementarios.
+                if points is None or _area_ratio(points, box) >= FLOOD_AREA_RATIO:
+                    tinta, motivo_tinta = text_block_polygon(image, box)
+                    if tinta is not None:
+                        points, reason = tinta, motivo_tinta
+                        stats.from_ink += 1
+                    elif points is None:
+                        stats.reject(reason)
+                        continue
+
                 if points is None:
                     stats.reject(reason)
                     continue
-                if len(points) <= 4:
-                    stats.near_rectangular += 1
+                if _area_ratio(points, box) >= FLOOD_AREA_RATIO:
+                    stats.rectangular += 1
                 lineas.append(_polygon_line(points, width, height))
                 stats.labelled += 1
 
@@ -275,7 +310,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"páginas exportadas:   {stats.pages}")
     print(f"regiones de globo:    {stats.regions}")
     print(f"etiquetas escritas:   {stats.labelled}")
-    print(f"  de ellas casi rectangulares (<=4 vértices): {stats.near_rectangular}")
+    print(f"  rescatadas por el contorno de la tinta:     {stats.from_ink}")
+    porcentaje = (100.0 * stats.rectangular / stats.labelled) if stats.labelled else 0.0
+    print(
+        f"  aún rectangulares (área >= {FLOOD_AREA_RATIO:.2f}x la caja): "
+        f"{stats.rectangular}  ({porcentaje:.1f} %)"
+    )
     if stats.rejected:
         print("descartadas:")
         for motivo, n in sorted(stats.rejected.items(), key=lambda kv: -kv[1]):
