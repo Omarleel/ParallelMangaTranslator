@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -27,6 +28,9 @@ from parallel_manga_translator.ui.job_state import (  # noqa: F401
     JobOptions,
     JobState,
     PageState,
+    TranslationRunState,
+    active_translation_run,
+    append_translation_event,
     job_to_public,
     finalize_cancelled,
     is_retranslating,
@@ -36,6 +40,7 @@ from parallel_manga_translator.ui.job_state import (  # noqa: F401
     page_to_public,
     normalized_output_name,
     rebase_stored_path,
+    translation_run_to_public,
 )
 from parallel_manga_translator.ui.retranslator import region_is_retranslatable
 from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
@@ -43,6 +48,17 @@ from parallel_manga_translator.ui.persistent_queue import PersistentJobQueue
 logger = get_logger(__name__)
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+# Prefijos de los casos de `dataset_eval` (ja_01, en_01…), por idioma de origen.
+DATASET_LANGUAGE_CODES = {
+    "japonés": "ja", "japones": "ja",
+    "inglés": "en", "ingles": "en",
+    "coreano": "ko",
+    "chino": "zh",
+    "español": "es", "espanol": "es",
+    "portugués": "pt", "portugues": "pt",
+    "francés": "fr", "frances": "fr",
+    "italiano": "it",
+}
 PROJECT_JOBS_DIR = Path(os.getenv("PMT_UI_JOBS_DIR", ".pmt_ui_jobs")).resolve()
 
 
@@ -262,6 +278,7 @@ class JobManager:
         translator: str | None = None,
         target_language: str | None = None,
         overwrite_manual: bool = False,
+        llm_model: str | None = None,
     ) -> JobState:
         """Reencola un trabajo terminado para volver a traducirlo con otro traductor.
 
@@ -278,6 +295,15 @@ class JobManager:
             selected = normalize_choice(translator, options.translator or "llm")
             if selected not in {"google", "llm"}:
                 raise ValueError("El traductor debe ser 'google' (tradicional) o 'llm'.")
+
+            base_config = build_default_config(self.config_path)
+            provider = "google"
+            model = ""
+            if selected == "llm":
+                provider = str(base_config.translation.llm.provider or "groq").strip().lower() or "groq"
+                model = str(llm_model or base_config.translation.llm.model or "").strip()
+                if not model:
+                    raise ValueError("La retraducción LLM necesita un modelo configurado.")
 
             targets, skipped = self._retranslation_targets(job, overwrite_manual=overwrite_manual)
             if not targets:
@@ -298,6 +324,32 @@ class JobManager:
             if overwrite_manual:
                 for index in targets:
                     self.manual_edits.discard_edits(job, job.pages[index])
+
+            run_id = uuid.uuid4().hex[:10]
+            run = TranslationRunState(
+                run_id=run_id,
+                translator=selected,
+                provider=provider,
+                model=model,
+                target_language=options.target_language,
+                overwrite_manual=bool(overwrite_manual),
+                status="queued",
+                page_indices=list(targets),
+                pending_pages=list(targets),
+                message=self._retranslation_queue_message(selected, len(targets), len(skipped)),
+            )
+            job.translation_runs.append(run)
+            # Evita que años de uso hagan crecer indefinidamente el manifiesto; se
+            # conservan las solicitudes más recientes, que son las útiles en la UI.
+            if len(job.translation_runs) > 50:
+                job.translation_runs = job.translation_runs[-50:]
+            job.active_translation_run_id = run_id
+            append_translation_event(
+                job,
+                "queued",
+                run.message,
+                details={"provider": provider, "model": model, "pages": list(targets)},
+            )
 
             job.pending_operation = "retranslate"
             job.retranslate_pages = list(targets)
@@ -344,6 +396,11 @@ class JobManager:
                 raise ValueError(f"No se puede pausar un trabajo en estado {job.status}.")
             job.pause_requested = True
             job.updated_at = time.time()
+            run = active_translation_run(job) if is_retranslating(job) else None
+            if run is not None:
+                run.status = "paused"
+                run.message = "Pausa solicitada por el usuario."
+                append_translation_event(job, "pause_requested", run.message)
             control = self._execution.controls.get(job_id)
             if control is not None:
                 job.status = "pausing"
@@ -363,6 +420,12 @@ class JobManager:
                 raise ValueError("El trabajo no está pausado.")
             job.pause_requested = False
             job.updated_at = time.time()
+            run = active_translation_run(job) if is_retranslating(job) else None
+            if run is not None:
+                run.status = "queued"
+                run.last_error = ""
+                run.message = "Reanudación solicitada; continuará por las páginas pendientes."
+                append_translation_event(job, "resume_requested", run.message)
             control = self._execution.controls.get(job_id)
             if control is not None and not control.pause_triggered:
                 # La pausa aún no llegó a un checkpoint: se puede retirar sin perder
@@ -401,12 +464,281 @@ class JobManager:
                 job.message = "Cancelación solicitada; se detendrá en el próximo punto seguro."
                 control.request_cancel()
             elif is_retranslating(job):
-                self.retranslation_runner.finish(job, message="Retraducción cancelada antes de empezar.")
+                self.retranslation_runner.finish(job, message="Retraducción cancelada antes de empezar.", outcome="cancelled")
             else:
                 finalize_cancelled(job)
             self.manifests.save(job)
         self._wake_worker()
         return job
+
+    # ------------------------------------------------------------------
+    # Promoción a dataset_eval
+    # ------------------------------------------------------------------
+    # Un trabajo corregido a mano es exactamente la materia prima del banco de
+    # regresión: alguien ya decidió, página a página, qué globo sobraba y qué texto
+    # era el bueno. Esto lo empaqueta sin salir del editor, llamando al MISMO
+    # constructor que usa `python -m parallel_manga_translator.quality.eval_dataset
+    # build`, para que no haya dos formatos de caso conviviendo.
+
+    def dataset_case_preview(self, job_id: str) -> Dict[str, Any]:
+        """Lo que el editor necesita para plantear el envío: nombre, cifras y avisos."""
+        from parallel_manga_translator.quality.eval_dataset import resolve_dataset_dir
+
+        job = self.get_job(job_id)
+        dataset_dir = resolve_dataset_dir()
+        existing = sorted(
+            path.parent.name
+            for path in dataset_dir.glob("*/case.json")
+        ) if dataset_dir.is_dir() else []
+        summary = self._human_correction_summary(job)
+        suggested = self._suggested_case_name(job, existing)
+        return {
+            "job_id": job.job_id,
+            "title": job.title,
+            "status": job.status,
+            "dataset_dir": str(dataset_dir),
+            "suggested_name": suggested,
+            "existing_cases": existing,
+            "ready": job.status in {"ready", "failed", "cancelled"},
+            **summary,
+        }
+
+    def export_job_to_dataset(
+        self,
+        job_id: str,
+        *,
+        name: str = "",
+        copy_images: bool = True,
+        copy_reference: bool = True,
+        overwrite: bool = False,
+        refresh_baseline: bool = True,
+    ) -> Dict[str, Any]:
+        """Construye (o actualiza) un caso de `dataset_eval` a partir de este trabajo."""
+        from parallel_manga_translator.quality.eval_dataset import (
+            build_case_from_ui_job,
+            load_case,
+            resolve_dataset_dir,
+            score_case,
+            write_baseline,
+        )
+
+        job = self.get_job(job_id)
+        with self._lock:
+            if self._execution.controls.get(job_id) is not None or job.status not in {"ready", "failed", "cancelled"}:
+                raise ValueError("Espera a que el trabajo termine (o cancélalo) antes de enviarlo a dataset_eval.")
+            # El caso se construye leyendo `manifest.json` del disco: hay que asegurarse
+            # de que refleja las últimas correcciones antes de copiar nada.
+            self.manifests.save(job)
+            root_dir = self._job_root_dir(job)
+        if root_dir is None:
+            raise ValueError("No se encuentra la carpeta de este trabajo.")
+
+        summary = self._human_correction_summary(job)
+        if summary["corrected_pages"] == 0:
+            # Una "verdad de referencia" que nadie ha validado no es verdad de nada: el
+            # caso mediría el pipeline contra su propia salida y siempre daría 1.0.
+            raise ValueError(
+                "Este trabajo no tiene ninguna corrección manual. Corrige al menos una página "
+                "antes de convertirlo en caso de dataset_eval."
+            )
+
+        dataset_dir = resolve_dataset_dir()
+        case_name = self._safe_case_name(name) or self._suggested_case_name(job, [])
+        case_dir = dataset_dir / case_name
+        if case_dir.exists() and not overwrite:
+            raise FileExistsError(f"Ya existe el caso «{case_name}». Marca sobrescribir para regenerarlo.")
+
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        built_dir = build_case_from_ui_job(
+            root_dir,
+            dataset_dir,
+            name=case_name,
+            copy_images=bool(copy_images),
+            copy_reference=bool(copy_reference),
+        )
+
+        case = load_case(built_dir)
+        totals = dict(case.meta.get("totals") or {})
+        baseline: Optional[Dict[str, Any]] = None
+        baseline_error = ""
+        if refresh_baseline:
+            try:
+                report = score_case(case)
+                write_baseline(case, report)
+                baseline = dict(report.get("summary") or {})
+            except Exception as exc:  # noqa: BLE001 - el caso ya es válido sin baseline
+                # Sin `prediccion_base/` no hay nada que puntuar. El caso sirve igual:
+                # se avisa y se deja que el usuario genere la línea base cuando quiera.
+                baseline_error = str(exc)
+                logger.warning("Caso %s construido sin baseline: %s", case_name, exc)
+
+        logger.info("Caso de dataset_eval construido desde la UI: %s (%s)", case_name, job_id)
+        return {
+            "case": case_name,
+            "case_dir": str(built_dir),
+            "dataset_dir": str(dataset_dir),
+            "overwritten": bool(overwrite and case_dir.exists()),
+            "totals": totals,
+            "baseline": baseline,
+            "baseline_error": baseline_error,
+            "score_command": (
+                "python -m parallel_manga_translator.quality.eval_dataset score "
+                f"--case {case_name} --predictions <carpeta outputs> --fail-on-regression"
+            ),
+            **summary,
+        }
+
+    @staticmethod
+    def _safe_case_name(name: str) -> str:
+        """El nombre acaba siendo una carpeta: se limita a lo que no puede escaparse."""
+        slug = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name or "").strip()).strip("._-")
+        return slug[:60]
+
+    def _suggested_case_name(self, job: JobState, existing: Sequence[str]) -> str:
+        """`ja_01`, `en_02`… la convención que ya usa el banco."""
+        language = str(getattr(job.options, "source_language", "") or "").strip().lower()
+        code = DATASET_LANGUAGE_CODES.get(language, "")
+        if not code:
+            code = re.sub(r"[^a-z]+", "", language)[:2] or "case"
+        taken = set(existing)
+        for number in range(1, 100):
+            candidate = f"{code}_{number:02d}"
+            if candidate not in taken:
+                return candidate
+        return f"{code}_{job.job_id[:6]}"
+
+    @staticmethod
+    def _human_correction_summary(job: JobState) -> Dict[str, Any]:
+        """Cuánto trabajo humano lleva encima, con las mismas cuentas que el caso.
+
+        Se reutiliza `build_ground_truth_page` a propósito: si el editor promete N
+        regiones de referencia, tienen que ser exactamente las que acabe escribiendo
+        `build_case_from_ui_job`, no una estimación parecida.
+        """
+        from parallel_manga_translator.quality.eval_dataset import build_ground_truth_page
+
+        pages = 0
+        corrected_pages = 0
+        gt_regions = 0
+        added = 0
+        discarded = 0
+        strokes = 0
+        for page in job.pages:
+            pages += 1
+            gt_page = build_ground_truth_page(
+                {
+                    "index": page.index,
+                    "output_filename": page.output_filename,
+                    "source_filename": page.source_filename,
+                    "regions": page.regions,
+                    "brush_strokes": page.brush_strokes,
+                }
+            )
+            gt_regions += len(gt_page["regions"])
+            added += gt_page["anadidas_por_humano"]
+            discarded += gt_page["descartadas_por_humano"]
+            strokes += gt_page["brush_strokes"]
+            touched = (
+                gt_page["anadidas_por_humano"]
+                or gt_page["descartadas_por_humano"]
+                or gt_page["brush_strokes"]
+                or any(region.get("modificado") for region in gt_page["regions"])
+            )
+            if touched:
+                corrected_pages += 1
+        return {
+            "pages": pages,
+            "corrected_pages": corrected_pages,
+            "gt_regions": gt_regions,
+            "anadidas_por_humano": added,
+            "descartadas_por_humano": discarded,
+            "brush_strokes": strokes,
+        }
+
+    def delete_job(self, job_id: str) -> Dict[str, Any]:
+        """Borra un trabajo y todo lo que escribió en disco. No tiene vuelta atrás.
+
+        Un trabajo vivo no se borra a traición: se exige cancelarlo antes. Matar el
+        directorio mientras el worker escribe en él dejaría el manifiesto a medias y el
+        hilo lanzando errores de ruta en cada página.
+        """
+        job = self.get_job(job_id)
+        with self._lock:
+            active = self._execution.controls.get(job_id) is not None
+            if active or job.status not in {"ready", "failed", "cancelled"}:
+                raise ValueError("Cancela el trabajo antes de borrarlo.")
+            self._queue.remove(job_id)
+            self._jobs.pop(job_id, None)
+            root_dir = self._job_root_dir(job)
+            title = job.title
+        folder_removed = True
+        if root_dir is not None and root_dir.exists():
+            folder_removed = self._remove_job_folder(root_dir)
+        if folder_removed:
+            logger.info("Trabajo borrado por el usuario: %s (%s)", job_id, title)
+        else:
+            logger.warning(
+                "Trabajo %s (%s) quitado del historial, pero su carpeta no se pudo borrar del todo: %s",
+                job_id, title, root_dir,
+            )
+        return {
+            "job_id": job_id,
+            "title": title,
+            "deleted": True,
+            # El trabajo desaparece del historial aunque el sistema de archivos se
+            # resista. Decirlo es la diferencia entre un aviso y 200 MB fantasma.
+            "folder_removed": folder_removed,
+        }
+
+    @staticmethod
+    def _remove_job_folder(root_dir: Path) -> bool:
+        """Borra la carpeta del trabajo y dice la verdad sobre el resultado.
+
+        `ignore_errors=True` era mentira piadosa: dejaba restos y seguía informando de
+        un borrado limpio. En Windows los dos motivos habituales son un archivo marcado
+        de solo lectura (se reintenta quitando el atributo) y una ruta que pasa de los
+        260 caracteres de MAX_PATH, donde ni siquiera se puede abrir para borrar.
+        """
+        def retry_readonly(func, path, _exc_info):
+            try:
+                os.chmod(path, 0o600)
+                func(path)
+            except OSError:
+                pass
+
+        # El manifiesto primero, y aparte: `list_jobs` reconstruye el historial
+        # escaneando `*/manifest.json`, así que mientras ese archivo exista el trabajo
+        # reaparece en la lista. Es el más pequeño y el que casi siempre se deja borrar;
+        # si el resto se resiste, quedan archivos huérfanos pero no un trabajo zombi.
+        with contextlib.suppress(OSError):
+            (root_dir / "manifest.json").unlink(missing_ok=True)
+
+        try:
+            shutil.rmtree(root_dir, onerror=retry_readonly)
+        except OSError:
+            return False
+        return not root_dir.exists()
+
+    def _job_root_dir(self, job: JobState) -> Optional[Path]:
+        """Directorio del trabajo, solo si de verdad cuelga de `jobs_root`.
+
+        El manifiesto guarda rutas absolutas y puede venir de otra máquina o de una
+        copia movida a mano: se resuelve y se comprueba la pertenencia antes de borrar
+        nada recursivamente.
+        """
+        candidates = [self.jobs_root / job.job_id]
+        if job.root_dir:
+            candidates.append(Path(job.root_dir))
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            if resolved == self.jobs_root or self.jobs_root not in resolved.parents:
+                continue
+            if resolved.is_dir():
+                return resolved
+        return None
 
     def get_job(self, job_id: str) -> JobState:
         with self._lock:
@@ -416,7 +748,7 @@ class JobManager:
                 self._jobs[job_id] = job
             return job
 
-    def list_jobs(self) -> List[Dict[str, Any]]:
+    def list_jobs(self, include_pages: bool = True) -> List[Dict[str, Any]]:
         with self._lock:
             loaded = list(self._jobs.values())
         known = {job.job_id for job in loaded}
@@ -434,8 +766,25 @@ class JobManager:
         for job in sorted(loaded, key=lambda item: item.created_at, reverse=True):
             payload = job_to_public(job)
             payload["queue_position"] = self._queue.position(job.job_id)
+            if not include_pages:
+                # El historial solo necesita la ficha del trabajo. Con proyectos de
+                # cientos de páginas, arrastrar todas sus regiones convertiría un
+                # listado en una respuesta de varios megabytes.
+                pages = payload.pop("pages", [])
+                payload["page_count"] = len(pages)
+                payload["corrected_count"] = sum(1 for page in pages if page.get("has_corrected"))
             result.append(payload)
         return result
+
+    def translation_runs_public(self, job_id: str) -> Dict[str, Any]:
+        job = self.get_job(job_id)
+        config = build_default_config(self.config_path)
+        return {
+            "active_run_id": job.active_translation_run_id or "",
+            "default_llm_provider": str(config.translation.llm.provider or "groq"),
+            "default_llm_model": str(config.translation.llm.model or ""),
+            "runs": [translation_run_to_public(run) for run in reversed(job.translation_runs or [])],
+        }
 
     def shutdown(self, timeout: float = 2.0) -> None:
         self._shutdown.set()
@@ -504,6 +853,11 @@ class JobManager:
                 job.status = "paused"
                 job.pause_requested = True
                 job.message = "Trabajo pausado recuperado después del reinicio."
+                run = active_translation_run(job) if is_retranslating(job) else None
+                if run is not None:
+                    run.status = "paused"
+                    run.pending_pages = list(job.retranslate_pages)
+                    run.message = job.message
                 self._queue.remove(job_id)
                 changed = True
             elif job.status in {"processing", "queued", "resuming"}:
@@ -516,6 +870,17 @@ class JobManager:
                     job.status = "queued"
                     job.message = "Trabajo recuperado y devuelto a la cola persistente."
                     job.recovery_count += 1
+                    run = active_translation_run(job) if is_retranslating(job) else None
+                    if run is not None:
+                        run.status = "queued"
+                        run.pending_pages = list(job.retranslate_pages)
+                        run.message = job.message
+                        append_translation_event(
+                            job,
+                            "recovered",
+                            "PMT se reinició durante la retraducción; se conservaron las páginas pendientes.",
+                            details={"pending_pages": list(job.retranslate_pages)},
+                        )
                     self._queue.enqueue(job_id)
                 changed = True
             elif job.status in {"ready", "failed", "cancelled"}:
@@ -547,6 +912,14 @@ class JobManager:
             return Path(page.translated_path)
         if variant == "corrected":
             return Path(page.corrected_path)
+        if variant == "background":
+            # Capa de fondo vigente: la limpieza salvo que el pincel manual ya haya
+            # creado una revisión. El editor la usa para tapar en vivo el texto que
+            # todavía está rasterizado en la posición anterior de una región.
+            manual_background = Path(page.manual_background_path) if page.manual_background_path else None
+            if manual_background is not None and manual_background.exists():
+                return manual_background
+            return Path(page.clean_path)
         if variant == "current":
             corrected = Path(page.corrected_path)
             return corrected if corrected.exists() else Path(page.translated_path)
@@ -650,14 +1023,21 @@ class JobManager:
     def _build_config_for_job(self, job: JobState):
         config = build_default_config(self.config_path)
         options = job.options if isinstance(job.options, JobOptions) else JobOptions(**dict(job.options or {}))
-        translator = normalize_choice(options.translator, "llm")
+        active_run = active_translation_run(job) if is_retranslating(job) else None
+        translator = normalize_choice(active_run.translator if active_run is not None else options.translator, "llm")
+        target_language = active_run.target_language if active_run is not None else options.target_language
         method = "LLM" if translator == "llm" else "Tradicional"
         traditional_provider = "google" if translator == "google" else config.translation.traditional_provider
-        llm = replace(config.translation.llm, provider=config.translation.llm.provider or "groq")
+        llm_provider = config.translation.llm.provider or "groq"
+        llm_model = config.translation.llm.model
+        if active_run is not None and active_run.translator == "llm":
+            llm_provider = active_run.provider or llm_provider
+            llm_model = active_run.model or llm_model
+        llm = replace(config.translation.llm, provider=llm_provider, model=llm_model)
         translation = replace(
             config.translation,
             idioma_entrada=options.source_language or config.translation.idioma_entrada,
-            idioma_salida=options.target_language or config.translation.idioma_salida,
+            idioma_salida=target_language or config.translation.idioma_salida,
             metodo_traduccion=method,
             traditional_provider=traditional_provider,
             llm=llm,

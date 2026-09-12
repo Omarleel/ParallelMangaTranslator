@@ -213,8 +213,17 @@ llm:
   provider: groq
   model: qwen/qwen3.8-27b
   seed: 7
-  max_retries: 3
-  # true intenta response_format json_schema estricto y cae a json_object si el proveedor no lo soporta.
+  # Intentos totales controlados por PMT. El SDK de Groq se crea con max_retries=0.
+  max_retries: 5
+  # Para 429 temporales se respeta retry-after. Una espera superior a este límite
+  # se considera demasiado larga y la página se deja intacta.
+  retry_max_wait_seconds: 90
+  retry_base_seconds: 1.0
+  retry_max_backoff_seconds: 12.0
+  retry_jitter_seconds: 0.35
+  # false evita mezclar silenciosamente LLM con Google/DeepL si Groq falla.
+  fallback_to_traditional_on_error: false
+  # Qwen 3.8 usa JSON Schema estricto en Groq.
   strict_json_schema: true
 
 character_memory:

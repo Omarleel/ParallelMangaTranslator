@@ -345,7 +345,7 @@ class ExactPreviewParityTests(unittest.TestCase):
                 text_offset_y=-3,
             )
             preview_bytes = render_manual_region_preview(
-                clean_path=clean_path,
+                background_path=clean_path,
                 original_path=original_path,
                 region=region,
             )

@@ -16,10 +16,15 @@ class TranslationProviderConfig:
     traditional_block_cooldown: float = 6.0
     traditional_block_max_wait: float = 180.0
     llm_provider: str = "groq"
-    llm_model: str = "llama-3.3-70b-versatile"
+    llm_model: str = "qwen/qwen3.8-27b"
     strict_json_schema: bool = True
     seed: int = 7
-    max_retries: int = 3
+    max_retries: int = 5
+    retry_max_wait_seconds: float = 90.0
+    retry_base_seconds: float = 1.0
+    retry_max_backoff_seconds: float = 12.0
+    retry_jitter_seconds: float = 0.35
+    fallback_to_traditional_on_error: bool = False
     lore: str = ""
     groq_api_key: str = ""
     deepl_api_key: str = ""

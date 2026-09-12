@@ -34,7 +34,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -91,10 +91,19 @@ class TranslateRegionRequest(BaseModel):
     original_text: str = ""
 
 
+class DatasetCaseRequest(BaseModel):
+    name: str = ""
+    copy_images: bool = True
+    copy_reference: bool = True
+    overwrite: bool = False
+    refresh_baseline: bool = True
+
+
 class RetranslateJobRequest(BaseModel):
     translator: str = "llm"
     target_language: Optional[str] = None
     overwrite_manual: bool = False
+    llm_model: Optional[str] = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -103,8 +112,8 @@ def index() -> HTMLResponse:
 
 
 @app.get("/api/jobs")
-def list_jobs():
-    return {"jobs": manager.list_jobs()}
+def list_jobs(include_pages: bool = True):
+    return {"jobs": manager.list_jobs(include_pages=include_pages)}
 
 
 @app.post("/api/jobs")
@@ -139,6 +148,19 @@ def create_job(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str):
+    """Borra un trabajo y su carpeta. La confirmación la pide el editor."""
+    try:
+        return manager.delete_job(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="El trabajo no existe.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str):
     try:
@@ -163,6 +185,14 @@ def resume_job(job_id: str):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/jobs/{job_id}/translation-runs")
+def translation_runs(job_id: str):
+    try:
+        return manager.translation_runs_public(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.post("/api/jobs/{job_id}/retranslate")
 def retranslate_job(job_id: str, request: RetranslateJobRequest):
     try:
@@ -171,6 +201,7 @@ def retranslate_job(job_id: str, request: RetranslateJobRequest):
             translator=normalize_choice(request.translator, "llm"),
             target_language=request.target_language,
             overwrite_manual=bool(request.overwrite_manual),
+            llm_model=request.llm_model,
         )
         return job_to_public(job)
     except Exception as exc:
@@ -211,6 +242,39 @@ def get_page_image(job_id: str, page_index: int, variant: str):
         raise
     except Exception as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/jobs/{job_id}/dataset-case")
+def dataset_case_preview(job_id: str):
+    """Cifras y nombre sugerido para convertir este trabajo en caso de dataset_eval."""
+    try:
+        return manager.dataset_case_preview(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="El trabajo no existe.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/dataset-case")
+def build_dataset_case(job_id: str, request: DatasetCaseRequest):
+    """Construye el caso con el mismo constructor que el CLI `eval_dataset build`."""
+    try:
+        return manager.export_job_to_dataset(
+            job_id,
+            name=request.name,
+            copy_images=bool(request.copy_images),
+            copy_reference=bool(request.copy_reference),
+            overwrite=bool(request.overwrite),
+            refresh_baseline=bool(request.refresh_baseline),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/jobs/{job_id}/export")

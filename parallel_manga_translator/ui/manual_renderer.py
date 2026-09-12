@@ -803,7 +803,7 @@ def render_manual_page(
 
 def render_manual_region_preview(
     *,
-    clean_path: str | Path,
+    background_path: str | Path,
     original_path: str | Path,
     region: ManualRegion,
 ) -> bytes:
@@ -811,19 +811,24 @@ def render_manual_region_preview(
 
     La UI lo usa durante la edición directa para que el texto visible en el
     navegador sea una vista rasterizada por el backend, no una aproximación CSS.
+
+    `background_path` es la capa de fondo vigente de la página, no siempre la
+    limpieza original: si el usuario ya aplicó inpaint manual, la previsualización
+    tiene que apoyarse en esa revisión o el recorte devolvería el fondo anterior y
+    parecería que el inpaint se deshizo dentro de la caja.
     """
-    clean_image = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
+    background_image = cv2.imread(str(background_path), cv2.IMREAD_COLOR)
     original_image = cv2.imread(str(original_path), cv2.IMREAD_COLOR)
-    if clean_image is None:
-        raise ValueError(f"No se pudo leer la imagen limpia: {clean_path}")
+    if background_image is None:
+        raise ValueError(f"No se pudo leer la capa de fondo: {background_path}")
     if original_image is None:
         raise ValueError(f"No se pudo leer la imagen original: {original_path}")
-    if original_image.shape[:2] != clean_image.shape[:2]:
-        original_image = cv2.resize(original_image, (clean_image.shape[1], clean_image.shape[0]))
+    if original_image.shape[:2] != background_image.shape[:2]:
+        original_image = cv2.resize(original_image, (background_image.shape[1], background_image.shape[0]))
 
-    height, width = clean_image.shape[:2]
+    height, width = background_image.shape[:2]
     x, y, w, h = _safe_box(region.bbox, width, height)
-    background = original_image if region.restore_original else clean_image
+    background = original_image if region.restore_original else background_image
     crop = background[y:y + h, x:x + w].copy()
 
     if region.visible and not region.deleted and str(region.text).strip():

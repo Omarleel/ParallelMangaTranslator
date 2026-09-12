@@ -198,10 +198,20 @@ onomatopoeia:
 
 llm:
   provider: groq
-  model: llama-3.1-8b-instant
+  model: qwen/qwen3.8-27b
   seed: 7
-  max_retries: 3
-  # true intenta response_format json_schema estricto y cae a json_object si el proveedor no lo soporta.
+  # Intentos totales gestionados por PMT. El SDK de Groq queda con reintentos internos desactivados.
+  max_retries: 5
+  # Un 429 temporal respeta retry-after. Si Groq pide esperar más de este valor, PMT
+  # detiene el intento y deja la página intacta en vez de bloquearse durante minutos/horas.
+  retry_max_wait_seconds: 90
+  # Backoff para 5xx, timeouts, conexiones y JSON transitorio cuando no hay retry-after.
+  retry_base_seconds: 1.0
+  retry_max_backoff_seconds: 12.0
+  retry_jitter_seconds: 0.35
+  # false = si Groq falla, NO sustituye silenciosamente la página por Google/DeepL.
+  fallback_to_traditional_on_error: false
+  # true usa JSON Schema estricto; qwen/qwen3.8-27b lo soporta en Groq.
   strict_json_schema: true
 
 character_memory:

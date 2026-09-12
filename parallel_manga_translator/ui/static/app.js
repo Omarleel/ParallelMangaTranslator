@@ -39,6 +39,15 @@ const state = {
   applyingHistory: false,
   editRevision: 0,
   pendingSaveOptions: null,
+  translationRunsData: null,
+  selectedTranslationRunId: null,
+  translationEventsPolling: null,
+  historyJobs: [],
+  historyFilter: '',
+  historyLoading: false,
+  historyPendingDelete: null,
+  suppressedRoute: null,
+  datasetPreview: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -61,7 +70,17 @@ const retryBackoffSeconds = $('retryBackoffSeconds');
 const advancedToggle = $('advancedToggle');
 const advancedOptions = $('advancedOptions');
 const continueLastBtn = $('continueLastBtn');
+const continueLastTitle = $('continueLastTitle');
 const newJobBtn = $('newJobBtn');
+const openHistoryBtn = $('openHistoryBtn');
+const historyBtn = $('historyBtn');
+const historyModal = $('historyModal');
+const historyModalBackdrop = $('historyModalBackdrop');
+const closeHistoryBtn = $('closeHistoryBtn');
+const closeHistoryFooterBtn = $('closeHistoryFooterBtn');
+const refreshHistoryBtn = $('refreshHistoryBtn');
+const historySearch = $('historySearch');
+const historyList = $('historyList');
 const progressPanel = $('progressPanel');
 const pagesPanel = $('pagesPanel');
 const pageList = $('pageList');
@@ -75,6 +94,28 @@ const pauseJobBtn = $('pauseJobBtn');
 const resumeJobBtn = $('resumeJobBtn');
 const cancelJobBtn = $('cancelJobBtn');
 const exportBtn = $('exportBtn');
+const exportBtnLabel = $('exportBtnLabel');
+const jobActionsBtn = $('jobActionsBtn');
+const jobActionsModal = $('jobActionsModal');
+const jobActionsBackdrop = $('jobActionsBackdrop');
+const closeJobActionsBtn = $('closeJobActionsBtn');
+const jobActionsSubtitle = $('jobActionsSubtitle');
+const datasetBtn = $('datasetBtn');
+const datasetModal = $('datasetModal');
+const datasetModalBackdrop = $('datasetModalBackdrop');
+const closeDatasetModalBtn = $('closeDatasetModalBtn');
+const cancelDatasetBtn = $('cancelDatasetBtn');
+const confirmDatasetBtn = $('confirmDatasetBtn');
+const datasetName = $('datasetName');
+const datasetSummary = $('datasetSummary');
+const datasetWarning = $('datasetWarning');
+const datasetDir = $('datasetDir');
+const datasetCopyImages = $('datasetCopyImages');
+const datasetCopyReference = $('datasetCopyReference');
+const datasetBaseline = $('datasetBaseline');
+const datasetOverwrite = $('datasetOverwrite');
+const datasetOverwriteRow = $('datasetOverwriteRow');
+const datasetResult = $('datasetResult');
 const retranslateBtn = $('retranslateBtn');
 const retranslateModal = $('retranslateModal');
 const retranslateModalBackdrop = $('retranslateModalBackdrop');
@@ -85,6 +126,17 @@ const retranslateTranslator = $('retranslateTranslator');
 const retranslateTargetLanguage = $('retranslateTargetLanguage');
 const retranslateOverwrite = $('retranslateOverwrite');
 const retranslateSummary = $('retranslateSummary');
+const retranslateModelField = $('retranslateModelField');
+const retranslateModel = $('retranslateModel');
+const translationEventsBtn = $('translationEventsBtn');
+const translationEventsModal = $('translationEventsModal');
+const translationEventsBackdrop = $('translationEventsBackdrop');
+const closeTranslationEventsBtn = $('closeTranslationEventsBtn');
+const closeTranslationEventsFooterBtn = $('closeTranslationEventsFooterBtn');
+const refreshTranslationEventsBtn = $('refreshTranslationEventsBtn');
+const translationRunList = $('translationRunList');
+const translationRunSummary = $('translationRunSummary');
+const translationEventList = $('translationEventList');
 const reviewLayout = $('reviewLayout');
 const waitState = $('waitState');
 const imageStage = $('imageStage');
@@ -97,6 +149,7 @@ const regionCount = $('regionCount');
 const mobilePagesBtn = $('mobilePagesBtn');
 const mobileEditorBtn = $('mobileEditorBtn');
 const closePagesBtn = $('closePagesBtn');
+const closeJobBtn = $('closeJobBtn');
 const closeEditorBtn = $('closeEditorBtn');
 const panelBackdrop = $('panelBackdrop');
 const noRegion = $('noRegion');
@@ -745,11 +798,9 @@ function updateHeavyActions() {
 function scheduleAutoSave(reason = 'auto', delay = 1200) {
   const page = currentPage();
   if (!page || page.status !== 'ready') return;
-  if (hasPendingInpaintStroke()) {
-    setAutosaveStatus('pending', 'Hay una máscara de inpaint pendiente. Pulsa “Aplicar inpaint” para procesarla.');
-    updateHeavyActions();
-    return;
-  }
+  // Una máscara de inpaint pendiente ya no bloquea el guardado: el servidor la
+  // conserva sin aplicarla. Bloquearlo dejaba el texto de la región rasterizado en
+  // su posición anterior, con el fantasma detrás al moverla.
   clearTimeout(state.autosaveTimer);
   setAutosaveStatus('pending', 'Cambios pendientes…');
   state.autosaveTimer = setTimeout(() => saveCurrentPage({ silent: true, reason }), delay);
@@ -844,18 +895,14 @@ uploadForm.addEventListener('submit', async (event) => {
 });
 
 continueLastBtn.addEventListener('click', () => {
-  if (!state.lastJob) return;
-  resetEditorState();
-  state.job = state.lastJob;
-  state.pageIndex = Math.min(state.lastJob.active_page || 0, Math.max(0, (state.lastJob.pages || []).length - 1));
-  setTool('select');
-  showWorkView();
-  renderJob(state.lastJob);
-  if (!['ready', 'failed', 'cancelled'].includes(state.lastJob.status)) startPolling(state.lastJob.job_id);
+  // La ficha del historial no trae páginas: el trabajo completo se pide al abrirlo.
+  if (state.lastJob?.job_id) openJobById(state.lastJob.job_id);
 });
 
 newJobBtn.addEventListener('click', () => {
-  showSetupView();
+  // Sin cerrar el trabajo, la ruta seguía siendo `#/trabajo/<id>` y un refresco
+  // devolvía al editor en vez de al asistente.
+  closeCurrentJob({ silent: true }).catch((error) => console.warn(error));
   showToast('Configura un nuevo trabajo. El procesamiento anterior sigue guardado.');
 });
 
@@ -973,6 +1020,9 @@ function renderJob(job) {
   pauseJobBtn.disabled = terminal || ['paused', 'pausing', 'resuming', 'cancelling'].includes(job.status);
   resumeJobBtn.disabled = !['paused', 'pausing', 'resuming'].includes(job.status);
   cancelJobBtn.disabled = terminal || job.status === 'cancelling';
+  // Pausar/Reanudar/Cancelar no hacen nada en un trabajo terminado: ocupar con ellos
+  // un tercio del panel le quita sitio justo a lo que sí se usa, la lista de páginas.
+  document.querySelector('.job-control-row')?.classList.toggle('hidden', terminal);
   const readyPages = (job.pages || []).filter((page) => page.status === 'ready').length;
   if (retranslateBtn) {
     retranslateBtn.disabled = !terminal || readyPages === 0;
@@ -980,9 +1030,30 @@ function renderJob(job) {
       ? 'Disponible cuando el trabajo termina y tiene páginas listas.'
       : 'Vuelve a traducir las páginas listas reutilizando limpieza y transcripción.';
   }
+  if (translationEventsBtn) {
+    translationEventsBtn.disabled = Number(job.translation_run_count || 0) <= 0;
+    translationEventsBtn.title = translationEventsBtn.disabled
+      ? 'Todavía no hay solicitudes de retraducción registradas.'
+      : 'Ver solicitudes, modelos, progreso, reintentos y errores.';
+  }
+  if (datasetBtn) {
+    // El banco de regresión solo admite trabajos que un humano ya validó: sin una
+    // corrección manual, la "verdad de referencia" sería la propia salida automática.
+    const corrected = correctedPageCount(job);
+    datasetBtn.disabled = !terminal || corrected === 0;
+    datasetBtn.title = !terminal
+      ? 'Disponible cuando el trabajo termina.'
+      : corrected === 0
+        ? 'Corrige al menos una página a mano para poder congelarla como caso de regresión.'
+        : `Congelar ${corrected} página(s) corregida(s) como caso de dataset_eval.`;
+  }
   const exportablePages = (job.pages || []).filter((page) => page.status === 'ready' || page.has_corrected).length;
   exportBtn.disabled = exportablePages === 0;
-  exportBtn.textContent = exportablePages > 0 ? `Exportar ZIP (${exportablePages})` : 'Exportar ZIP';
+  // El botón ya no es solo texto: escribir su `textContent` borraría icono y descripción.
+  if (exportBtnLabel) exportBtnLabel.textContent = exportablePages > 0 ? `Exportar ZIP (${exportablePages})` : 'Exportar ZIP';
+  if (jobActionsSubtitle) {
+    jobActionsSubtitle.textContent = `${job.title || 'Proyecto'} · ${readableStatus(job.status)} · ${job.processed_count || 0}/${job.total_count || 0} páginas.`;
+  }
   renderPageList(job.pages || []);
   renderCurrentPage();
   updateWorkspaceChrome();
@@ -1015,27 +1086,7 @@ function renderPageList(pages) {
       <span class="page-name" title="${escapeHtml(page.source_filename)}">${escapeHtml(page.source_filename)}</span>
       <span class="status-dot ${page.display_status || page.status}"></span>
     `;
-    button.addEventListener('click', () => {
-      const inlineEditor = activeInlineTextEditor();
-      if (inlineEditor) {
-        syncInlineTextToRegion(inlineEditor, { autosave: false, preview: false });
-        inlineEditor.blur();
-      }
-      if (state.dirty) saveCurrentPage({ silent: true, force: true, reason: 'cambio de página' }).catch(console.warn);
-      state.pageIndex = page.index;
-      state.selectedRegion = null;
-      state.dirty = false;
-      state.drawingRegion = null;
-      state.drawingStroke = null;
-      state.deletedStack = [];
-      clearTimeout(state.autosaveTimer);
-      cleanupInlinePreviewResources();
-      clearRasterPreviewCache();
-      state.deferredOverlayRender = false;
-      state.inlineEditingIndex = null;
-      setAutosaveStatus('saved', 'Cambios guardados automáticamente.');
-      renderJob(state.job);
-    });
+    button.addEventListener('click', () => goToPage(page.index));
     pageList.appendChild(button);
   }
 }
@@ -1394,6 +1445,15 @@ function stripCommittedBrushPrefix(currentStrokes, committedStrokes) {
   return { matched: true, remaining: current.slice(committed.length) };
 }
 
+function committedBrushStrokes(payload) {
+  const strokes = payload?.brush_strokes || [];
+  // En un guardado normal el servidor hornea las pinceladas de fondo pero conserva
+  // intacta la máscara de inpaint todavía sin aplicar. Esa no se consume y no puede
+  // contarse como trazo ya horneado al rebasar el estado local.
+  if ((payload?.operation || 'render') === 'inpaint') return strokes;
+  return strokes.filter((stroke) => !(stroke.mode === 'inpaint' && !stroke.applied));
+}
+
 function rebaseHistoryAfterBackgroundCommit({ pageKey, parentRevision, nextRevision, committedStrokes }) {
   if (!pageKey || !nextRevision || nextRevision === parentRevision) return;
   const rebaseSnapshot = (snapshot) => {
@@ -1421,7 +1481,8 @@ function reconcileCommittedBackgroundRevision(payload, updatedPage, pageKey) {
   // Si el prefijo ya no existe (por ejemplo, el usuario pulsó Deshacer durante el cálculo),
   // no rebasamos el estado local: el historial elegido por el usuario tiene prioridad.
   if ((state.backgroundRevision || 'base') !== parentRevision) return false;
-  const stripped = stripCommittedBrushPrefix(state.brushStrokes || [], payload?.brush_strokes || []);
+  const committed = committedBrushStrokes(payload);
+  const stripped = stripCommittedBrushPrefix(state.brushStrokes || [], committed);
   if (!stripped.matched) return false;
 
   state.backgroundRevision = nextRevision;
@@ -1430,7 +1491,7 @@ function reconcileCommittedBackgroundRevision(payload, updatedPage, pageKey) {
     pageKey,
     parentRevision,
     nextRevision,
-    committedStrokes: payload?.brush_strokes || [],
+    committedStrokes: committed,
   });
   return true;
 }
@@ -1838,6 +1899,64 @@ function flushDeferredOverlayRender() {
   requestAnimationFrame(() => renderOverlay({ force: true }));
 }
 
+function pageLayerUrl(page, variant) {
+  const url = page?.images?.[variant];
+  if (!url) return '';
+  return `${url}?t=${encodeURIComponent(`${page.updated_at || 0}:${page.background_revision || 'base'}:${variant}`)}`;
+}
+
+function regionGhostBox(region) {
+  // La página que se ve es una imagen rasterizada por el servidor: el texto vive
+  // dentro de ella. Mientras la posición local no coincida con la ya rasterizada,
+  // hay que tapar la anterior o queda un fantasma detrás de la caja.
+  if (!region) return null;
+  const source = normalizeBox(region.source_bbox || region.bbox);
+  if (!source || source[2] <= 0 || source[3] <= 0) return null;
+  const current = normalizeBox(region.bbox);
+  const moved = source.some((value, index) => value !== current[index]);
+  // `source_bbox` avanza en cada guardado, así que una diferencia significa siempre
+  // "movida y todavía sin rasterizar". Ocultar o borrar solo deja resto mientras el
+  // cambio siga pendiente de guardarse.
+  const vanished = state.dirty && (Boolean(region.deleted) || region.visible === false);
+  if (!moved && !vanished) return null;
+  // Un par de píxeles de margen: el rasterizado del texto (sobre todo inclinado) puede
+  // desbordar ligeramente la caja y dejar un borde suelto.
+  const pad = Math.abs(Number(region.rotation_angle) || 0) >= 0.65 ? 10 : 3;
+  const [x, y, w, h] = source;
+  const left = Math.max(0, x - pad);
+  const top = Math.max(0, y - pad);
+  const right = Math.min(state.naturalWidth, x + w + pad);
+  const bottom = Math.min(state.naturalHeight, y + h + pad);
+  return [left, top, Math.max(1, right - left), Math.max(1, bottom - top)];
+}
+
+function appendGhostPatches(scaleX, scaleY, width, height) {
+  // Solo tiene sentido sobre la vista compuesta: en "limpieza" u "original" no hay
+  // texto rasterizado que tapar.
+  if (state.variant !== 'current') return;
+  const page = currentPage();
+  if (!page || page.status !== 'ready') return;
+  const backgroundUrl = pageLayerUrl(page, 'background');
+  const originalUrl = pageLayerUrl(page, 'original');
+  if (!backgroundUrl) return;
+  state.regions.forEach((region) => {
+    const box = regionGhostBox(region);
+    if (!box) return;
+    const [x, y, w, h] = box;
+    const url = region.restore_original && originalUrl ? originalUrl : backgroundUrl;
+    const patch = document.createElement('div');
+    patch.className = 'region-ghost-patch';
+    patch.style.left = `${x * scaleX}px`;
+    patch.style.top = `${y * scaleY}px`;
+    patch.style.width = `${w * scaleX}px`;
+    patch.style.height = `${h * scaleY}px`;
+    patch.style.backgroundImage = `url("${url}")`;
+    patch.style.backgroundSize = `${width}px ${height}px`;
+    patch.style.backgroundPosition = `${-x * scaleX}px ${-y * scaleY}px`;
+    overlayLayer.appendChild(patch);
+  });
+}
+
 function renderOverlay(options = {}) {
   if (!options.force && shouldDeferOverlayRender()) {
     state.deferredOverlayRender = true;
@@ -1852,6 +1971,8 @@ function renderOverlay(options = {}) {
   overlayLayer.style.width = `${width}px`;
   overlayLayer.style.height = `${height}px`;
   overlayLayer.className = `overlay-layer tool-${activeTool()}`;
+
+  appendGhostPatches(scaleX, scaleY, width, height);
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'stroke-layer');
@@ -3032,6 +3153,16 @@ document.addEventListener('keydown', (event) => {
   if (workView.classList.contains('hidden')) return;
 
   const key = event.key.toLowerCase();
+  if (historyModal && !historyModal.classList.contains('hidden')) return;
+  if (datasetModal && !datasetModal.classList.contains('hidden')) return;
+  if (jobActionsModal && !jobActionsModal.classList.contains('hidden')) return;
+  if (translationEventsModal && !translationEventsModal.classList.contains('hidden')) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeTranslationEventsModal();
+    }
+    return;
+  }
   if (retranslateModal && !retranslateModal.classList.contains('hidden')) {
     if (key === 'escape') {
       event.preventDefault();
@@ -3189,6 +3320,12 @@ function fillTargetLanguages(selected) {
   retranslateTargetLanguage.value = selected || TARGET_LANGUAGES[0];
 }
 
+function updateRetranslateModelVisibility() {
+  const isLlm = (retranslateTranslator?.value || 'llm') === 'llm';
+  retranslateModelField?.classList.toggle('hidden', !isLlm);
+  if (retranslateModel) retranslateModel.disabled = !isLlm;
+}
+
 function updateRetranslateSummary() {
   if (!retranslateSummary || !state.job) return;
   const pages = state.job.pages || [];
@@ -3201,16 +3338,27 @@ function updateRetranslateSummary() {
     : overwrite
       ? ` Se descartarán las correcciones manuales de ${corrected} página(s).`
       : ` ${corrected} página(s) con correcciones manuales se conservarán tal cual.`;
-  retranslateSummary.textContent = `Se retraducirán ${afectadas} de ${pages.length} páginas.${detalle}`;
+  const modelDetail = (retranslateTranslator?.value || 'llm') === 'llm' && retranslateModel?.value?.trim()
+    ? ` Modelo: ${retranslateModel.value.trim()}.`
+    : '';
+  retranslateSummary.textContent = `Se retraducirán ${afectadas} de ${pages.length} páginas.${detalle}${modelDetail}`;
   if (confirmRetranslateBtn) confirmRetranslateBtn.disabled = afectadas <= 0;
 }
 
-function openRetranslateModal() {
+async function openRetranslateModal() {
   if (!retranslateModal || !state.job) return;
   const opts = state.job.options || {};
   if (retranslateTranslator) retranslateTranslator.value = opts.translator === 'google' ? 'google' : 'llm';
   if (retranslateOverwrite) retranslateOverwrite.checked = false;
   fillTargetLanguages(opts.target_language || 'Español');
+  try {
+    const runs = await requestJson(`/api/jobs/${state.job.job_id}/translation-runs`);
+    state.translationRunsData = runs;
+    if (retranslateModel) retranslateModel.value = runs.default_llm_model || '';
+  } catch (_) {
+    if (retranslateModel) retranslateModel.value = '';
+  }
+  updateRetranslateModelVisibility();
   updateRetranslateSummary();
   retranslateModal.classList.remove('hidden');
   retranslateTranslator?.focus();
@@ -3234,6 +3382,7 @@ async function submitRetranslation() {
         translator: retranslateTranslator?.value || 'llm',
         target_language: retranslateTargetLanguage?.value || null,
         overwrite_manual: !!retranslateOverwrite?.checked,
+        llm_model: (retranslateTranslator?.value || 'llm') === 'llm' ? (retranslateModel?.value?.trim() || null) : null,
       }),
     });
     closeRetranslateModal();
@@ -3246,6 +3395,114 @@ async function submitRetranslation() {
   } finally {
     updateRetranslateSummary();
   }
+}
+
+function translationRunStatusLabel(status) {
+  return {
+    queued: 'En cola', processing: 'Procesando', paused: 'Pausada',
+    completed: 'Completada', failed: 'Fallida', cancelled: 'Cancelada',
+  }[status] || status || 'Desconocido';
+}
+
+function formatEventTime(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!value) return '—';
+  return new Date(value * 1000).toLocaleString();
+}
+
+function selectedTranslationRun() {
+  const runs = state.translationRunsData?.runs || [];
+  return runs.find((run) => run.run_id === state.selectedTranslationRunId) || runs[0] || null;
+}
+
+function renderTranslationEvents() {
+  if (!translationRunList || !translationRunSummary || !translationEventList) return;
+  const data = state.translationRunsData || { runs: [] };
+  const runs = data.runs || [];
+  if (!runs.length) {
+    translationRunList.textContent = 'No hay solicitudes registradas.';
+    translationRunSummary.textContent = 'Todavía no hay historial de traducción.';
+    translationEventList.innerHTML = '';
+    return;
+  }
+  if (!runs.some((run) => run.run_id === state.selectedTranslationRunId)) {
+    state.selectedTranslationRunId = data.active_run_id || runs[0].run_id;
+  }
+  translationRunList.innerHTML = runs.map((run) => {
+    const total = (run.page_indices || []).length;
+    const done = (run.completed_pages || []).length;
+    const engine = run.translator === 'google' ? 'Google' : `${run.provider || 'LLM'} · ${run.model || 'modelo no registrado'}`;
+    return `<button class="translation-run-item ${run.run_id === state.selectedTranslationRunId ? 'active' : ''}" type="button" data-run-id="${escapeHtml(run.run_id)}">
+      <strong>${escapeHtml(engine)}</strong>
+      <span class="translation-run-status">${escapeHtml(translationRunStatusLabel(run.status))} · ${done}/${total} páginas</span>
+      <span>${escapeHtml(formatEventTime(run.created_at))}</span>
+    </button>`;
+  }).join('');
+  translationRunList.querySelectorAll('[data-run-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.selectedTranslationRunId = button.dataset.runId;
+      renderTranslationEvents();
+    });
+  });
+
+  const run = selectedTranslationRun();
+  if (!run) return;
+  const total = (run.page_indices || []).length;
+  const done = (run.completed_pages || []).length;
+  const pending = (run.pending_pages || []).map((idx) => Number(idx) + 1);
+  const engine = run.translator === 'google' ? 'Google / tradicional' : `${run.provider || 'LLM'} / ${run.model || 'modelo no registrado'}`;
+  translationRunSummary.innerHTML = `<strong>${escapeHtml(engine)}</strong><br>
+    ${escapeHtml(translationRunStatusLabel(run.status))} · ${done}/${total} páginas · destino ${escapeHtml(run.target_language || '—')}
+    ${pending.length ? `<br>Pendientes: ${escapeHtml(pending.join(', '))}` : ''}
+    ${run.last_error ? `<br><span class="danger-text">Último error: ${escapeHtml(run.last_error)}</span>` : ''}`;
+
+  const events = [...(run.events || [])].reverse();
+  translationEventList.innerHTML = events.length ? events.map((event) => {
+    const details = event.details && Object.keys(event.details).length
+      ? JSON.stringify(event.details)
+      : '';
+    const page = event.page_index == null ? '' : ` · pág. ${Number(event.page_index) + 1}`;
+    return `<article class="translation-event ${escapeHtml(event.level || 'info')}">
+      <time class="translation-event-time">${escapeHtml(formatEventTime(event.timestamp))}</time>
+      <div class="translation-event-copy">
+        <strong>${escapeHtml(event.kind || 'evento')}${escapeHtml(page)}</strong>
+        <p>${escapeHtml(event.message || '')}</p>
+        ${details ? `<small>${escapeHtml(details)}</small>` : ''}
+      </div>
+    </article>`;
+  }).join('') : '<p class="muted">Esta solicitud todavía no tiene eventos.</p>';
+}
+
+async function refreshTranslationEvents() {
+  if (!state.job) return;
+  if (refreshTranslationEventsBtn) refreshTranslationEventsBtn.disabled = true;
+  try {
+    state.translationRunsData = await requestJson(`/api/jobs/${state.job.job_id}/translation-runs`);
+    renderTranslationEvents();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    if (refreshTranslationEventsBtn) refreshTranslationEventsBtn.disabled = false;
+  }
+}
+
+async function openTranslationEventsModal() {
+  if (!translationEventsModal || !state.job) return;
+  translationEventsModal.classList.remove('hidden');
+  await refreshTranslationEvents();
+  if (state.translationEventsPolling) clearInterval(state.translationEventsPolling);
+  state.translationEventsPolling = setInterval(() => {
+    if (!translationEventsModal.classList.contains('hidden')) refreshTranslationEvents();
+  }, 2200);
+  closeTranslationEventsBtn?.focus();
+}
+
+function closeTranslationEventsModal() {
+  if (!translationEventsModal) return;
+  translationEventsModal.classList.add('hidden');
+  if (state.translationEventsPolling) clearInterval(state.translationEventsPolling);
+  state.translationEventsPolling = null;
+  translationEventsBtn?.focus();
 }
 
 async function controlCurrentJob(action) {
@@ -3269,10 +3526,17 @@ resetRotationBtn?.addEventListener('click', () => {
 });
 
 retranslateBtn?.addEventListener('click', openRetranslateModal);
+translationEventsBtn?.addEventListener('click', openTranslationEventsModal);
+translationEventsBackdrop?.addEventListener('click', closeTranslationEventsModal);
+closeTranslationEventsBtn?.addEventListener('click', closeTranslationEventsModal);
+closeTranslationEventsFooterBtn?.addEventListener('click', closeTranslationEventsModal);
+refreshTranslationEventsBtn?.addEventListener('click', refreshTranslationEvents);
 retranslateModalBackdrop?.addEventListener('click', closeRetranslateModal);
 closeRetranslateModalBtn?.addEventListener('click', closeRetranslateModal);
 cancelRetranslateBtn?.addEventListener('click', closeRetranslateModal);
 retranslateOverwrite?.addEventListener('change', updateRetranslateSummary);
+retranslateTranslator?.addEventListener('change', () => { updateRetranslateModelVisibility(); updateRetranslateSummary(); });
+retranslateModel?.addEventListener('input', updateRetranslateSummary);
 confirmRetranslateBtn?.addEventListener('click', submitRetranslation);
 
 resumeJobBtn.addEventListener('click', () => controlCurrentJob('resume'));
@@ -3486,12 +3750,6 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
   const inlineEditor = activeInlineTextEditor();
   if (inlineEditor) syncInlineTextToRegion(inlineEditor, { autosave: false, preview: false });
   else if (state.selectedRegion != null) updateRegionFromEditor({ render: false, autosave: false });
-  if (!markInpaintApplied && operation !== 'mask_eraser' && hasPendingInpaintStroke()) {
-    setAutosaveStatus('pending', 'Hay una máscara de inpaint pendiente. Pulsa “Aplicar inpaint”.');
-    updateHeavyActions();
-    return null;
-  }
-
   if (state.autosaveInFlight) {
     queuePendingSave({ silent, force, reason, markInpaintApplied, operation });
     setAutosaveStatus('pending', 'Hay cambios nuevos pendientes de guardar…');
@@ -3544,7 +3802,11 @@ async function saveCurrentPage({ silent = false, force = false, reason = 'manual
         state.dirty = false;
         state.deletedStack = [];
         state.brushStrokes = cloneBrushStrokes(updatedPage.brush_strokes || []);
-        setAutosaveStatus('saved', markInpaintApplied ? 'Inpaint aplicado y guardado.' : 'Cambios guardados automáticamente.');
+        if (hasPendingInpaintStroke()) {
+          setAutosaveStatus('pending', 'Cambios guardados. La máscara de inpaint sigue pendiente: pulsa “Aplicar inpaint”.');
+        } else {
+          setAutosaveStatus('saved', markInpaintApplied ? 'Inpaint aplicado y guardado.' : 'Cambios guardados automáticamente.');
+        }
         if (!silent || markInpaintApplied) showToast(markInpaintApplied ? 'Inpaint aplicado.' : 'Corrección guardada.');
         if (activeInlineTextEditor()) {
           state.deferredOverlayRender = true;
@@ -3616,11 +3878,24 @@ resetBtn.addEventListener('click', async () => {
   }
 });
 
-prevBtn.addEventListener('click', () => {
-  if (!state.job || state.pageIndex <= 0) return;
-  state.pageIndex -= 1;
+// Un único camino para cambiar de página: las tres entradas (anterior, siguiente y la
+// lista lateral) tienen que dejar el editor en el mismo estado y actualizar la ruta.
+function goToPage(index, { save = true } = {}) {
+  const pages = state.job?.pages || [];
+  if (!pages.length) return;
+  const target = Math.max(0, Math.min(pages.length - 1, Number(index)));
+  if (!Number.isFinite(target) || target === state.pageIndex) return;
+  const inlineEditor = activeInlineTextEditor();
+  if (inlineEditor) {
+    syncInlineTextToRegion(inlineEditor, { autosave: false, preview: false });
+    inlineEditor.blur();
+  }
+  if (save && state.dirty) saveCurrentPage({ silent: true, force: true, reason: 'cambio de página' }).catch(console.warn);
+  state.pageIndex = target;
   state.selectedRegion = null;
   state.dirty = false;
+  state.drawingRegion = null;
+  state.drawingStroke = null;
   state.deletedStack = [];
   clearTimeout(state.autosaveTimer);
   cleanupInlinePreviewResources();
@@ -3629,21 +3904,11 @@ prevBtn.addEventListener('click', () => {
   state.inlineEditingIndex = null;
   setAutosaveStatus('saved', 'Cambios guardados automáticamente.');
   renderJob(state.job);
-});
-nextBtn.addEventListener('click', () => {
-  if (!state.job || state.pageIndex >= state.job.pages.length - 1) return;
-  state.pageIndex += 1;
-  state.selectedRegion = null;
-  state.dirty = false;
-  state.deletedStack = [];
-  clearTimeout(state.autosaveTimer);
-  cleanupInlinePreviewResources();
-  clearRasterPreviewCache();
-  state.deferredOverlayRender = false;
-  state.inlineEditingIndex = null;
-  setAutosaveStatus('saved', 'Cambios guardados automáticamente.');
-  renderJob(state.job);
-});
+  syncRoute();
+}
+
+prevBtn.addEventListener('click', () => goToPage(state.pageIndex - 1));
+nextBtn.addEventListener('click', () => goToPage(state.pageIndex + 1));
 
 document.querySelectorAll('.view-switcher button').forEach((button) => {
   button.addEventListener('click', () => {
@@ -3668,17 +3933,438 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-(async function prepareInitialView() {
-  showSetupView();
+function openJobActionsModal() {
+  if (!jobActionsModal || !state.job) return;
+  jobActionsModal.classList.remove('hidden');
+}
+
+function closeJobActionsModal() {
+  jobActionsModal?.classList.add('hidden');
+}
+
+jobActionsBtn?.addEventListener('click', openJobActionsModal);
+closeJobActionsBtn?.addEventListener('click', closeJobActionsModal);
+jobActionsBackdrop?.addEventListener('click', closeJobActionsModal);
+// Cada acción abre su propia ventana o cambia de vista: dejar el menú detrás apilaría
+// dos diálogos. Se cierra al burbujear, después de que la acción haya hecho lo suyo.
+jobActionsModal?.addEventListener('click', (event) => {
+  if (event.target.closest?.('button[data-job-action]')) closeJobActionsModal();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !jobActionsModal || jobActionsModal.classList.contains('hidden')) return;
+  event.preventDefault();
+  closeJobActionsModal();
+}, true);
+
+function correctedPageCount(job) {
+  return (job?.pages || []).filter((page) => {
+    if ((page.brush_strokes || []).length) return true;
+    return (page.regions || []).some((region) => region.manual || region.deleted || region.modified);
+  }).length;
+}
+
+function datasetSummaryRows(preview) {
+  return [
+    ['Páginas del trabajo', preview.pages],
+    ['Páginas con corrección manual', preview.corrected_pages],
+    ['Regiones de referencia', preview.gt_regions],
+    ['Añadidas a mano', preview.anadidas_por_humano],
+    ['Descartadas a mano', preview.descartadas_por_humano],
+    ['Trazos de pincel', preview.brush_strokes],
+  ];
+}
+
+function renderDatasetSummary(preview) {
+  if (!datasetSummary) return;
+  datasetSummary.innerHTML = datasetSummaryRows(preview)
+    .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value ?? 0))}</dd></div>`)
+    .join('');
+}
+
+function updateDatasetNameState() {
+  const preview = state.datasetPreview;
+  if (!preview || !datasetName) return;
+  const name = (datasetName.value || '').trim();
+  const exists = (preview.existing_cases || []).includes(name);
+  datasetOverwriteRow?.classList.toggle('hidden', !exists);
+  if (!exists && datasetOverwrite) datasetOverwrite.checked = false;
+  if (datasetWarning) {
+    datasetWarning.classList.toggle('hidden', !exists);
+    datasetWarning.textContent = exists
+      ? `Ya existe el caso «${name}». Si lo sobrescribes se regeneran su verdad de referencia y sus metadatos.`
+      : '';
+  }
+}
+
+async function openDatasetModal() {
+  if (!datasetModal || !state.job?.job_id) return;
+  datasetResult?.classList.add('hidden');
+  datasetModal.classList.remove('hidden');
+  if (datasetSummary) datasetSummary.innerHTML = '<div><dt>Leyendo el trabajo…</dt><dd></dd></div>';
   try {
-    const result = await requestJson('/api/jobs');
-    const lastJob = result.jobs?.[0];
+    const preview = await requestJson(`/api/jobs/${encodeURIComponent(state.job.job_id)}/dataset-case`);
+    state.datasetPreview = preview;
+    renderDatasetSummary(preview);
+    if (datasetDir) datasetDir.textContent = preview.dataset_dir || 'dataset_eval';
+    if (datasetName) datasetName.value = preview.suggested_name || '';
+    updateDatasetNameState();
+    if (confirmDatasetBtn) confirmDatasetBtn.disabled = !preview.ready || !preview.corrected_pages;
+  } catch (error) {
+    showToast(error.message || 'No se pudo preparar el caso.');
+    closeDatasetModal();
+  }
+}
+
+function closeDatasetModal() {
+  datasetModal?.classList.add('hidden');
+}
+
+async function submitDatasetCase() {
+  if (!state.job?.job_id || !confirmDatasetBtn) return;
+  const name = (datasetName?.value || '').trim();
+  if (!name) return showToast('Ponle un nombre al caso.');
+  confirmDatasetBtn.disabled = true;
+  const previousLabel = confirmDatasetBtn.textContent;
+  confirmDatasetBtn.textContent = 'Creando…';
+  try {
+    const result = await requestJson(`/api/jobs/${encodeURIComponent(state.job.job_id)}/dataset-case`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        copy_images: !!datasetCopyImages?.checked,
+        copy_reference: !!datasetCopyReference?.checked,
+        overwrite: !!datasetOverwrite?.checked,
+        refresh_baseline: !!datasetBaseline?.checked,
+      }),
+    });
+    const totals = result.totals || {};
+    const baselineRows = result.baseline
+      ? Object.entries(result.baseline).map(([key, value]) => `<li><span>${escapeHtml(key)}</span><strong>${escapeHtml(typeof value === 'number' ? value.toFixed(3) : String(value))}</strong></li>`).join('')
+      : '';
+    if (datasetResult) {
+      datasetResult.classList.remove('hidden');
+      datasetResult.innerHTML = `
+        <strong>Caso «${escapeHtml(result.case)}» listo</strong>
+        <p>${escapeHtml(String(totals.pages ?? 0))} páginas · ${escapeHtml(String(totals.gt_regions ?? 0))} regiones de referencia.</p>
+        <code class="dataset-path">${escapeHtml(result.case_dir || '')}</code>
+        ${baselineRows ? `<p class="dataset-result-label">Línea base</p><ul class="dataset-baseline">${baselineRows}</ul>` : ''}
+        ${result.baseline_error ? `<p class="dataset-result-warning">Sin línea base: ${escapeHtml(result.baseline_error)}</p>` : ''}
+        <p class="dataset-result-label">Para medir un cambio más adelante</p>
+        <code class="dataset-path">${escapeHtml(result.score_command || '')}</code>
+      `;
+    }
+    showToast(`Caso ${result.case} creado en dataset_eval.`);
+    state.datasetPreview = null;
+  } catch (error) {
+    showToast(error.message || 'No se pudo crear el caso.');
+  } finally {
+    confirmDatasetBtn.disabled = false;
+    confirmDatasetBtn.textContent = previousLabel;
+  }
+}
+
+datasetBtn?.addEventListener('click', openDatasetModal);
+closeDatasetModalBtn?.addEventListener('click', closeDatasetModal);
+cancelDatasetBtn?.addEventListener('click', closeDatasetModal);
+datasetModalBackdrop?.addEventListener('click', closeDatasetModal);
+confirmDatasetBtn?.addEventListener('click', submitDatasetCase);
+datasetName?.addEventListener('input', updateDatasetNameState);
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !datasetModal || datasetModal.classList.contains('hidden')) return;
+  event.preventDefault();
+  closeDatasetModal();
+}, true);
+
+function formatJobDate(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!Number.isFinite(value) || value <= 0) return 'Sin fecha';
+  try {
+    return new Date(value * 1000).toLocaleString('es', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) {
+    return new Date(value * 1000).toLocaleString();
+  }
+}
+
+function historyJobSubtitle(job) {
+  const opts = job.options || {};
+  const pages = Number(job.page_count ?? job.total_count ?? 0);
+  const corrected = Number(job.corrected_count || 0);
+  const parts = [
+    `${pages} página${pages === 1 ? '' : 's'}`,
+    `${opts.source_language || '—'} → ${opts.target_language || '—'}`,
+    opts.translator === 'google' ? 'Google' : 'LLM',
+  ];
+  if (corrected > 0) parts.push(`${corrected} corregida${corrected === 1 ? '' : 's'}`);
+  return parts.join(' · ');
+}
+
+function renderHistoryList() {
+  if (!historyList) return;
+  const filter = String(state.historyFilter || '').trim().toLowerCase();
+  const jobs = (state.historyJobs || []).filter((job) => !filter || String(job.title || '').toLowerCase().includes(filter));
+
+  historyList.innerHTML = '';
+  if (state.historyLoading && !jobs.length) {
+    historyList.innerHTML = '<p class="history-empty">Cargando trabajos…</p>';
+    return;
+  }
+  if (!jobs.length) {
+    historyList.innerHTML = state.historyJobs?.length
+      ? '<p class="history-empty">Ningún trabajo coincide con esa búsqueda.</p>'
+      : '<p class="history-empty">Todavía no hay trabajos guardados. Crea el primero desde la pantalla de configuración.</p>';
+    return;
+  }
+
+  for (const job of jobs) {
+    const item = document.createElement('article');
+    const isCurrent = state.job?.job_id === job.job_id;
+    item.className = `history-item ${isCurrent ? 'current' : ''}`;
+    const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+    item.innerHTML = `
+      <div class="history-item-head">
+        <h3 title="${escapeHtml(job.title || 'Proyecto')}">${escapeHtml(job.title || 'Proyecto')}</h3>
+        <span class="badge ${job.status === 'ready' ? 'ready' : job.status === 'failed' ? 'failed' : ''}">${escapeHtml(readableStatus(job.status))}</span>
+      </div>
+      <p class="history-item-meta">${escapeHtml(historyJobSubtitle(job))}</p>
+      <p class="history-item-date">Creado el ${escapeHtml(formatJobDate(job.created_at))} · Actualizado el ${escapeHtml(formatJobDate(job.updated_at))}</p>
+      <div class="progress-bar"><span style="width: ${progress}%"></span></div>
+      ${state.historyPendingDelete === job.job_id ? `
+        <div class="history-confirm" role="alertdialog">
+          <strong>¿Borrar este trabajo?</strong>
+          <p>Se eliminarán sus ${Number(job.page_count ?? job.total_count ?? 0)} páginas, las correcciones manuales y el ZIP exportado. No se puede deshacer.</p>
+          <div class="history-item-actions">
+            <button class="ghost mini" type="button" data-history-cancel-delete="1">Cancelar</button>
+            <button class="ghost mini danger" type="button" data-history-confirm-delete="${escapeHtml(job.job_id)}">Eliminar definitivamente</button>
+          </div>
+        </div>
+      ` : `
+        <div class="history-item-actions">
+          <button class="primary mini" type="button" data-history-open="${escapeHtml(job.job_id)}">${isCurrent ? 'Volver a este trabajo' : 'Abrir'}</button>
+          <a class="ghost mini history-download" href="/api/jobs/${encodeURIComponent(job.job_id)}/export" download>Exportar ZIP</a>
+          <button class="ghost mini danger history-delete" type="button" data-history-delete="${escapeHtml(job.job_id)}" title="Borrar el trabajo y su carpeta">Eliminar</button>
+        </div>
+      `}
+    `;
+    historyList.appendChild(item);
+  }
+
+  historyList.querySelectorAll('[data-history-open]').forEach((button) => {
+    button.addEventListener('click', () => openJobById(button.dataset.historyOpen));
+  });
+  historyList.querySelectorAll('[data-history-delete]').forEach((button) => {
+    button.addEventListener('click', () => {
+      // Nunca se borra al primer clic: la tarjeta pasa a pedir confirmación explícita.
+      state.historyPendingDelete = button.dataset.historyDelete;
+      renderHistoryList();
+    });
+  });
+  historyList.querySelectorAll('[data-history-cancel-delete]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.historyPendingDelete = null;
+      renderHistoryList();
+    });
+  });
+  historyList.querySelectorAll('[data-history-confirm-delete]').forEach((button) => {
+    button.addEventListener('click', () => deleteJobById(button.dataset.historyConfirmDelete));
+  });
+}
+
+async function deleteJobById(jobId) {
+  if (!jobId) return;
+  const job = (state.historyJobs || []).find((item) => item.job_id === jobId);
+  try {
+    const result = await requestJson(`/api/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+    state.historyPendingDelete = null;
+    if (state.job?.job_id === jobId) await closeCurrentJob({ save: false, silent: true });
+    if (state.lastJob?.job_id === jobId) state.lastJob = null;
+    // Si el sistema de archivos dejó restos, se dice: el trabajo ya no está en el
+    // historial, pero su carpeta sigue ocupando disco y eso el usuario debe saberlo.
+    showToast(result?.folder_removed === false
+      ? `«${job?.title || jobId}» salió del historial, pero su carpeta no se pudo borrar del todo. Revísala a mano.`
+      : `Trabajo eliminado: ${job?.title || jobId}`);
+    await loadJobHistory();
+  } catch (error) {
+    state.historyPendingDelete = null;
+    renderHistoryList();
+    showToast(error.message || 'No se pudo borrar el trabajo.');
+  }
+}
+
+async function loadJobHistory() {
+  state.historyLoading = true;
+  renderHistoryList();
+  try {
+    // Sin páginas: el historial solo muestra fichas y un proyecto puede tener cientos.
+    const result = await requestJson('/api/jobs?include_pages=false');
+    state.historyJobs = result.jobs || [];
+    const lastJob = state.historyJobs[0];
     if (lastJob) {
       state.lastJob = lastJob;
       continueLastBtn.classList.remove('hidden');
-      continueLastBtn.textContent = `Continuar último trabajo: ${lastJob.title || 'Proyecto'}`;
+      if (continueLastTitle) continueLastTitle.textContent = lastJob.title || 'Proyecto';
+      continueLastBtn.title = `Continuar: ${lastJob.title || 'Proyecto'}`;
+    } else {
+      continueLastBtn.classList.add('hidden');
     }
-  } catch (_) {}
+  } catch (error) {
+    state.historyJobs = [];
+    showToast(error.message || 'No se pudo leer el historial.');
+  } finally {
+    state.historyLoading = false;
+    renderHistoryList();
+  }
+}
+
+function openHistoryModal({ refresh = true, route = true } = {}) {
+  if (!historyModal) return;
+  state.historyPendingDelete = null;
+  historyModal.classList.remove('hidden');
+  if (refresh) loadJobHistory();
+  else renderHistoryList();
+  if (route) syncRoute();
+  requestAnimationFrame(() => historySearch?.focus());
+}
+
+function closeHistoryModal({ route = true } = {}) {
+  if (!historyModal || historyModal.classList.contains('hidden')) return;
+  state.historyPendingDelete = null;
+  historyModal.classList.add('hidden');
+  if (route) syncRoute();
+}
+
+async function openJobById(jobId, { pageIndex = null, fromRoute = false } = {}) {
+  if (!jobId) return;
+  if (state.job?.job_id === jobId && !workView.classList.contains('hidden')) {
+    // Ya está abierto: cerrar el historial e ir a la página pedida, sin recargarlo.
+    closeHistoryModal({ route: false });
+    if (Number.isInteger(pageIndex)) goToPage(pageIndex);
+    else syncRoute();
+    return;
+  }
+  try {
+    if (state.dirty) await saveCurrentPage({ silent: true, force: true, reason: 'cambio de trabajo' }).catch(() => {});
+    const job = await requestJson(`/api/jobs/${encodeURIComponent(jobId)}`);
+    if (state.polling) clearInterval(state.polling);
+    resetEditorState();
+    state.job = job;
+    const lastPage = Math.max(0, (job.pages || []).length - 1);
+    const requested = Number.isInteger(pageIndex) ? pageIndex : Number(job.active_page || 0);
+    state.pageIndex = Math.max(0, Math.min(lastPage, requested));
+    setTool('select');
+    closeHistoryModal({ route: false });
+    showWorkView();
+    renderJob(job);
+    if (!['ready', 'failed', 'cancelled'].includes(job.status)) startPolling(job.job_id);
+    syncRoute({ replace: fromRoute });
+    if (!fromRoute) showToast(`Trabajo abierto: ${job.title || 'Proyecto'}`);
+  } catch (error) {
+    showToast(error.message || 'No se pudo abrir el trabajo.');
+    // Una URL que apunta a un trabajo borrado no puede dejar la app en un limbo.
+    if (fromRoute) syncRoute({ replace: true });
+  }
+}
+
+async function closeCurrentJob({ save = true, silent = false, route = true } = {}) {
+  if (save && state.dirty) await saveCurrentPage({ silent: true, force: true, reason: 'cerrar trabajo' }).catch(() => {});
+  if (state.polling) clearInterval(state.polling);
+  state.polling = null;
+  state.job = null;
+  state.pageIndex = 0;
+  resetEditorState();
+  closeMobilePanels();
+  showSetupView();
+  updateWorkspaceChrome();
+  if (route) syncRoute();
+  if (!silent) showToast('Trabajo cerrado. Su progreso queda guardado en el historial.');
+  loadJobHistory().catch(() => {});
+}
+
+/* --- Rutas ---------------------------------------------------------------
+   Sin esto, recargar (o compartir la URL) devolvia siempre al asistente. El hash
+   basta: la UI se sirve desde un unico HTML y no hay servidor de rutas detras.
+   `#/` asistente, `#/historial`, `#/trabajo/<id>/pagina/<n>` (n empieza en 1). */
+
+function buildRouteHash() {
+  if (state.job?.job_id && !workView.classList.contains('hidden')) {
+    return `#/trabajo/${encodeURIComponent(state.job.job_id)}/pagina/${Number(state.pageIndex || 0) + 1}`;
+  }
+  if (historyModal && !historyModal.classList.contains('hidden')) return '#/historial';
+  return '#/';
+}
+
+function parseRouteHash(rawHash) {
+  const parts = String(rawHash || '').replace(/^#\/?/, '').split('/').filter(Boolean);
+  const head = (parts[0] || '').toLowerCase();
+  if (head === 'historial') return { view: 'history' };
+  if (head === 'trabajo' && parts[1]) {
+    const route = { view: 'job', jobId: decodeURIComponent(parts[1]) };
+    if ((parts[2] || '').toLowerCase() === 'pagina' && parts[3]) {
+      const page = Number.parseInt(parts[3], 10);
+      if (Number.isFinite(page) && page >= 1) route.pageIndex = page - 1;
+    }
+    return route;
+  }
+  return { view: 'setup' };
+}
+
+function syncRoute({ replace = true } = {}) {
+  const hash = buildRouteHash();
+  if (hash === (location.hash || '#/')) return;
+  // `hashchange` no distingue quien cambio el hash: se marca el propio para no
+  // reaplicar como navegacion lo que la propia UI acaba de hacer.
+  state.suppressedRoute = hash;
+  if (replace) history.replaceState(null, '', hash);
+  else location.hash = hash;
+}
+
+async function applyRoute(route) {
+  if (route.view === 'job') {
+    await openJobById(route.jobId, { pageIndex: route.pageIndex ?? null, fromRoute: true });
+    return;
+  }
+  closeHistoryModal({ route: false });
+  if (state.job || !workView.classList.contains('hidden')) {
+    await closeCurrentJob({ silent: true, route: false });
+  } else {
+    showSetupView();
+  }
+  if (route.view === 'history') openHistoryModal({ refresh: true, route: false });
+}
+
+window.addEventListener('hashchange', () => {
+  if (state.suppressedRoute && location.hash === state.suppressedRoute) {
+    state.suppressedRoute = null;
+    return;
+  }
+  state.suppressedRoute = null;
+  applyRoute(parseRouteHash(location.hash)).catch((error) => console.warn(error));
+});
+
+openHistoryBtn?.addEventListener('click', () => openHistoryModal());
+historyBtn?.addEventListener('click', () => openHistoryModal());
+closeHistoryBtn?.addEventListener('click', () => closeHistoryModal());
+closeHistoryFooterBtn?.addEventListener('click', () => closeHistoryModal());
+historyModalBackdrop?.addEventListener('click', () => closeHistoryModal());
+closeJobBtn?.addEventListener('click', () => { closeCurrentJob().catch((error) => console.warn(error)); });
+refreshHistoryBtn?.addEventListener('click', () => loadJobHistory());
+historySearch?.addEventListener('input', () => {
+  state.historyFilter = historySearch.value || '';
+  renderHistoryList();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !historyModal || historyModal.classList.contains('hidden')) return;
+  event.preventDefault();
+  closeHistoryModal();
+}, true);
+
+(async function prepareInitialView() {
+  const route = parseRouteHash(location.hash);
+  showSetupView();
+  await loadJobHistory();
+  await applyRoute(route);
 })();
 
 updateWorkspaceChrome();

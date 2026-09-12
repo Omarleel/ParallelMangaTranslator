@@ -113,6 +113,12 @@ guardados. Entra por la misma cola persistente y el mismo worker único que el
 procesamiento normal, de modo que se puede pausar, reanudar y cancelar igual, y se
 retoma sola si la aplicación se reinicia a medias.
 
+### Reanudar una retraducción LLM otro día
+
+Cada solicitud de retraducción se guarda como una ejecución independiente dentro de `manifest.json`, con un `run_id`, proveedor/modelo, páginas completadas y páginas pendientes. Si Groq agota sus reintentos o PMT se cierra durante la ejecución, la solicitud queda **pausada** en vez de perder el punto de continuación. Al volver a abrir PMT puedes pulsar **Reanudar** y solo se procesan las páginas que faltaban. El modelo queda fijado en la solicitud, por lo que cambiar `config.yaml` después no altera accidentalmente una ejecución que ya estaba a medias.
+
+El botón **Eventos de traducción** abre un historial por solicitud. Allí se ven el modelo usado, el progreso y eventos como inicio/fin de página, respuestas parciales, reintentos y `429` con su espera. El modal se actualiza automáticamente mientras está abierto. Al iniciar una nueva retraducción LLM también puedes indicar explícitamente el modelo; cada solicitud conserva el suyo en el historial.
+
 ### Cola persistente, pausa, cancelación y recuperación
 
 Los trabajos se registran en `.pmt_ui_jobs/queue.sqlite3` y cada trabajo mantiene un
@@ -330,7 +336,7 @@ pmt-evaluate --help
 
 ### JSON estricto para traducción LLM
 
-La traducción LLM ahora valida localmente la respuesta antes de usarla. Cuando el proveedor lo permite, intenta `json_schema` estricto; si el proveedor no lo soporta, cae a `json_object` y mantiene validación local estricta.
+La traducción LLM valida localmente la respuesta antes de usarla. Con `qwen/qwen3.8-27b` se usa `json_schema` estricto; si el schema falla, el error se trata como fallo de Groq y entra en la política de reintentos en vez de degradar silenciosamente a `json_object`.
 
 Salida aceptada:
 
@@ -348,6 +354,24 @@ No se aceptan campos extra, ids duplicados, ids faltantes ni tipos incorrectos. 
 llm:
   strict_json_schema: true
 ```
+
+### Reintentos y límites de Groq
+
+PMT controla los reintentos de Groq directamente (`max_retries=0` en el SDK) para evitar reintentos duplicados. Ante un `429`, respeta el header `retry-after`; los límites temporales por minuto se reintentan, mientras que los límites diarios se detienen sin modificar la página. Para `5xx`, timeouts, errores de conexión y fallos transitorios de JSON usa backoff exponencial con jitter.
+
+Configuración recomendada para una cuenta Free:
+
+```yaml
+llm:
+  max_retries: 5
+  retry_max_wait_seconds: 90
+  retry_base_seconds: 1.0
+  retry_max_backoff_seconds: 12.0
+  retry_jitter_seconds: 0.35
+  fallback_to_traditional_on_error: false
+```
+
+Con `fallback_to_traditional_on_error: false`, si Groq no puede completar una página, PMT la deja intacta y muestra el motivo. Actívalo solo si quieres que Google/DeepL sustituya automáticamente al LLM.
 
 ### Memoria automática de personajes y hablantes
 

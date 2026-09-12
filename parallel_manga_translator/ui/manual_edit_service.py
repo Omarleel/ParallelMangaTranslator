@@ -121,20 +121,23 @@ class ManualEditService:
             for stroke in brush_strokes:
                 if (stroke.mode or "").strip().lower() == "inpaint":
                     stroke.applied = True
-            brush_strokes = self._without_mask_erasers(brush_strokes)
-        elif self._has_background_brush_strokes(brush_strokes):
-            target_revision, target_path = self._new_background_revision_path(job, page)
-            changed = apply_background_brush_strokes(
-                base_path=active_background,
-                clean_path=clean_path,
-                original_path=original_path,
-                output_path=target_path,
-                brush_strokes=brush_strokes,
-            )
-            if changed:
-                next_revision, next_background = target_revision, target_path
-            else:
-                target_path.unlink(missing_ok=True)
+            brush_strokes = self._pending_inpaint_strokes(self._without_mask_erasers(brush_strokes))
+        else:
+            pending_mask, bakeable = self._split_pending_mask_strokes(brush_strokes)
+            if self._has_background_brush_strokes(bakeable):
+                target_revision, target_path = self._new_background_revision_path(job, page)
+                changed = apply_background_brush_strokes(
+                    base_path=active_background,
+                    clean_path=clean_path,
+                    original_path=original_path,
+                    output_path=target_path,
+                    brush_strokes=bakeable,
+                )
+                if changed:
+                    next_revision, next_background = target_revision, target_path
+                else:
+                    target_path.unlink(missing_ok=True)
+            brush_strokes = pending_mask
 
         # La salida final se reconstruye siempre como dos capas: fondo/limpieza y
         # regiones de texto. Nunca parte de corrected_path, que puede contener una
@@ -146,9 +149,12 @@ class ManualEditService:
             regions=regions,
         )
 
-        # Las pinceladas ya quedaron incorporadas en una revisión inmutable del fondo.
-        # El identificador de esa revisión sí permanece en el historial del navegador.
-        brush_strokes = []
+        # `brush_strokes` ya quedó reducido en cada rama a lo que sigue vivo: las
+        # pinceladas horneadas viven ahora en una revisión inmutable del fondo, cuyo
+        # identificador conserva el historial del navegador, y solo sobrevive la máscara
+        # de inpaint sin aplicar. Descartarla también obligaba a bloquear el autoguardado
+        # mientras estuviera pendiente, y ese bloqueo era lo que dejaba el texto de una
+        # región rasterizado en su posición anterior al moverla.
 
         # Conservamos source_bbox como metadato de compatibilidad. Ya no se necesita
         # para borrar texto previo porque la composición nunca usa una imagen que tenga
@@ -191,7 +197,15 @@ class ManualEditService:
                 }
                 for region in regions
             ]
-            page.brush_strokes = []
+            page.brush_strokes = [
+                {
+                    "points": [list(point) for point in stroke.points],
+                    "radius": stroke.radius,
+                    "mode": stroke.mode,
+                    "applied": stroke.applied,
+                }
+                for stroke in brush_strokes
+            ]
             page.background_revision = next_revision
             page.manual_background_path = "" if next_revision == "base" else str(next_background)
             page.updated_at = time.time()
@@ -209,15 +223,22 @@ class ManualEditService:
         original_path = Path(page.original_path)
         if not clean_path.exists() or not original_path.exists():
             raise ValueError("Faltan imágenes base para previsualizar la región.")
-        image = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
+        # La previsualización tiene que salir de la misma capa de fondo que usará el
+        # guardado. Con la limpieza original, una región sobre una zona ya reparada
+        # con el pincel mostraría el fondo anterior y el inpaint parecería revertido.
+        try:
+            _, background_path = self._resolve_background_revision(job, page, page.background_revision)
+        except ValueError:
+            background_path = clean_path
+        image = cv2.imread(str(background_path), cv2.IMREAD_COLOR)
         if image is None:
-            raise ValueError("No se pudo leer la imagen limpia.")
+            raise ValueError("No se pudo leer la capa de fondo.")
         h, w = image.shape[:2]
         regions = parse_manual_regions([region_payload], w, h)
         if not regions:
             raise ValueError("La región de previsualización no es válida.")
         return render_manual_region_preview(
-            clean_path=clean_path,
+            background_path=background_path,
             original_path=original_path,
             region=regions[0],
         )
@@ -406,6 +427,34 @@ class ManualEditService:
         if model in {"auto", "B/N"}:
             return "lama_mpe"
         return model
+
+    @staticmethod
+    def _pending_inpaint_strokes(brush_strokes):
+        """Máscaras de inpaint dibujadas que el usuario aún no ha aplicado."""
+        return [
+            stroke
+            for stroke in brush_strokes
+            if (stroke.mode or "").strip().lower() == "inpaint" and not stroke.applied
+        ]
+
+    @classmethod
+    def _split_pending_mask_strokes(cls, brush_strokes):
+        """Separa la máscara de inpaint pendiente del resto de pinceladas.
+
+        Mientras haya una máscara sin aplicar, los borradores forman parte de ella: en
+        `_pending_inpaint_mask` restan zona a los trazos anteriores. Hornearlos como
+        restauración de fondo en un guardado intermedio cambiaría lo que el usuario verá
+        al pulsar “Aplicar inpaint”. Sin máscara pendiente, un borrador es exactamente lo
+        que dice el desplegable —restaurar el manga original— y sí se hornea.
+        """
+        if not cls._pending_inpaint_strokes(brush_strokes):
+            return [], list(brush_strokes)
+        pending, bakeable = [], []
+        for stroke in brush_strokes:
+            mode = (stroke.mode or "").strip().lower()
+            is_pending_mask = (mode == "inpaint" and not stroke.applied) or mode in {"mask_eraser", "erase_mask", "eraser"}
+            (pending if is_pending_mask else bakeable).append(stroke)
+        return pending, bakeable
 
     @staticmethod
     def _without_mask_erasers(brush_strokes):

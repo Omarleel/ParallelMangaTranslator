@@ -556,6 +556,19 @@ def _default_dataset_dir() -> Path:
     return configured if configured.is_absolute() else _repo_root() / configured
 
 
+def resolve_dataset_dir(dataset_dir: str | Path | None = None) -> Path:
+    """Punto de entrada público a la carpeta del banco.
+
+    La UI construye casos igual que el CLI y ambos tienen que mirar al mismo sitio: la
+    sección `evaluation` de `config.yaml`. Sin esto, el editor tendría que duplicar esa
+    resolución y podrían divergir en silencio.
+    """
+    if dataset_dir:
+        configured = Path(str(dataset_dir))
+        return configured if configured.is_absolute() else _repo_root() / configured
+    return _default_dataset_dir()
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Construye y puntúa el dataset de regresión validado por humanos (dataset_eval)."

@@ -13,7 +13,7 @@
         <div class="brand-row">
           <div class="brand-mark">PMT</div>
           <div>
-            <h1>Asistente corrector de manga</h1>
+            <h1>Parallel Manga Translator</h1>
             <p>Configura el trabajo primero. Después entra a una vista de revisión dedicada, sin mezclar formularios con edición.</p>
           </div>
         </div>
@@ -148,7 +148,15 @@
 
         <div class="setup-actions">
           <button class="primary" type="submit">Crear trabajo y abrir revisión</button>
-          <button id="continueLastBtn" class="ghost hidden" type="button">Continuar último trabajo</button>
+          <div class="setup-secondary-actions">
+            <button id="continueLastBtn" class="ghost continue-last hidden" type="button">
+              <span class="continue-last-label">Continuar último trabajo</span>
+              <span id="continueLastTitle" class="continue-last-title">Proyecto</span>
+            </button>
+            <button id="openHistoryBtn" class="ghost history-open" type="button">
+              <span aria-hidden="true">🕘</span><span>Historial</span>
+            </button>
+          </div>
         </div>
         <p id="uploadHint" class="hint">Las páginas listas se habilitan mientras el resto continúa en segundo plano.</p>
       </form>
@@ -187,7 +195,8 @@
           <h2>Proyecto</h2>
           <p id="jobOptionsSummary">Sin proyecto.</p>
         </div>
-        <button id="closePagesBtn" class="icon-button mobile-only" type="button" aria-label="Cerrar panel de páginas">×</button>
+        <button id="closePagesBtn" class="icon-button mobile-only" type="button" aria-label="Cerrar panel de páginas" title="Cerrar panel de páginas">‹</button>
+        <button id="closeJobBtn" class="icon-button close-job" type="button" aria-label="Cerrar trabajo y volver al inicio" title="Cerrar trabajo y volver al inicio">×</button>
       </div>
 
       <section class="panel progress-panel" id="progressPanel">
@@ -209,9 +218,9 @@
             <span class="job-control-icon" aria-hidden="true">■</span><span>Cancelar trabajo</span>
           </button>
         </div>
-        <button id="retranslateBtn" class="ghost export-btn" type="button" disabled>Retraducir trabajo</button>
-        <button id="exportBtn" class="ghost export-btn" type="button" disabled>Exportar ZIP</button>
-        <button id="newJobBtn" class="ghost export-btn" type="button">Nuevo trabajo</button>
+        <button id="jobActionsBtn" class="ghost job-actions-trigger" type="button" aria-haspopup="dialog">
+          <span aria-hidden="true">☰</span><span>Acciones del trabajo</span>
+        </button>
       </section>
 
       <section class="panel pages-panel" id="pagesPanel">
@@ -536,6 +545,147 @@
   <button id="panelBackdrop" class="panel-backdrop hidden" type="button" aria-label="Cerrar panel"></button>
   <div id="toast" class="toast hidden"></div>
 
+  <div id="jobActionsModal" class="shortcut-modal job-actions-modal hidden" role="dialog" aria-modal="true" aria-labelledby="jobActionsTitle">
+    <button id="jobActionsBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar acciones"></button>
+    <section class="shortcut-dialog job-actions-dialog">
+      <header>
+        <div>
+          <span class="eyebrow">Trabajo abierto</span>
+          <h2 id="jobActionsTitle">Acciones del trabajo</h2>
+        </div>
+        <button id="closeJobActionsBtn" class="icon-button" type="button" aria-label="Cerrar">×</button>
+      </header>
+      <p id="jobActionsSubtitle" class="muted">Sin proyecto cargado.</p>
+
+      <section class="job-actions-group" aria-label="Traducción">
+        <h3>Traducción</h3>
+        <button id="retranslateBtn" class="job-action" type="button" data-job-action disabled>
+          <span class="job-action-icon" aria-hidden="true">↻</span>
+          <span class="job-action-copy">
+            <strong>Retraducir trabajo</strong>
+            <span>Reutiliza limpieza y transcripción: solo vuelve a traducir y rotular.</span>
+          </span>
+        </button>
+        <button id="translationEventsBtn" class="job-action" type="button" data-job-action disabled>
+          <span class="job-action-icon" aria-hidden="true">◷</span>
+          <span class="job-action-copy">
+            <strong>Eventos de traducción</strong>
+            <span>Solicitudes, modelos, progreso, reintentos y errores.</span>
+          </span>
+        </button>
+      </section>
+
+      <section class="job-actions-group" aria-label="Salida">
+        <h3>Salida</h3>
+        <button id="exportBtn" class="job-action" type="button" data-job-action disabled>
+          <span class="job-action-icon" aria-hidden="true">⤓</span>
+          <span class="job-action-copy">
+            <strong id="exportBtnLabel">Exportar ZIP</strong>
+            <span>Páginas finales, tus correcciones y el manifiesto del export.</span>
+          </span>
+        </button>
+        <button id="datasetBtn" class="job-action" type="button" data-job-action disabled>
+          <span class="job-action-icon" aria-hidden="true">◎</span>
+          <span class="job-action-copy">
+            <strong>Enviar a dataset_eval</strong>
+            <span>Congela tus correcciones como caso de regresión.</span>
+          </span>
+        </button>
+      </section>
+
+      <section class="job-actions-group" aria-label="Proyecto">
+        <h3>Proyecto</h3>
+        <button id="historyBtn" class="job-action" type="button" data-job-action>
+          <span class="job-action-icon" aria-hidden="true">🕘</span>
+          <span class="job-action-copy">
+            <strong>Historial de traducciones</strong>
+            <span>Abrir, exportar o borrar otro trabajo guardado.</span>
+          </span>
+        </button>
+        <button id="newJobBtn" class="job-action" type="button" data-job-action>
+          <span class="job-action-icon" aria-hidden="true">＋</span>
+          <span class="job-action-copy">
+            <strong>Nuevo trabajo</strong>
+            <span>Volver al asistente. Este trabajo queda guardado.</span>
+          </span>
+        </button>
+      </section>
+    </section>
+  </div>
+
+  <div id="datasetModal" class="shortcut-modal dataset-modal hidden" role="dialog" aria-modal="true" aria-labelledby="datasetModalTitle">
+    <button id="datasetModalBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar"></button>
+    <section class="shortcut-dialog dataset-dialog">
+      <header>
+        <div>
+          <span class="eyebrow">Banco de regresión</span>
+          <h2 id="datasetModalTitle">Enviar a dataset_eval</h2>
+        </div>
+        <button id="closeDatasetModalBtn" class="icon-button" type="button" aria-label="Cerrar">×</button>
+      </header>
+      <p class="muted">Congela este trabajo como caso de regresión: tus correcciones pasan a ser la verdad de referencia contra la que se medirán los cambios futuros del pipeline.</p>
+
+      <dl id="datasetSummary" class="dataset-summary"></dl>
+      <p id="datasetWarning" class="dataset-warning hidden"></p>
+
+      <div class="dataset-form">
+        <label class="field compact">
+          <span>Nombre del caso</span>
+          <input id="datasetName" type="text" spellcheck="false" autocomplete="off" placeholder="ja_01" />
+        </label>
+        <p class="hint tiny">Será el nombre de la carpeta dentro de <code id="datasetDir">dataset_eval</code>. Convención: idioma + número (<code>ja_01</code>, <code>en_02</code>).</p>
+        <label class="checkbox-row compact-check">
+          <input id="datasetCopyImages" type="checkbox" checked />
+          <span>Copiar las páginas de entrada (necesarias para reejecutar el pipeline)</span>
+        </label>
+        <label class="checkbox-row compact-check">
+          <input id="datasetCopyReference" type="checkbox" checked />
+          <span>Copiar tus renders corregidos como referencia visual</span>
+        </label>
+        <label class="checkbox-row compact-check">
+          <input id="datasetBaseline" type="checkbox" checked />
+          <span>Calcular <code>baseline.json</code> con la salida automática de este trabajo</span>
+        </label>
+        <label class="checkbox-row compact-check hidden" id="datasetOverwriteRow">
+          <input id="datasetOverwrite" type="checkbox" />
+          <span>Sobrescribir el caso existente con ese nombre</span>
+        </label>
+      </div>
+
+      <div id="datasetResult" class="dataset-result hidden"></div>
+
+      <div class="retranslate-actions">
+        <button id="cancelDatasetBtn" class="ghost" type="button">Cancelar</button>
+        <button id="confirmDatasetBtn" class="primary" type="button">Crear caso</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="historyModal" class="shortcut-modal history-modal hidden" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+    <button id="historyModalBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar historial"></button>
+    <section class="shortcut-dialog history-dialog">
+      <header>
+        <div>
+          <span class="eyebrow">Trabajos guardados en este equipo</span>
+          <h2 id="historyModalTitle">Historial de traducciones</h2>
+        </div>
+        <button id="closeHistoryBtn" class="icon-button" type="button" aria-label="Cerrar">×</button>
+      </header>
+      <p class="muted">Cada trabajo conserva sus páginas, sus correcciones manuales y su exportación. Ábrelo para seguir revisándolo donde lo dejaste.</p>
+      <div class="history-toolbar">
+        <label class="field compact history-search">
+          <span>Buscar por título</span>
+          <input id="historySearch" type="search" placeholder="Ej. Capítulo 01" autocomplete="off" />
+        </label>
+        <button id="refreshHistoryBtn" class="ghost mini" type="button">Actualizar</button>
+      </div>
+      <div id="historyList" class="history-list" aria-live="polite"></div>
+      <div class="retranslate-actions">
+        <button id="closeHistoryFooterBtn" class="primary" type="button">Cerrar</button>
+      </div>
+    </section>
+  </div>
+
   <div id="retranslateModal" class="shortcut-modal retranslate-modal hidden" role="dialog" aria-modal="true" aria-labelledby="retranslateModalTitle">
     <button id="retranslateModalBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar retraducción"></button>
     <section class="shortcut-dialog retranslate-dialog">
@@ -559,6 +709,10 @@
           <span>Idioma de salida</span>
           <select id="retranslateTargetLanguage"></select>
         </label>
+        <label id="retranslateModelField" class="field compact retranslate-model-field">
+          <span>Modelo LLM</span>
+          <input id="retranslateModel" type="text" spellcheck="false" placeholder="Modelo de config.yaml" />
+        </label>
       </div>
       <label class="retranslate-overwrite">
         <input id="retranslateOverwrite" type="checkbox" />
@@ -568,6 +722,31 @@
       <div class="retranslate-actions">
         <button id="cancelRetranslateBtn" class="ghost" type="button">Cancelar</button>
         <button id="confirmRetranslateBtn" class="primary" type="button">Retraducir</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="translationEventsModal" class="shortcut-modal translation-events-modal hidden" role="dialog" aria-modal="true" aria-labelledby="translationEventsTitle">
+    <button id="translationEventsBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar eventos"></button>
+    <section class="shortcut-dialog translation-events-dialog">
+      <header>
+        <div>
+          <span class="eyebrow">Persistencia y reintentos</span>
+          <h2 id="translationEventsTitle">Eventos de traducción</h2>
+        </div>
+        <button id="closeTranslationEventsBtn" class="icon-button" type="button" aria-label="Cerrar">×</button>
+      </header>
+      <p class="muted">Cada solicitud conserva su modelo, progreso y eventos. Una solicitud pausada puede reanudarse incluso después de cerrar PMT.</p>
+      <div class="translation-events-layout">
+        <aside id="translationRunList" class="translation-run-list" aria-label="Solicitudes de traducción"></aside>
+        <section class="translation-run-detail">
+          <div id="translationRunSummary" class="translation-run-summary">Selecciona una solicitud.</div>
+          <div id="translationEventList" class="translation-event-list"></div>
+        </section>
+      </div>
+      <div class="retranslate-actions">
+        <button id="refreshTranslationEventsBtn" class="ghost" type="button">Actualizar</button>
+        <button id="closeTranslationEventsFooterBtn" class="primary" type="button">Cerrar</button>
       </div>
     </section>
   </div>
@@ -602,6 +781,6 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=10"></script>
 </body>
 </html>

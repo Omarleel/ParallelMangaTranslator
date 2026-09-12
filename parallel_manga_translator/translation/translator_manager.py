@@ -38,9 +38,14 @@ class TranslatorManager:
         idioma_salida: str,
         metodo: str = "Tradicional",
         groq_api_key: Optional[str] = None,
-        groq_model: str = "llama-3.3-70b-versatile",
+        groq_model: str = "qwen/qwen3.8-27b",
         seed: int = 7,
-        max_retries: int = 3,
+        max_retries: int = 5,
+        retry_max_wait_seconds: float = 90.0,
+        retry_base_seconds: float = 1.0,
+        retry_max_backoff_seconds: float = 12.0,
+        retry_jitter_seconds: float = 0.35,
+        fallback_to_traditional_on_error: bool = False,
         lore_manga: str = "",
         traditional_provider: str = "auto",
         llm_provider: str = "groq",
@@ -58,6 +63,11 @@ class TranslatorManager:
             groq_model = translation_config.llm.model
             seed = translation_config.llm.seed
             max_retries = translation_config.llm.max_retries
+            retry_max_wait_seconds = translation_config.llm.retry_max_wait_seconds
+            retry_base_seconds = translation_config.llm.retry_base_seconds
+            retry_max_backoff_seconds = translation_config.llm.retry_max_backoff_seconds
+            retry_jitter_seconds = translation_config.llm.retry_jitter_seconds
+            fallback_to_traditional_on_error = translation_config.llm.fallback_to_traditional_on_error
             lore_manga = translation_config.lore_manga
             traditional_provider = translation_config.traditional_provider
             traditional_min_interval = translation_config.traditional_min_interval
@@ -96,6 +106,11 @@ class TranslatorManager:
             strict_json_schema=bool(strict_json_schema),
             seed=int(seed),
             max_retries=max(1, int(max_retries)),
+            retry_max_wait_seconds=max(0.0, float(retry_max_wait_seconds)),
+            retry_base_seconds=max(0.0, float(retry_base_seconds)),
+            retry_max_backoff_seconds=max(0.0, float(retry_max_backoff_seconds)),
+            retry_jitter_seconds=max(0.0, float(retry_jitter_seconds)),
+            fallback_to_traditional_on_error=bool(fallback_to_traditional_on_error),
             lore=lore_manga,
             groq_api_key=groq_api_key or os.getenv("GROQ_API_KEY", ""),
             deepl_api_key=deepl_api_key,

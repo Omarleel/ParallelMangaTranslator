@@ -24,7 +24,12 @@ LLM_TRANSLATION_RESPONSE_SCHEMA: Dict[str, Any] = {
 }
 
 
-def validate_translation_response(data: Mapping[str, Any], expected_ids: Sequence[int]) -> List[Dict[str, Any]]:
+def validate_translation_response(
+    data: Mapping[str, Any],
+    expected_ids: Sequence[int],
+    *,
+    allow_missing: bool = False,
+) -> List[Dict[str, Any]]:
     """Valida la salida del LLM de forma estricta sin dependencia externa.
 
     El proveedor puede garantizar JSON, pero esta validación evita respuestas con ids
@@ -65,6 +70,6 @@ def validate_translation_response(data: Mapping[str, Any], expected_ids: Sequenc
         validated.append({"id": idx, "traduccion": traducido})
         seen.add(idx)
 
-    if seen != expected:
+    if seen != expected and not allow_missing:
         raise ValueError(f"Faltan traducciones para ids: {sorted(expected - seen)}")
     return validated

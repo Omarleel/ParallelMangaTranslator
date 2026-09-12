@@ -646,3 +646,195 @@ def test_large_inpaint_area_falls_back_to_full_page_context(tmp_path: Path) -> N
     )
 
     assert seen_shapes == [(1800, 2200)], "Una máscara extensa debe conservar todo el contexto global de la ruta anterior."
+
+
+def test_pending_inpaint_mask_survives_a_normal_save(monkeypatch, tmp_path: Path) -> None:
+    """Guardar con una máscara dibujada no debe consumirla ni bloquear el guardado.
+
+    Antes el servidor descartaba toda pincelada al guardar, así que el editor tenía que
+    bloquear el autoguardado mientras hubiera una máscara pendiente. Con el guardado
+    bloqueado, mover una región dejaba su texto rasterizado en la posición anterior.
+    """
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+
+    pending_mask = {"points": [[30, 30]], "radius": 3, "mode": "inpaint", "applied": False}
+    box_a = [4, 4, 8, 8]
+    box_b = [18, 4, 8, 8]
+
+    saved = manager.save_manual_render(
+        "job-test",
+        0,
+        [_region_payload(bbox=box_a, source_bbox=box_a)],
+        [pending_mask],
+        operation="render",
+    )
+
+    assert saved["brush_strokes"] == [pending_mask], "La máscara sin aplicar debe seguir pendiente tras un guardado normal."
+    assert saved["background_revision"] == "base", "Una máscara pendiente no hornea ninguna revisión de fondo."
+
+    moved = manager.save_manual_render(
+        "job-test",
+        0,
+        [_region_payload(bbox=box_b, source_bbox=box_a)],
+        [pending_mask],
+        operation="render",
+    )
+
+    assert moved["brush_strokes"] == [pending_mask]
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[8, 8] == 100), "La posición anterior vuelve a la capa de limpieza: sin fantasma."
+    assert np.all(rendered[8, 20] == 220), "El texto se rasteriza solo en la posición actual."
+
+
+def test_applying_the_inpaint_consumes_the_pending_mask(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+    bbox = [4, 4, 8, 8]
+
+    applied = manager.save_manual_render(
+        "job-test",
+        0,
+        [_region_payload(bbox=bbox, source_bbox=bbox)],
+        [{"points": [[30, 30]], "radius": 3, "mode": "inpaint", "applied": False}],
+        operation="inpaint",
+        inpaint_model="opencv-tela",
+    )
+
+    assert applied["brush_strokes"] == [], "Al aplicarla, la máscara deja de estar pendiente."
+    assert applied["background_revision"] != "base", "El inpaint crea una revisión inmutable del fondo."
+    assert Path(page.manual_background_path).exists()
+
+
+def test_background_image_variant_follows_the_manual_revision(monkeypatch, tmp_path: Path) -> None:
+    """El editor tapa el texto anterior con esta capa; tiene que ser la vigente."""
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+    bbox = [4, 4, 8, 8]
+
+    assert manager.image_path("job-test", 0, "background") == Path(page.clean_path)
+
+    manager.save_manual_render(
+        "job-test",
+        0,
+        [_region_payload(bbox=bbox, source_bbox=bbox)],
+        [{"points": [[30, 30]], "radius": 3, "mode": "restore_original", "applied": False}],
+        operation="render",
+    )
+
+    background = manager.image_path("job-test", 0, "background")
+    assert background == Path(page.manual_background_path)
+    assert background.exists() and background != Path(page.clean_path)
+
+
+def test_an_eraser_drawn_over_a_pending_mask_stays_with_it(monkeypatch, tmp_path: Path) -> None:
+    """Mientras la máscara siga pendiente, el borrador le resta zona; no restaura fondo."""
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+    bbox = [4, 4, 8, 8]
+
+    mask = {"points": [[30, 30]], "radius": 4, "mode": "inpaint", "applied": False}
+    eraser = {"points": [[30, 30]], "radius": 4, "mode": "mask_eraser", "applied": False}
+
+    saved = manager.save_manual_render(
+        "job-test",
+        0,
+        [_region_payload(bbox=bbox, source_bbox=bbox)],
+        [mask, eraser],
+        operation="render",
+    )
+
+    assert saved["brush_strokes"] == [mask, eraser], "Ambos trazos pertenecen a la máscara pendiente."
+    assert saved["background_revision"] == "base", "El borrador no debe hornearse mientras la máscara siga viva."
+
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[30, 30] == 100), "La zona sigue en la capa de limpieza, sin restaurar el original."
+
+
+def test_an_eraser_without_a_pending_mask_still_restores_the_original(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+    bbox = [4, 4, 8, 8]
+
+    saved = manager.save_manual_render(
+        "job-test",
+        0,
+        [_region_payload(bbox=bbox, source_bbox=bbox)],
+        [{"points": [[30, 30]], "radius": 4, "mode": "mask_eraser", "applied": False}],
+        operation="mask_eraser",
+    )
+
+    assert saved["brush_strokes"] == []
+    rendered = cv2.imread(page.corrected_path, cv2.IMREAD_COLOR)
+    assert rendered is not None
+    assert np.all(rendered[30, 30] == 40), "Sin máscara pendiente, el borrador restaura el manga original."
+
+
+def test_deleting_a_job_removes_its_folder_and_its_listing(tmp_path: Path) -> None:
+    manager, job, _page = _build_ready_manager(tmp_path)
+    root_dir = Path(job.root_dir)
+    assert root_dir.exists()
+
+    result = manager.delete_job("job-test")
+
+    assert result["deleted"] is True
+    assert result["folder_removed"] is True
+    assert result["title"] == job.title
+    assert not root_dir.exists(), "El borrado tiene que llevarse la carpeta entera del trabajo."
+    assert [item["job_id"] for item in manager.list_jobs(include_pages=False)] == []
+
+
+def test_a_live_job_is_not_deleted_behind_the_users_back(tmp_path: Path) -> None:
+    """Borrar la carpeta mientras el worker escribe dejaría el manifiesto a medias."""
+    manager, job, _page = _build_ready_manager(tmp_path)
+    job.status = "processing"
+
+    try:
+        manager.delete_job("job-test")
+    except ValueError as error:
+        assert "Cancela el trabajo" in str(error)
+    else:
+        raise AssertionError("Un trabajo en marcha no debe poder borrarse.")
+
+    assert Path(job.root_dir).exists()
+
+
+def test_delete_never_touches_a_folder_outside_the_jobs_root(tmp_path: Path) -> None:
+    """El manifiesto guarda rutas absolutas; pueden venir de otra máquina."""
+    manager, job, _page = _build_ready_manager(tmp_path)
+    outside = tmp_path / "fuera"
+    outside.mkdir()
+    (outside / "importante.txt").write_text("no tocar", encoding="utf-8")
+    job.root_dir = str(outside)
+
+    manager.delete_job("job-test")
+
+    assert outside.exists() and (outside / "importante.txt").exists()
+
+
+def test_a_folder_that_resists_deletion_is_reported_not_hidden(monkeypatch, tmp_path: Path) -> None:
+    """Un borrado a medias no puede anunciarse como limpio.
+
+    En Windows pasa de verdad: un antivirus reteniendo un archivo, o una ruta que se
+    pasa de los 260 caracteres de MAX_PATH. Antes se usaba `ignore_errors=True` y el
+    usuario veía desaparecer el trabajo del historial mientras su carpeta seguía
+    ocupando cientos de megas.
+    """
+    manager, job, _page = _build_ready_manager(tmp_path)
+    root_dir = Path(job.root_dir)
+
+    import shutil as shutil_module
+
+    def stubborn_rmtree(path, **kwargs):
+        return None  # simula un borrado que no borra nada y no lanza
+
+    monkeypatch.setattr(shutil_module, "rmtree", stubborn_rmtree)
+
+    result = manager.delete_job("job-test")
+
+    assert result["folder_removed"] is False, "El resultado debe admitir que la carpeta sigue ahí."
+    assert root_dir.exists()
+    # Aun así, el trabajo desaparece del historial: eso es lo que el usuario pidió.
+    assert [item["job_id"] for item in manager.list_jobs(include_pages=False)] == []

@@ -25,6 +25,8 @@ from parallel_manga_translator.ui.job_state import (
     JobOptions,
     JobState,
     PageState,
+    TranslationEvent,
+    TranslationRunState,
     rebase_stored_path,
 )
 
@@ -107,6 +109,30 @@ class JobManifestStore:
             )
         elif not isinstance(options, JobOptions):
             data["options"] = JobOptions()
+
+        # Las solicitudes de traducción tienen dataclasses anidadas. Manifiestos viejos
+        # no traen este campo y simplemente cargan con historial vacío.
+        run_fields = TranslationRunState.__dataclass_fields__
+        event_fields = TranslationEvent.__dataclass_fields__
+        runs = []
+        for raw_run in data.get("translation_runs", []) or []:
+            if isinstance(raw_run, TranslationRunState):
+                runs.append(raw_run)
+                continue
+            if not isinstance(raw_run, dict):
+                continue
+            raw_run = dict(raw_run)
+            events = []
+            for raw_event in raw_run.get("events", []) or []:
+                if isinstance(raw_event, TranslationEvent):
+                    events.append(raw_event)
+                elif isinstance(raw_event, dict):
+                    events.append(
+                        TranslationEvent(**{k: v for k, v in raw_event.items() if k in event_fields})
+                    )
+            raw_run["events"] = events
+            runs.append(TranslationRunState(**{k: v for k, v in raw_run.items() if k in run_fields}))
+        data["translation_runs"] = runs
 
         job = JobState(**{k: v for k, v in data.items() if k in JobState.__dataclass_fields__})
         if self.rebase_paths(job):

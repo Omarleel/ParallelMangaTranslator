@@ -37,6 +37,11 @@ class GroqTranslationProvider(TraditionalTranslationMixin, LlmTranslationMixin):
         self.modelo = config.llm_model
         self.seed = int(config.seed)
         self.max_retries = max(1, int(config.max_retries))
+        self.llm_retry_max_wait_seconds = max(0.0, float(config.retry_max_wait_seconds))
+        self.llm_retry_base_seconds = max(0.0, float(config.retry_base_seconds))
+        self.llm_retry_max_backoff_seconds = max(0.0, float(config.retry_max_backoff_seconds))
+        self.llm_retry_jitter_seconds = max(0.0, float(config.retry_jitter_seconds))
+        self.llm_fallback_to_traditional_on_error = bool(config.fallback_to_traditional_on_error)
         self.traditional_provider = (config.traditional_provider or "auto").strip().lower()
         self.traditional_min_interval = max(0.0, float(config.traditional_min_interval))
         self.traditional_block_cooldown = max(0.0, float(config.traditional_block_cooldown))
@@ -62,8 +67,20 @@ class GroqTranslationProvider(TraditionalTranslationMixin, LlmTranslationMixin):
             if Groq is None:
                 logger.warning("El paquete groq no está instalado; se usará fallback tradicional.")
             else:
-                self.client = Groq(api_key=self.groq_api_key)
+                # PMT controla los reintentos explícitamente para poder respetar
+                # retry-after y distinguir límites por minuto de límites diarios.
+                # El SDK reintenta 429/5xx por defecto; desactivarlo evita duplicar
+                # intentos y esperas invisibles.
+                self.client = Groq(api_key=self.groq_api_key, max_retries=0)
         self.provider_name = "groq"
+        logger.info(
+            "Groq configurado: model=%s strict_json_schema=%s retries=%s max_wait=%.1fs fallback_traditional=%s",
+            self.modelo,
+            self.llm_strict_json_schema,
+            self.max_retries,
+            self.llm_retry_max_wait_seconds,
+            self.llm_fallback_to_traditional_on_error,
+        )
 
     def traducir_textos(
         self,

@@ -130,10 +130,17 @@ class ConfigManager:
             project_dir=project_dir,
             llm=LlmConfig(
                 provider=str(llm_section.get("provider", "groq")),
-                model=str(llm_section.get("model", "llama-3.3-70b-versatile")),
+                model=str(llm_section.get("model", "qwen/qwen3.8-27b")),
                 strict_json_schema=bool_value(llm_section.get("strict_json_schema", True), True),
                 seed=int_value(llm_section.get("seed", 7), 7),
-                max_retries=max(1, int_value(llm_section.get("max_retries", 3), 3)),
+                max_retries=max(1, int_value(llm_section.get("max_retries", 5), 5)),
+                retry_max_wait_seconds=max(0.0, float_value(llm_section.get("retry_max_wait_seconds", 90.0), 90.0)),
+                retry_base_seconds=max(0.0, float_value(llm_section.get("retry_base_seconds", 1.0), 1.0)),
+                retry_max_backoff_seconds=max(0.0, float_value(llm_section.get("retry_max_backoff_seconds", 12.0), 12.0)),
+                retry_jitter_seconds=max(0.0, float_value(llm_section.get("retry_jitter_seconds", 0.35), 0.35)),
+                fallback_to_traditional_on_error=bool_value(
+                    llm_section.get("fallback_to_traditional_on_error", False), False
+                ),
             ),
         )
 

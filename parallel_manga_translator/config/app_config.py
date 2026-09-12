@@ -25,10 +25,17 @@ class OcrConfig:
 @dataclass(frozen=True)
 class LlmConfig:
     provider: str = "groq"
-    model: str = "llama-3.3-70b-versatile"
+    model: str = "qwen/qwen3.8-27b"
     strict_json_schema: bool = True
     seed: int = 7
-    max_retries: int = 3
+    # Número total de intentos controlados por PMT (el SDK de Groq no reintenta por detrás).
+    max_retries: int = 5
+    retry_max_wait_seconds: float = 90.0
+    retry_base_seconds: float = 1.0
+    retry_max_backoff_seconds: float = 12.0
+    retry_jitter_seconds: float = 0.35
+    # Si es false, un fallo de Groq deja la página intacta en vez de traducirla con Google.
+    fallback_to_traditional_on_error: bool = False
 
 
 @dataclass(frozen=True)

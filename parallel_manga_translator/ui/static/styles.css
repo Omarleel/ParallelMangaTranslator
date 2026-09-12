@@ -2228,3 +2228,451 @@ body:has(.work-view:not(.hidden)) {
   .retranslate-form { grid-template-columns: minmax(0, 1fr); }
   .retranslate-actions button { flex: 1; }
 }
+
+/* Historial persistente de solicitudes de traducción. */
+.translation-events-modal { z-index: 165; }
+.translation-events-dialog { width: min(1040px, 100%); }
+.translation-events-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, .8fr) minmax(0, 1.7fr);
+  gap: 12px;
+  min-height: 360px;
+  margin-top: 14px;
+}
+.translation-run-list,
+.translation-run-detail {
+  min-width: 0;
+  border: 1px solid rgba(42, 51, 85, .72);
+  border-radius: 12px;
+  background: rgba(7, 10, 18, .32);
+}
+.translation-run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 520px;
+  overflow: auto;
+  padding: 9px;
+}
+.translation-run-item {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid rgba(76, 85, 120, .64);
+  border-radius: 10px;
+  background: rgba(18, 24, 40, .68);
+}
+.translation-run-item.active {
+  border-color: var(--accent-2);
+  box-shadow: inset 0 0 0 1px rgba(91, 199, 255, .18);
+}
+.translation-run-item strong { font-size: 12px; }
+.translation-run-item span { color: var(--muted); font-size: 10px; line-height: 1.35; }
+.translation-run-status { text-transform: uppercase; letter-spacing: .08em; font-weight: 900; }
+.translation-run-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.translation-run-summary {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(42, 51, 85, .72);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.translation-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 455px;
+  overflow: auto;
+  padding: 12px;
+}
+.translation-event {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 10px;
+  border-left: 3px solid #4c5578;
+  border-radius: 8px;
+  background: rgba(20, 27, 44, .62);
+}
+.translation-event.warning { border-left-color: var(--warn); }
+.translation-event.error { border-left-color: #ff6f79; }
+.translation-event-time { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.translation-event-copy { min-width: 0; }
+.translation-event-copy strong { display: block; margin-bottom: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.translation-event-copy p { margin: 0; color: var(--text); font-size: 11px; line-height: 1.42; overflow-wrap: anywhere; }
+.translation-event-copy small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
+.retranslate-model-field { grid-column: 1 / -1; }
+@media (max-width: 760px) {
+  .translation-events-layout { grid-template-columns: 1fr; }
+  .translation-run-list { max-height: 190px; }
+  .translation-event-list { max-height: 340px; }
+}
+
+/* UIX round 10: arranque con historial, cabeceras que aguantan títulos largos y un
+   parche vivo que borra el texto ya rasterizado cuando una región se mueve. */
+
+/* Acciones del asistente. El botón de continuar lleva dentro el título del último
+   trabajo: en una sola línea, un nombre largo aplastaba al botón principal. */
+.setup-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.setup-actions .primary { width: 100%; min-height: 44px; }
+.setup-secondary-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  min-width: 0;
+}
+.continue-last {
+  min-width: 0;
+  display: grid;
+  /* La columna explícita minmax(0, 1fr) es lo que impide que el título, que va en una
+     sola línea, imponga su ancho mínimo al botón y con él a toda la tarjeta. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  text-align: left;
+  min-height: 44px;
+  padding: 7px 12px;
+}
+.continue-last-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.continue-last-title {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+}
+.history-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+/* Historial de traducciones */
+/* El diálogo no se desplaza entero: solo la lista. Así el buscador y el botón de
+   cerrar siguen visibles aunque haya decenas de trabajos. */
+.history-dialog {
+  width: min(780px, 100%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.history-dialog > .history-list { flex: 1 1 auto; min-height: 120px; }
+.history-dialog > .retranslate-actions { flex: 0 0 auto; }
+.history-dialog > .muted { margin: 0 0 14px; line-height: 1.5; }
+.history-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+.history-search { margin: 0; min-width: 0; }
+/* El selector base de campos no incluye type="search": sin esto el buscador
+   aparecía con el estilo nativo blanco dentro de un diálogo oscuro. */
+input[type="search"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-3);
+  color: var(--text);
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="search"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,92,255,.14); outline: none; }
+input[type="search"]::-webkit-search-cancel-button { filter: invert(1) opacity(.55); cursor: pointer; }
+.history-toolbar .mini { min-height: 38px; }
+.history-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(52vh, 430px);
+  overflow: auto;
+  padding-right: 4px;
+}
+.history-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(12, 15, 29, .62);
+}
+.history-item.current { border-color: rgba(124, 92, 255, .6); background: rgba(124, 92, 255, .12); }
+.history-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.history-item-head h3 {
+  margin: 0;
+  min-width: 0;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-item-head .badge { flex: 0 0 auto; }
+.history-item-meta { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.history-item-date { margin: 0; color: var(--muted); font-size: 11px; }
+.history-item-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.history-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.history-empty {
+  margin: 0;
+  padding: 20px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* El texto de una región vive rasterizado dentro de la imagen de la página. Mientras
+   la posición local no coincida con la ya guardada, este parche repinta la capa de
+   fondo sobre la posición anterior: sin él queda un fantasma detrás de la caja. */
+.region-ghost-patch {
+  position: absolute;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  image-rendering: auto;
+}
+
+/* La columna del área de trabajo se dimensionaba por el contenido (la página a tamaño
+   natural), así que la barra de documento y el inspector se salían ~14 px por la derecha
+   y el botón Guardar quedaba cortado. El lienzo ya tiene su propio scroll. */
+.work-main { grid-template-columns: minmax(0, 1fr); }
+.canvas-card, .editor-panel, .toolbar, .application-bar { min-width: 0; }
+
+/* Barra lateral: la lista de páginas es lo único que debe crecer, y se desplaza sola. */
+.work-sidebar {
+  display: grid;
+  grid-template-rows: auto auto minmax(120px, 1fr);
+  align-content: stretch;
+}
+.pages-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.pages-panel .page-list { max-height: none; min-height: 0; overflow: auto; }
+.sidebar-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.sidebar-action-row button { width: 100%; min-width: 0; min-height: 38px; padding-inline: 8px; }
+
+/* Títulos largos: ni la barra lateral ni el historial pueden ensancharse por ellos. */
+.sidebar-copy { min-width: 0; }
+.sidebar-head p { overflow-wrap: anywhere; }
+.progress-header { min-width: 0; }
+.progress-header h2 {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.progress-header .badge { flex: 0 0 auto; }
+.progress-panel .export-btn { min-height: 38px; }
+
+/* El héroe ya no se estira a 540 px: con el formulario al lado dejaba un hueco
+   muerto entre el titular y los pasos. */
+.setup-hero { min-height: 0; gap: 30px; }
+.setup-view { padding-block: clamp(16px, 4vh, 32px); }
+
+@media (max-width: 560px) {
+  .setup-secondary-actions { grid-template-columns: minmax(0, 1fr); }
+  .history-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .history-item-actions > * { flex: 1 1 auto; }
+  .shortcut-dialog, .retranslate-dialog { padding: 14px; border-radius: 14px; }
+  .history-list { max-height: 58vh; }
+}
+
+/* UIX round 11: cerrar el trabajo, rutas y borrado desde el historial. */
+
+/* `.icon-button` (display: grid) venía después de `.mobile-only` con la misma
+   especificidad, así que el botón de cerrar el panel de páginas también salía en
+   escritorio, donde no hay cajón que cerrar y el clic no hacía nada. */
+.mobile-only { display: none; }
+.sidebar-head .icon-button { align-self: start; }
+.close-job {
+  font-size: 20px;
+  color: var(--muted);
+}
+.close-job:hover { color: var(--text); border-color: var(--danger); background: rgba(255, 107, 135, .12); }
+
+/* Confirmación de borrado, dentro de la propia tarjeta del historial. */
+.history-delete { color: var(--danger); }
+.history-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 107, 135, .45);
+  border-radius: 12px;
+  background: rgba(255, 107, 135, .09);
+}
+.history-confirm strong { font-size: 12px; }
+.history-confirm p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.history-confirm .danger { border-color: rgba(255, 107, 135, .55); }
+
+@media (max-width: 1050px) {
+  .mobile-only { display: grid; }
+}
+
+/* UIX round 12: promover un trabajo corregido a caso de dataset_eval. */
+.dataset-dialog { width: min(620px, 100%); }
+.dataset-dialog > .muted { margin: 0 0 14px; line-height: 1.5; }
+.dataset-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.dataset-summary > div {
+  padding: 9px 10px;
+  border: 1px solid rgba(42, 51, 85, .68);
+  border-radius: 10px;
+  background: rgba(7, 10, 18, .34);
+}
+.dataset-summary dt { color: var(--muted); font-size: 10px; font-weight: 800; line-height: 1.3; }
+.dataset-summary dd { margin: 3px 0 0; font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.dataset-warning {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 196, 87, .45);
+  border-radius: 10px;
+  background: rgba(255, 196, 87, .10);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.dataset-form { display: grid; gap: 2px; }
+.dataset-form .hint.tiny { margin-bottom: 6px; }
+.dataset-form .checkbox-row { padding: 5px 0; font-size: 12px; }
+.dataset-form code, .dataset-result code { color: #d9d2ff; font-size: 11px; }
+.dataset-result {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(80, 255, 194, .38);
+  border-radius: 12px;
+  background: rgba(80, 255, 194, .08);
+}
+.dataset-result p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.dataset-result-label { text-transform: uppercase; letter-spacing: .08em; font-size: 9px !important; font-weight: 900; }
+.dataset-result-warning { color: var(--warn) !important; }
+.dataset-path {
+  display: block;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(6, 9, 16, .66);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.dataset-baseline { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.dataset-baseline li { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; }
+.dataset-baseline span { color: var(--muted); }
+.dataset-baseline strong { font-variant-numeric: tabular-nums; }
+
+/* UIX round 13: la barra lateral deja de ser una pila de botones. Todo lo que no es
+   progreso ni páginas vive en el modal de acciones, y la lista de páginas se queda
+   con el espacio que sobra. */
+.job-actions-trigger {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.progress-panel { margin-bottom: 8px; }
+/* Con seis botones menos encima, la lista es lo que crece. */
+.work-sidebar { grid-template-rows: auto auto minmax(220px, 1fr); }
+.pages-panel .section-heading { margin-bottom: 8px; }
+.pages-panel .section-heading p { font-size: 11px; }
+
+.job-actions-dialog { width: min(540px, 100%); }
+.job-actions-dialog > .muted {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.job-actions-group { display: grid; gap: 6px; margin-bottom: 14px; }
+.job-actions-group:last-of-type { margin-bottom: 0; }
+.job-actions-group h3 {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.job-action {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 1px solid rgba(42, 51, 85, .72);
+  border-radius: 12px;
+  background: rgba(7, 10, 18, .38);
+  color: var(--text);
+  text-align: left;
+}
+.job-action:hover:not(:disabled) { border-color: var(--accent); background: rgba(124, 92, 255, .12); }
+.job-action:disabled { opacity: .44; cursor: not-allowed; }
+.job-action-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(124, 92, 255, .16);
+  color: #c9c0ff;
+  font-size: 15px;
+}
+.job-action-copy { min-width: 0; display: grid; gap: 2px; }
+.job-action-copy strong { font-size: 13px; }
+.job-action-copy span { color: var(--muted); font-size: 11px; line-height: 1.35; }
+
+@media (max-width: 560px) {
+  .job-action { grid-template-columns: 28px minmax(0, 1fr); gap: 9px; padding: 9px 10px; }
+  .job-action-icon { width: 28px; height: 28px; font-size: 13px; }
+}

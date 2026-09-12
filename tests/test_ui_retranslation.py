@@ -223,7 +223,7 @@ class RetranslationJobTests(unittest.TestCase):
             self.assertEqual(recovered.retranslate_pages, [0])
             self.assertEqual(restarted._queue.position(job.job_id), 1)
 
-    def test_failed_retranslation_returns_job_to_terminal_state(self) -> None:
+    def test_failed_retranslation_is_paused_and_can_be_resumed_later(self) -> None:
         class _BrokenRetranslator(_FakeRetranslator):
             def retranslate_page(self, **kwargs):
                 raise RuntimeError("proveedor caído")
@@ -235,11 +235,32 @@ class RetranslationJobTests(unittest.TestCase):
             with runtime, assets, mock.patch(f"{RETRADUCCION}.JobRetranslator", _BrokenRetranslator):
                 manager._run_job(job.job_id)
 
-            completed = manager.get_job(job.job_id)
+            paused = manager.get_job(job.job_id)
+            self.assertEqual(paused.status, "paused")
+            self.assertEqual(paused.pending_operation, "retranslate")
+            self.assertEqual(paused.retranslate_pages, [0])
+            self.assertIn("proveedor caído", paused.message)
+            self.assertEqual(paused.pages[0].regions[0]["translated_text"], "hola")
+            self.assertTrue(paused.active_translation_run_id)
+            self.assertEqual(paused.translation_runs[-1].status, "paused")
+
+            # Simula cerrar PMT y abrirlo al día siguiente: el manifiesto conserva todo.
+            restarted = JobManager(jobs_root=Path(tmp), start_worker=False)
+            recovered = restarted.get_job(job.job_id)
+            self.assertEqual(recovered.status, "paused")
+            self.assertEqual(recovered.retranslate_pages, [0])
+            self.assertEqual(recovered.translation_runs[-1].last_error, "proveedor caído")
+
+            restarted.resume_job(job.job_id)
+            runtime, assets = _offline_assets()
+            with runtime, assets, mock.patch(f"{RETRADUCCION}.JobRetranslator", _FakeRetranslator):
+                restarted._run_job(job.job_id)
+
+            completed = restarted.get_job(job.job_id)
             self.assertEqual(completed.status, "ready")
             self.assertEqual(completed.pending_operation, "process")
-            self.assertIn("proveedor caído", completed.message)
-            self.assertEqual(completed.pages[0].regions[0]["translated_text"], "hola")
+            self.assertEqual(completed.retranslate_pages, [])
+            self.assertEqual(completed.translation_runs[-1].status, "completed")
 
 
 class _DegradedRetranslator(_FakeRetranslator):
@@ -284,8 +305,10 @@ class RetranslationFallbackTests(unittest.TestCase):
             self.assertEqual(_FakeRetranslator.instances[0].calls, [0])
             self.assertIn("agotó su límite de tokens", completed.message)
             self.assertIn("página 1 de 2", completed.message)
-            self.assertEqual(completed.status, "ready")
-            self.assertEqual(completed.pending_operation, "process")
+            self.assertEqual(completed.status, "paused")
+            self.assertEqual(completed.pending_operation, "retranslate")
+            self.assertEqual(completed.retranslate_pages, [1])
+            self.assertEqual(completed.translation_runs[-1].status, "paused")
             self.assertEqual(completed.pages[1].regions[0]["translated_text"], "hola")
 
     def test_google_retranslation_ignores_the_llm_fallback_marker(self) -> None:

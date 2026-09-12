@@ -15,7 +15,7 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from parallel_manga_translator.io.image_naming import normalized_page_output_name
 
@@ -69,6 +69,48 @@ def page_of(job: "JobState", page_index: int) -> "PageState":
 def normalized_output_name(filename: str, page_index: int) -> str:
     return normalized_page_output_name(filename, page_index)
 
+
+
+
+@dataclass
+class TranslationEvent:
+    """Evento persistente de una solicitud de traducción/retraducción."""
+
+    timestamp: float = field(default_factory=time.time)
+    kind: str = "info"
+    level: str = "info"
+    message: str = ""
+    page_index: Optional[int] = None
+    details: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TranslationRunState:
+    """Una solicitud concreta de traducción, separada del trabajo que la contiene.
+
+    Se guarda en ``manifest.json`` para poder cerrar PMT y continuar otro día con el
+    mismo proveedor/modelo y exactamente las páginas que faltaban.
+    """
+
+    run_id: str
+    operation: str = "retranslate"
+    translator: str = "llm"
+    provider: str = "groq"
+    model: str = ""
+    target_language: str = "Español"
+    overwrite_manual: bool = False
+    status: str = "queued"  # queued | processing | paused | completed | failed | cancelled
+    page_indices: List[int] = field(default_factory=list)
+    pending_pages: List[int] = field(default_factory=list)
+    completed_pages: List[int] = field(default_factory=list)
+    current_page: Optional[int] = None
+    message: str = ""
+    last_error: str = ""
+    created_at: float = field(default_factory=time.time)
+    started_at: float = 0.0
+    updated_at: float = field(default_factory=time.time)
+    finished_at: float = 0.0
+    events: List[TranslationEvent] = field(default_factory=list)
 
 @dataclass
 class JobOptions:
@@ -138,6 +180,10 @@ class JobState:
     # que necesita decir con qué operación vuelve a entrar.
     pending_operation: str = "process"  # process | retranslate
     retranslate_pages: List[int] = field(default_factory=list)
+    # Historial persistente de solicitudes de traducción. La solicitud activa conserva
+    # proveedor/modelo y páginas pendientes para poder reanudar incluso otro día.
+    translation_runs: List[TranslationRunState] = field(default_factory=list)
+    active_translation_run_id: str = ""
 
     @property
     def total_count(self) -> int:
@@ -169,6 +215,7 @@ def page_to_public(page: PageState, job_id: str) -> Dict[str, Any]:
         "images": {
             "original": f"/api/jobs/{job_id}/pages/{page.index}/image/original",
             "clean": f"/api/jobs/{job_id}/pages/{page.index}/image/clean",
+            "background": f"/api/jobs/{job_id}/pages/{page.index}/image/background",
             "translated": f"/api/jobs/{job_id}/pages/{page.index}/image/translated",
             "corrected": f"/api/jobs/{job_id}/pages/{page.index}/image/corrected",
             "current": f"/api/jobs/{job_id}/pages/{page.index}/image/current",
@@ -196,10 +243,74 @@ def job_to_public(job: JobState) -> Dict[str, Any]:
         "recovery_count": job.recovery_count,
         "pending_operation": job.pending_operation or "process",
         "retranslate_pending": len(job.retranslate_pages or []),
+        "active_translation_run_id": job.active_translation_run_id or "",
+        "translation_run_count": len(job.translation_runs or []),
         "started_at": job.started_at,
         "finished_at": job.finished_at,
         "options": asdict(job.options) if hasattr(job.options, "__dataclass_fields__") else job.options,
         "pages": [page_to_public(page, job.job_id) for page in job.pages],
+    }
+
+
+
+def active_translation_run(job: "JobState") -> Optional[TranslationRunState]:
+    run_id = str(getattr(job, "active_translation_run_id", "") or "")
+    if not run_id:
+        return None
+    for run in reversed(getattr(job, "translation_runs", []) or []):
+        if str(getattr(run, "run_id", "")) == run_id:
+            return run
+    return None
+
+
+def append_translation_event(
+    job: "JobState",
+    kind: str,
+    message: str,
+    *,
+    level: str = "info",
+    page_index: Optional[int] = None,
+    details: Optional[Dict[str, Any]] = None,
+    max_events: int = 600,
+) -> Optional[TranslationEvent]:
+    run = active_translation_run(job)
+    if run is None:
+        return None
+    event = TranslationEvent(
+        kind=str(kind or "info"),
+        level=str(level or "info"),
+        message=str(message or ""),
+        page_index=page_index,
+        details=dict(details or {}),
+    )
+    run.events.append(event)
+    if max_events > 0 and len(run.events) > max_events:
+        del run.events[:-max_events]
+    run.updated_at = event.timestamp
+    return event
+
+
+def translation_run_to_public(run: TranslationRunState) -> Dict[str, Any]:
+    return {
+        "run_id": run.run_id,
+        "operation": run.operation,
+        "translator": run.translator,
+        "provider": run.provider,
+        "model": run.model,
+        "target_language": run.target_language,
+        "overwrite_manual": run.overwrite_manual,
+        "status": run.status,
+        "page_indices": list(run.page_indices),
+        "pending_pages": list(run.pending_pages),
+        "completed_pages": list(run.completed_pages),
+        "current_page": run.current_page,
+        "message": run.message,
+        "last_error": run.last_error,
+        "created_at": run.created_at,
+        "started_at": run.started_at,
+        "updated_at": run.updated_at,
+        "finished_at": run.finished_at,
+        "events": [asdict(event) for event in run.events],
     }
 
 
@@ -238,6 +349,10 @@ __all__ = [
     "JobOptions",
     "JobState",
     "PageState",
+    "TranslationEvent",
+    "TranslationRunState",
+    "active_translation_run",
+    "append_translation_event",
     "finalize_cancelled",
     "is_retranslating",
     "job_to_public",
@@ -247,4 +362,5 @@ __all__ = [
     "normalized_output_name",
     "page_of",
     "rebase_stored_path",
+    "translation_run_to_public",
 ]
