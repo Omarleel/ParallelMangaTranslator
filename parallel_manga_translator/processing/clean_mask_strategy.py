@@ -29,7 +29,10 @@ class CleanMaskStrategy:
         bubble_fill_edge_margin: int,
         bubble_fill_text_dilate: int,
         bubble_fill_flat_max_rectangularity: float,
+        ink_source=None,
     ) -> None:
+        # Colaborador opcional: `None` es el metodo derivado de siempre.
+        self.ink_source = ink_source
         self.bubble_fill_whole_interior = bool(bubble_fill_whole_interior)
         self.bubble_fill_edge_margin = int(bubble_fill_edge_margin)
         self.bubble_fill_text_dilate = int(bubble_fill_text_dilate)
@@ -314,15 +317,27 @@ class CleanMaskStrategy:
         espaciales; la máscara de tinta es la que se compone para limpieza.
         """
         prepared: List[TextRegion] = []
+        # Una sola inferencia por pagina, no una por region.
+        if self.ink_source is not None:
+            self.ink_source.prepare(imagen)
         for region in regiones or []:
             clean_mask, source = self.build_clean_mask_for_region(imagen, region)
-            region.clean_mask = self.binary_mask(clean_mask, imagen.shape)
+            clean_mask = self.binary_mask(clean_mask, imagen.shape)
+            aporte = ""
+            if self.ink_source is not None:
+                clean_mask, aporte = self.ink_source.augment(region, clean_mask)
+                clean_mask = self.binary_mask(clean_mask, imagen.shape)
+            region.clean_mask = clean_mask
             metadata = getattr(region, "metadata", None)
             if isinstance(metadata, dict):
                 metadata["region_mask_role"] = "safe_region_for_ocr_and_render"
                 metadata["clean_mask_role"] = "ink_or_text_pixels_to_remove"
                 metadata["clean_mask_source"] = source
                 metadata["clean_mask_pixels"] = int(cv2.countNonZero(region.clean_mask))
+                if aporte:
+                    # Deja rastro de si la tinta extra entro o si se cayo al metodo
+                    # derivado: sin esto, un 31% de fallback seria invisible.
+                    metadata["ink_mask_extra_source"] = aporte
                 if getattr(self, "ink_mask_refinement", True):
                     metadata["ink_mask_refinement"] = "connected_components_anchored_to_ocr"
                     metadata["ink_mask_refined"] = True
@@ -333,5 +348,7 @@ class CleanMaskStrategy:
                     metadata["bubble_mask_pixels"] = int(cv2.countNonZero(self.binary_mask(region.mask, imagen.shape)))
                     metadata["bubble_clean_mask_separated"] = True
             prepared.append(region)
+        if self.ink_source is not None and hasattr(self.ink_source, "release"):
+            self.ink_source.release()
         return prepared
 

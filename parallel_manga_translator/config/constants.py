@@ -66,6 +66,10 @@ URL_FUENTE = "https://drive.google.com/file/d/1uIAh-nGGi04f-7moWsKvRhTbAj-Oq84O/
 URL_MODELO_LAMA = "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/inpainting_lama_mpe.ckpt"
 URL_MODELO_LAMA_LARGE = "https://huggingface.co/dreMaz/AnimeMangaInpainting/resolve/main/lama_large_512px.ckpt"
 URL_MODELO_AOT = "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/inpainting.ckpt"
+# Detector de texto de comic/manga (comic-text-detector). Sale del mismo release
+# que lama y aot. Se usa la exportacion ONNX porque corre en `cv2.dnn`, que ya es
+# dependencia: no anade paquetes ni compite por la GPU con YOLO/OCR/inpainting.
+URL_MODELO_COMIC_TEXT_DETECTOR = "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/comictextdetector.pt.onnx"
 
 # COLORES
 COLOR_BLANCO = (255, 255, 255)

@@ -62,6 +62,7 @@ const titleInput = $('titleInput');
 const sourceLanguage = $('sourceLanguage');
 const targetLanguage = $('targetLanguage');
 const translatorSelect = $('translatorSelect');
+const regionSource = $('regionSource');
 const inpaintModel = $('inpaintModel');
 const detectionEngine = $('detectionEngine');
 const transcriptionEngine = $('transcriptionEngine');
@@ -866,6 +867,7 @@ uploadForm.addEventListener('submit', async (event) => {
   data.append('source_language', sourceLanguage.value || 'Japonés');
   data.append('target_language', targetLanguage.value || 'Español');
   data.append('translator', translatorSelect.value || 'llm');
+  data.append('region_source', regionSource?.value || 'yolo');
   data.append('inpaint_model', inpaintModel.value || 'auto');
   data.append('detection_engine', detectionEngine.value || 'auto');
   data.append('transcription_engine', transcriptionEngine.value || 'auto');
@@ -995,6 +997,13 @@ function startPolling(jobId) {
   }, 1800);
 }
 
+function regionSourceLabel(value) {
+  return {
+    yolo: 'Globos YOLO',
+    comic_text_detector: 'Detector de texto',
+  }[value] || value;
+}
+
 function inpaintModelLabel(value) {
   return {
     auto: 'Automático',
@@ -1011,7 +1020,12 @@ function renderJob(job) {
   jobTitle.textContent = job.title || 'Proyecto';
   jobMessage.textContent = job.message || '';
   const opts = job.options || {};
-  jobOptionsSummary.textContent = `${opts.source_language || 'Entrada'} → ${opts.target_language || 'Salida'} · ${opts.translator === 'google' ? 'Google' : 'LLM'} · Inpainting: ${inpaintModelLabel(opts.inpaint_model)}`;
+  // La fuente de regiones solo se nombra cuando no es la de siempre: si el trabajo salió
+  // raro, lo primero que hay que poder ver es que se cambió el detector.
+  const fuenteRegiones = opts.region_source && opts.region_source !== 'yolo'
+    ? ` · Regiones: ${regionSourceLabel(opts.region_source)}`
+    : '';
+  jobOptionsSummary.textContent = `${opts.source_language || 'Entrada'} → ${opts.target_language || 'Salida'} · ${opts.translator === 'google' ? 'Google' : 'LLM'} · Inpainting: ${inpaintModelLabel(opts.inpaint_model)}${fuenteRegiones}`;
   jobBadge.textContent = readableStatus(job.status);
   jobBadge.className = `badge ${job.status === 'ready' ? 'ready' : job.status === 'failed' ? 'failed' : ''}`;
   progressBar.style.width = `${job.progress || 0}%`;
@@ -1386,6 +1400,10 @@ function cloneRegions(regions) {
       index: Number(region.index ?? idx),
       bbox,
       source_bbox: sourceBox,
+      // Caja con la que esta región ya está dibujada en la imagen que sirve el servidor.
+      // NO es `source_bbox`: el cliente encoge `bbox` al área de texto para editar, así
+      // que compararlas daría "movida" en todas las regiones de un trabajo recién hecho.
+      rasterized_bbox: [...bbox],
       original_text: region.original_text || '',
       translated_text: region.translated_text ?? region.text ?? '',
       style,
@@ -1910,13 +1928,13 @@ function regionGhostBox(region) {
   // dentro de ella. Mientras la posición local no coincida con la ya rasterizada,
   // hay que tapar la anterior o queda un fantasma detrás de la caja.
   if (!region) return null;
-  const source = normalizeBox(region.source_bbox || region.bbox);
+  // El sello se pone al clonar desde el servidor y se renueva en cada guardado, así que
+  // una diferencia significa siempre "movida y todavía sin rasterizar".
+  const source = normalizeBox(region.rasterized_bbox || region.bbox);
   if (!source || source[2] <= 0 || source[3] <= 0) return null;
   const current = normalizeBox(region.bbox);
   const moved = source.some((value, index) => value !== current[index]);
-  // `source_bbox` avanza en cada guardado, así que una diferencia significa siempre
-  // "movida y todavía sin rasterizar". Ocultar o borrar solo deja resto mientras el
-  // cambio siga pendiente de guardarse.
+  // Ocultar o borrar solo deja resto mientras el cambio siga pendiente de guardarse.
   const vanished = state.dirty && (Boolean(region.deleted) || region.visible === false);
   if (!moved && !vanished) return null;
   // Un par de píxeles de margen: el rasterizado del texto (sobre todo inclinado) puede
@@ -3710,6 +3728,10 @@ function syncCommittedRegionSources(updatedRegions = []) {
     // Aunque haya cambios más nuevos en bbox/texto, la posición que acaba de quedar
     // rasterizada en el servidor sí debe convertirse en el nuevo origen a limpiar.
     region.source_bbox = normalizeBox(sourceBox);
+    // Y el sello del parche se renueva con la caja que el servidor acaba de dibujar:
+    // lo que hay en la imagen es lo que se envió, no `source_bbox`.
+    const enviada = committed?.bbox;
+    if (Array.isArray(enviada) && enviada.length >= 4) region.rasterized_bbox = normalizeBox(enviada);
   });
 }
 

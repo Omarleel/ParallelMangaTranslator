@@ -17,6 +17,7 @@ from parallel_manga_translator.config.app_config import (
     ProcessingConfig,
     QualityConfig,
     TranslationConfig,
+    VlmConfig,
 )
 from parallel_manga_translator.config.constants import MODELOS_INPAINT, normalizar_modelo_inpaint
 from parallel_manga_translator.config.environment import bool_value, float_value, int_value
@@ -108,6 +109,21 @@ class ConfigManager:
             export=self._build_export_config(),
             logging=self._build_logging_config(),
             evaluation=self._build_evaluation_settings(),
+            vlm=self._build_vlm_config(),
+        )
+
+    def _build_vlm_config(self) -> VlmConfig:
+        section = self._section("vlm")
+        return VlmConfig(
+            enabled=bool_value(section.get("enabled", False), False),
+            provider=str(section.get("provider", "groq")).strip().lower() or "groq",
+            model=str(section.get("model", "")).strip(),
+            temperature=max(0.0, float_value(section.get("temperature", 0.0), 0.0)),
+            max_tokens=max(256, int_value(section.get("max_tokens", 2048), 2048)),
+            timeout=max(5.0, float_value(section.get("timeout", 60.0), 60.0)),
+            max_crops=max(0, int_value(section.get("max_crops", 6), 6)),
+            refine_transcription=bool_value(section.get("refine_transcription", False), False),
+            page_max_side=max(512, int_value(section.get("page_max_side", 1024), 1024)),
         )
 
     def _build_translation_config(self, project_dir: str) -> TranslationConfig:
@@ -182,6 +198,9 @@ class ConfigManager:
             gpu=self._resolve_ocr_gpu(ocr_section.get("gpu", "auto")),
             paddle_subprocess=self._normalize_ocr_engine(ocr_section.get("paddle_subprocess", "auto")),
             fast_mode=bool_value(ocr_section.get("fast_mode", processing_section.get("fast_mode", False)), False),
+            uppercase_latin_transcription=bool_value(
+                ocr_section.get("uppercase_latin_transcription", False), False
+            ),
         )
 
     def _build_processing_config(self, translation_method: str) -> ProcessingConfig:
@@ -207,8 +226,26 @@ class ConfigManager:
         bubble_model_path = str(q.get("bubble_model_path", "")).strip()
         bubble_model_repo = str(q.get("bubble_model_repo", "huyvux3005/manga109-segmentation-bubble")).strip()
         bubble_model_file = str(q.get("bubble_model_file", "best.pt")).strip()
+        ink_mask_source = str(q.get("ink_mask_source", "derivada")).strip().lower() or "derivada"
+        if ink_mask_source not in {"derivada", "derivada+ctd"}:
+            raise ValueError(
+                f"quality.ink_mask_source no soportado: {ink_mask_source!r}. "
+                "Usa 'derivada' o 'derivada+ctd'."
+            )
+        region_source = str(q.get("region_source", "yolo")).strip().lower() or "yolo"
+        if region_source not in {"yolo", "comic_text_detector"}:
+            raise ValueError(
+                f"quality.region_source no soportado: {region_source!r}. Usa 'yolo' o 'comic_text_detector'."
+            )
 
         return QualityConfig(
+            region_source=region_source,
+            comic_text_detector_model_path=str(q.get("comic_text_detector_model_path", "")).strip(),
+            comic_text_detector_conf=max(0.01, float_value(q.get("comic_text_detector_conf", 0.40), 0.40)),
+            comic_text_detector_mask_threshold=max(
+                0.01, float_value(q.get("comic_text_detector_mask_threshold", 0.30), 0.30)
+            ),
+            ink_mask_source=ink_mask_source,
             bubble_detection=bool_value(q.get("bubble_detection", True), True),
             bubble_fill=bool_value(q.get("bubble_fill", True), True),
             bubble_fill_whole_interior=bool_value(q.get("bubble_fill_whole_interior", False), False),
@@ -225,6 +262,7 @@ class ConfigManager:
             visual_inpaint_max_retries=max(0, int_value(q.get("visual_inpaint_max_retries", 4), 4)),
             visual_inpaint_accept_score=float_value(q.get("visual_inpaint_accept_score", 1.0), 1.0),
             visual_inpaint_debug=bool_value(q.get("visual_inpaint_debug", False), False),
+            ocr_crop_debug_dir=str(q.get("ocr_crop_debug_dir", "")).strip(),
             bubble_detector=str(q.get("bubble_detector", "yolo11-seg")),
             require_yolo=bool_value(q.get("require_yolo", True), True),
             bubble_first=bool_value(q.get("bubble_first", True), True),

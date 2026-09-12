@@ -12,7 +12,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from parallel_manga_translator.config.constants import normalizar_modelo_inpaint
-from parallel_manga_translator.ui.job_manager import JobManager, JobOptions, normalize_choice, job_to_public
+from parallel_manga_translator.ui.job_manager import (
+    JobManager,
+    JobOptions,
+    job_to_public,
+    normalize_choice,
+    normalize_region_source,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 manager = JobManager(config_path=os.getenv("PMT_CONFIG", "config.yaml"))
@@ -126,6 +132,7 @@ def create_job(
     detection_engine: str = Form(default="auto"),
     transcription_engine: str = Form(default="auto"),
     translator: str = Form(default="llm"),
+    region_source: str = Form(default="yolo"),
     inpaint_model: str = Form(default="auto"),
     page_max_retries: int = Form(default=2),
     retry_backoff_seconds: float = Form(default=2.0),
@@ -137,6 +144,7 @@ def create_job(
             detection_engine=normalize_choice(detection_engine, "auto"),
             transcription_engine=normalize_choice(transcription_engine, "auto"),
             translator=normalize_choice(translator, "llm"),
+            region_source=normalize_region_source(region_source),
             inpaint_model=normalizar_modelo_inpaint(inpaint_model, "auto"),
             page_max_retries=max(0, min(20, int(page_max_retries))),
             retry_backoff_seconds=max(0.0, min(300.0, float(retry_backoff_seconds))),

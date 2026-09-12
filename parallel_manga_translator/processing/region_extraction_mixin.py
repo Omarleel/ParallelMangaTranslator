@@ -85,8 +85,12 @@ class RegionExtractionMixin:
             logger.warning("No se pudo ordenar cajas por lectura; usando fallback: %s", exc)
             return sorted(list(boxes), key=self._reading_order_key)
 
-    def _masked_region_crop_for_ocr(self, imagen: np.ndarray, region: TextRegion) -> np.ndarray:
-        """Prepara un recorte de OCR desde la región detectada.
+    def _masked_region_crop(self, imagen: np.ndarray, region: TextRegion) -> np.ndarray:
+        """Recorta la región y blanquea lo que queda fuera de su máscara.
+
+        Separado del preproceso a propósito: medido sobre 38 regiones corregidas a mano,
+        este enmascarado vale ~3x más que la elección de motor OCR (CER 0.336 -> 0.116),
+        así que conviene poder volcarlo y estudiarlo por separado.
 
         Para globos usa la máscara YOLO completa: OCR dentro del globo, no dentro de la
         caja OCR antigua. Para texto libre/SFX se conserva su máscara local expandida.
@@ -112,7 +116,11 @@ class RegionExtractionMixin:
             canvas[local_mask > 0] = crop[local_mask > 0]
             crop = canvas
 
-        return self._prepare_crop_for_ocr(crop)
+        return crop
+
+    def _masked_region_crop_for_ocr(self, imagen: np.ndarray, region: TextRegion) -> np.ndarray:
+        """El recorte tal como lo recibe el OCR: enmascarado y preprocesado."""
+        return self._prepare_crop_for_ocr(self._masked_region_crop(imagen, region))
 
     def obtener_areas_interes_desde_regiones(self, imagen, regiones):
         cuadros_delimitadores: List[Box] = []
@@ -120,12 +128,54 @@ class RegionExtractionMixin:
         regiones_ordenadas = self._sort_regions_for_reading(list(regiones))
         height_img, width_img = imagen.shape[:2]
 
-        for region in regiones_ordenadas:
-            area_limpia = self._masked_region_crop_for_ocr(imagen, region)
+        for indice, region in enumerate(regiones_ordenadas):
+            enmascarado = self._masked_region_crop(imagen, region)
+            area_limpia = self._prepare_crop_for_ocr(enmascarado)
+            self._dump_ocr_crop(indice, region, enmascarado, area_limpia)
             cuadros_delimitadores.append(region.render_bbox)
             imagenes_interes.append(area_limpia)
 
         return cuadros_delimitadores, imagenes_interes, regiones_ordenadas
+
+    def _dump_ocr_crop(self, indice: int, region: TextRegion, enmascarado: np.ndarray, preparado: np.ndarray) -> None:
+        """Vuelca lo que ve el OCR, si `quality.ocr_crop_debug_dir` lo pide.
+
+        Se guardan las dos versiones: el enmascarado sirve para probar preprocesos
+        alternativos sin volver a correr el pipeline, que es lo caro.
+
+        Junto a cada PNG va su geometría. Es lo que permite emparejar un recorte con la
+        región corregida a mano **por solapamiento** en vez de por posición en la lista:
+        el editor reordena y reasigna regiones al corregir, así que el índice miente.
+        """
+        destino = str(getattr(self, "ocr_crop_debug_dir", "") or "").strip()
+        if not destino:
+            return
+        try:
+            from pathlib import Path as _Path
+
+            pagina = int(getattr(self, "indice_imagen", 0) or 0)
+            carpeta = _Path(destino) / f"pagina_{pagina:04d}"
+            carpeta.mkdir(parents=True, exist_ok=True)
+            if enmascarado is not None and getattr(enmascarado, "size", 0):
+                cv2.imwrite(str(carpeta / f"region_{indice:02d}_enmascarado.png"), enmascarado)
+            if preparado is not None and getattr(preparado, "size", 0):
+                cv2.imwrite(str(carpeta / f"region_{indice:02d}_preparado.png"), preparado)
+            import json as _json
+
+            (carpeta / f"region_{indice:02d}.json").write_text(
+                _json.dumps(
+                    {
+                        "indice": int(indice),
+                        "bbox": [int(v) for v in region.bbox],
+                        "text_bbox": [int(v) for v in region.text_bbox],
+                        "kind": str(region.kind or ""),
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+        except Exception as exc:  # pragma: no cover - depuración, nunca debe tumbar la página
+            logger.warning("No se pudo volcar el recorte de OCR (%s).", exc)
 
     def obtener_areas_interes(self, imagen, mascara_capa):
         cuadros_delimitadores: List[Box] = []

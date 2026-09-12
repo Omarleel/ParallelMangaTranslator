@@ -35,6 +35,7 @@ from parallel_manga_translator.config.app_config import ApplicationConfig
 from parallel_manga_translator.config.config_manager import ConfigManager
 from parallel_manga_translator.infrastructure.logging_config import configure_logging, get_logger
 from parallel_manga_translator.io.utilities import Utilities
+from parallel_manga_translator.detection.region_source_factory import create_region_source
 from parallel_manga_translator.processing.clean_manga import CleanManga
 from parallel_manga_translator.processing.image_processor import ImageProcessor
 from parallel_manga_translator.processing.translate_manga import TranslateManga
@@ -97,6 +98,12 @@ def build_image_processor(config: ApplicationConfig) -> ImageProcessor:
     (`PageCleanerPort`, `PageTranslatorPort`). Para sustituir una etapa —o inyectar una
     falsa en un test— se cambia aquí, no dentro del orquestador.
     """
+    # Que fuente de regiones se usa se decide aqui, no dentro del pipeline.
+    region_source = create_region_source(
+        config.translation.idioma_entrada,
+        quality_config=config.quality,
+        processing_config=config.processing,
+    )
     cleaner = CleanManga(
         config.translation.modelo_inpaint,
         idioma_entrada=config.translation.idioma_entrada,
@@ -104,6 +111,7 @@ def build_image_processor(config: ApplicationConfig) -> ImageProcessor:
         onomatopoeia_config=config.onomatopoeia,
         processing_config=config.processing,
         ocr_config=config.ocr,
+        bubble_detector=region_source,
     )
     translator = TranslateManga(
         config.translation.idioma_entrada,
@@ -117,6 +125,7 @@ def build_image_processor(config: ApplicationConfig) -> ImageProcessor:
         onomatopoeia_config=config.onomatopoeia,
         character_memory_config=config.character_memory,
         processing_config=config.processing,
+        region_semantics=build_region_semantics(config),
     )
     return ImageProcessor(cleaner, translator)
 
@@ -136,3 +145,32 @@ __all__ = [
     "build_image_processor",
     "ensure_output_directories",
 ]
+
+
+def build_region_semantics(config):
+    """Construye el refinador semantico segun `vlm` de config.yaml.
+
+    Devuelve siempre un objeto: cuando esta apagado, uno cuyo cliente no llama a nada.
+    Asi el pipeline no tiene que preguntar si existe.
+    """
+    from parallel_manga_translator.vision.groq_vision_client import build_vision_client
+    from parallel_manga_translator.vision.annotated_page import PageAnnotator
+    from parallel_manga_translator.vision.vlm_region_semantics import VlmRegionSemantics
+
+    vlm = getattr(config, "vlm", None)
+    if vlm is None:
+        return VlmRegionSemantics()
+    client = build_vision_client(
+        enabled=bool(vlm.enabled),
+        api_key=config.translation.groq_api_key,
+        model=vlm.model,
+        temperature=vlm.temperature,
+        max_tokens=vlm.max_tokens,
+        timeout=vlm.timeout,
+    )
+    return VlmRegionSemantics(
+        client,
+        annotator=PageAnnotator(max_side=vlm.page_max_side),
+        max_crops=vlm.max_crops,
+        refine_transcription=vlm.refine_transcription,
+    )

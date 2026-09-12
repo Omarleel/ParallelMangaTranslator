@@ -133,6 +133,18 @@
             </div>
             <p class="hint">Auto usa la mejor opción disponible según idioma y proceso. La detección/localización no usa MangaOCR porque no entrega cajas.</p>
 
+            <label class="field compact">
+              <span>Fuente de regiones</span>
+              <select id="regionSource" name="region_source">
+                <option value="yolo" selected>Globos YOLO + texto libre (recomendado)</option>
+                <option value="comic_text_detector">Detector de texto (comic-text-detector)</option>
+              </select>
+            </label>
+            <p class="hint">Medido en el banco de regresión: el detector de texto localiza mejor el
+            texto suelto, pero en material con texto libre legítimo empeora el resultado final.
+            Cambia esto solo si tu tomo tiene mucha onomatopeya o rótulo fuera de globo y el
+            resultado por defecto no te convence.</p>
+
             <div class="grid-fields two">
               <label class="field compact">
                 <span>Reintentos por página</span>
@@ -781,6 +793,6 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>

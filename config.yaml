@@ -24,6 +24,11 @@ processing:
   max_workers: null
 
 ocr:
+  # Pasar la transcripcion latina a MAYUSCULAS. APAGADO por defecto: parecia obvio, pero
+  # medido sobre 31 regiones corregidas a mano EMPEORA (CER 0.568 -> 0.757), porque la
+  # correccion humana se escribe en minusculas. Actívalo solo si tu material esta rotulado
+  # en mayusculas Y vas a corregir en mayusculas.
+  uppercase_latin_transcription: false
   # Hay dos OCR distintos:
   # - detection_engine localiza bounding boxes para limpieza, hints y división de globos.
   # - transcription_engine lee/transcribe el texto final dentro de cada región.
@@ -37,6 +42,28 @@ ocr:
   fast_mode: false
 
 quality:
+  # Fuente de regiones. Las dos son modelos entrenados, aqui no hay heuristica:
+  #   yolo                -> globos segmentados + texto libre recuperado por el OCR global
+  #   comic_text_detector -> detector de texto (ve globo y fuera de globo) como fuente unica
+  # Con comic_text_detector el OCR global deja de crear regiones: el detector ya cubre
+  # lo que aportaba, y era la fuente de la mayoria de falsos positivos.
+  region_source: yolo
+  # Carpeta donde volcar los recortes que recibe el OCR (enmascarado y preprocesado),
+  # para medir variantes de preproceso sin reconstruir regiones fuera del pipeline.
+  # Vacio = apagado. Solo para depurar: escribe dos PNG por region.
+  ocr_crop_debug_dir: ""
+  # Vacio = se descarga a models/detection/ la primera vez (~95 MB, del release beta-0.3
+  # de manga-image-translator, el mismo de lama y aot). Corre en cv2.dnn sobre CPU.
+  comic_text_detector_model_path: ""
+  comic_text_detector_conf: 0.40
+  comic_text_detector_mask_threshold: 0.30
+  # De donde sale la tinta que se borra:
+  #   derivada      -> umbral + componentes conectados anclados al OCR (el de siempre)
+  #   derivada+ctd  -> ademas, la tinta que ve comic-text-detector. UNION, nunca
+  #                    sustitucion: medido sobre el banco, las dos mascaras aciertan
+  #                    sitios distintos (IoU 0.27-0.42 con areas casi iguales). Si el
+  #                    detector no ve tinta en una region, manda la derivada.
+  ink_mask_source: derivada
   # La detección de globos ahora SOLO usa modelo preentrenado. Sin modelo válido se lanza error.
   bubble_detection: true
   bubble_fill: true
@@ -239,3 +266,29 @@ export:
 logging:
   level: INFO
   file: debug.log
+
+# Refinamiento semantico con modelo multimodal. Clasifica cada bloque ya localizado en
+# dialogue/thought/narration/sfx mirando la pagina completa, que es el contexto que no
+# tienen ni el detector ni el OCR por recortes.
+#
+# APAGADO por defecto: cuesta una llamada de API por pagina. No sustituye al OCR; la
+# transcripcion sigue saliendo de MangaOCR/Paddle, que mide CER 0.0015 en el banco.
+vlm:
+  enabled: false
+  provider: groq
+  # OBLIGATORIO y sin valor por defecto. Comprobado el 2026-09-12 contra la API: esta
+  # cuenta de Groq no ofrece ningun modelo multimodal (solo texto, voz y prompt-guards),
+  # y `meta-llama/llama-4-scout-17b-16e-instruct` responde 404 model_not_found.
+  # Pon aqui el id exacto de un modelo con entrada de imagen cuando lo tengas.
+  model: ""
+  temperature: 0.0
+  max_tokens: 2048
+  timeout: 60.0
+  # Recortes ampliados que acompanan a la pagina anotada, solo para bloques dificiles
+  # (sin transcripcion, o fuera de globo). 0 = enviar solo la pagina.
+  max_crops: 6
+  # true = el VLM SOLO rellena transcripciones vacias. Nunca pisa una que el OCR produjo.
+  refine_transcription: false
+  # Lado maximo de la pagina anotada que se sube. Mas grande no mejora la lectura de los
+  # numeros y multiplica coste y latencia.
+  page_max_side: 1024

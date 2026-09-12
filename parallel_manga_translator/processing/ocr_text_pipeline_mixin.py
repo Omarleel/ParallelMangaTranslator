@@ -10,6 +10,9 @@ Box = Tuple[int, int, int, int]
 logger = get_logger(__name__)
 
 
+from parallel_manga_translator.vision.vlm_region_semantics import apply_semantics
+
+
 class OcrTextPipelineMixin:
     """OCR y normalización textual."""
 
@@ -88,11 +91,37 @@ class OcrTextPipelineMixin:
                             metadata["region_ocr_text_source"] = "translation_region_ocr"
                             metadata["region_ocr_cache_reusable"] = True
                     textos[indice] = texto_normalizado if self._text_is_source_language(texto_normalizado, region) else ""
+            self._refinar_semantica_de_regiones(textos)
             return textos
 
         textos = self.ocr_manager.extract_texts(imagenes_interes)
         textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
         return [texto if self._text_is_source_language(texto) else "" for texto in textos_limpios]
+
+    def _refinar_semantica_de_regiones(self, textos: List[str]) -> None:
+        """Deja que el VLM diga qué es cada bloque, si está configurado.
+
+        Es un colaborador opcional: sin él —el caso por defecto— esto no hace nada y no
+        cuesta ni una llamada. Tampoco puede tumbar la página: el servicio ya absorbe
+        sus propios fallos y devuelve vacío.
+        """
+        semantics_service = getattr(self, "region_semantics", None)
+        if semantics_service is None or not getattr(semantics_service, "enabled", False):
+            return
+        regiones = list(getattr(self, "ultimas_regiones", []) or [])
+        pagina = getattr(self, "ultima_pagina", None)
+        if not regiones or pagina is None:
+            return
+        semantics = semantics_service.refine(pagina, regiones, textos)
+        if not semantics:
+            return
+        cambiadas = apply_semantics(
+            regiones,
+            textos,
+            semantics,
+            refine_transcription=bool(getattr(semantics_service, "refine_transcription", False)),
+        )
+        logger.info("VLM: %s regiones reclasificadas en esta página.", cambiadas)
 
     def reemplazar_caracter_especial(self, texto):
         return self.text_normalizer.replace_special_characters(texto)

@@ -292,6 +292,15 @@ class ManualEditService:
 
         ocr = OcrManager(config.translation.idioma_entrada, config.ocr)
         original_text = ocr.extract_texts([crop])[0] if crop.size else ""
+        # Misma convencion de rotulado que el pipeline: si no, el texto que escribe este
+        # boton no se parece al del resto de la pagina.
+        from parallel_manga_translator.ocr.settings import LATIN_SCRIPT_LANGUAGES
+        from parallel_manga_translator.translation.text_normalization import OcrTextNormalizer
+
+        original_text = OcrTextNormalizer(
+            uppercase_latin=bool(getattr(config.ocr, "uppercase_latin_transcription", False))
+            and config.translation.idioma_entrada in LATIN_SCRIPT_LANGUAGES
+        ).apply_lettering_case(original_text)
         rotation_angle = 0.0
         rotation_confidence = 0.0
         try:

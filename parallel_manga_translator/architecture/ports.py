@@ -20,6 +20,78 @@ class RegionDetectorPort(Protocol):
 
 
 @runtime_checkable
+class RegionSourcePort(Protocol):
+    """Fuente de regiones vista por `CleanManga`.
+
+    Es el contrato que el orquestador ya consumia de hecho, escrito. Existen dos
+    implementaciones y ninguna es "la buena por defecto": `BubbleDetector` parte de
+    globos segmentados por YOLO y recupera texto libre con el OCR global;
+    `CtdRegionSource` parte de un detector de texto que ve las dos cosas.
+
+    `detections` son las cajas del OCR global. Una fuente puede ignorarlas —el detector
+    de texto ya cubre lo que ellas aportan— y por eso el parametro es entrada, no
+    dependencia: quien implementa decide si las usa.
+    """
+
+    def detect_primary_bubble_regions(self, image: np.ndarray) -> list[TextRegion]:
+        ...
+
+    def build_regions_from_bubbles_and_text(
+        self,
+        image: np.ndarray,
+        bubble_regions: Sequence[TextRegion],
+        detections: Sequence[Any],
+    ) -> list[TextRegion]:
+        ...
+
+    def set_debug_page_context(
+        self,
+        page_index: int,
+        *,
+        source_filename: Optional[str] = None,
+        output_filename: Optional[str] = None,
+    ) -> None:
+        ...
+
+    def clear_debug_page_context(self) -> None:
+        ...
+
+
+@runtime_checkable
+class InkMaskSourcePort(Protocol):
+    """Aporte extra a la mascara de tinta que se borra.
+
+    `prepare` corre una vez por pagina; `augment` se llama por region y devuelve
+    (mascara, etiqueta). Devolver la mascara recibida sin tocar es una respuesta valida
+    y es lo que ocurre cuando la fuente no ve tinta: el metodo derivado manda.
+    """
+
+    def prepare(self, image: np.ndarray) -> None:
+        ...
+
+    def augment(self, region: TextRegion, derived: np.ndarray) -> Tuple[np.ndarray, str]:
+        ...
+
+
+@runtime_checkable
+class RegionSemanticsPort(Protocol):
+    """Refinamiento semantico de regiones ya localizadas.
+
+    Deliberadamente NO localiza: recibe regiones con su ID y devuelve, por ID, el tipo
+    y opcionalmente una transcripcion corregida. Pedirle coordenadas a un modelo de
+    lenguaje es la via rapida a las alucinaciones de cajas.
+    """
+
+    def refine(
+        self,
+        image: np.ndarray,
+        regions: Sequence[TextRegion],
+        transcriptions: Sequence[str],
+    ) -> Mapping[int, Mapping[str, Any]]:
+        ...
+
+
+@runtime_checkable
 class TextDetectionPort(Protocol):
     """Contrato para OCR de localización: devuelve bounding boxes de texto.
 

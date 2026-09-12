@@ -84,6 +84,19 @@ def safe_flat_name(original_name: str, used: set[str]) -> str:
     return candidate
 
 
+def normalize_region_source(value: str, fallback: str = "yolo") -> str:
+    """Valida la fuente de regiones contra el registry, sin duplicar la lista aqui."""
+    from parallel_manga_translator.detection.region_source_factory import REGION_SOURCES
+
+    candidato = str(value or "").strip().lower()
+    if not candidato:
+        return fallback
+    if candidato not in REGION_SOURCES:
+        soportadas = ", ".join(sorted(REGION_SOURCES))
+        raise ValueError(f"Fuente de regiones no soportada: {value!r}. Soportadas: {soportadas}")
+    return candidato
+
+
 def safe_export_slug(value: str, fallback: str = "manga") -> str:
     slug = re.sub(r"[^A-Za-z0-9._-]+", "_", (value or "").strip()).strip("._-")
     return slug[:80] or fallback
@@ -1055,7 +1068,17 @@ class JobManager:
             cache_dir=str(Path(job.root_dir) / ".cache"),
         )
         logging = replace(config.logging, file=str(Path(job.root_dir) / "job.log"))
-        return replace(config, translation=translation, ocr=ocr, processing=processing, logging=logging)
+        # `quality` no se replicaba por trabajo, asi que la fuente de regiones elegida en
+        # la UI no llegaba al pipeline: se quedaba siempre con la de config.yaml.
+        quality = replace(config.quality, region_source=normalize_region_source(options.region_source))
+        return replace(
+            config,
+            translation=translation,
+            ocr=ocr,
+            processing=processing,
+            quality=quality,
+            logging=logging,
+        )
 
 
 

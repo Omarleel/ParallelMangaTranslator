@@ -15,6 +15,11 @@ class OcrConfig:
 
     # OCR de localización: detecta bounding boxes de texto para limpieza, pistas y división de globos.
     detection_engine: str = "auto"
+    # Pasar la transcripción latina a MAYÚSCULAS. Apagado: parecía obvio (el rotulado de
+    # cómic va en mayúsculas) pero medido sobre 31 regiones corregidas a mano EMPEORA,
+    # CER 0.568 -> 0.757, porque la corrección humana se escribe en minúsculas. Queda
+    # como opción para material realmente rotulado en mayúsculas.
+    uppercase_latin_transcription: bool = False
     # OCR de transcripción: lee el texto final dentro de cada región/globo.
     transcription_engine: str = "auto"
     gpu: bool = False
@@ -104,8 +109,21 @@ class QualityConfig:
     visual_inpaint_accept_score: float = 1.0
     visual_inpaint_best_of_textured: bool = False
     visual_inpaint_debug: bool = False
+    # Carpeta donde volcar los recortes que recibe el OCR, para poder medir variantes de
+    # preproceso sin reconstruir regiones fuera del pipeline. Vacío = apagado.
+    ocr_crop_debug_dir: str = ""
     bubble_detector: str = "yolo11-seg"
     require_yolo: bool = True
+    # Fuente de regiones: "yolo" (globos segmentados + texto libre por OCR) o
+    # "comic_text_detector" (detector de texto que ve globo y fuera de globo).
+    # Ninguna es heurística: las dos son modelos entrenados.
+    region_source: str = "yolo"
+    comic_text_detector_model_path: str = ""
+    comic_text_detector_conf: float = 0.40
+    comic_text_detector_mask_threshold: float = 0.30
+    # De donde sale la tinta que se borra: solo derivada, o derivada + detector de texto
+    # (union, nunca sustitucion, con fallback a la derivada cuando el detector no ve tinta).
+    ink_mask_source: str = "derivada"
     bubble_first: bool = True
     ocr_region_mode: str = "bubble"
     bubble_model_repo: str = "huyvux3005/manga109-segmentation-bubble"
@@ -216,6 +234,29 @@ class EvaluationSettings:
 
 
 @dataclass(frozen=True)
+class VlmConfig:
+    """Refinamiento semántico con un modelo multimodal.
+
+    Apagado por defecto: cuesta una llamada de API por página y la clasificación del
+    detector ya es utilizable sin él.
+    """
+
+    enabled: bool = False
+    provider: str = "groq"
+    # Sin default: comprobado contra la API, la cuenta no tiene ningun modelo que
+    # acepte imagenes, y apuntar a uno que devuelve 404 es peor que no apuntar.
+    model: str = ""
+    temperature: float = 0.0
+    max_tokens: int = 2048
+    timeout: float = 60.0
+    #: Recortes ampliados que acompañan a la página, solo para bloques difíciles.
+    max_crops: int = 6
+    #: Si es true, el VLM SOLO rellena transcripciones vacías; nunca pisa al OCR.
+    refine_transcription: bool = False
+    page_max_side: int = 1024
+
+
+@dataclass(frozen=True)
 class ApplicationConfig:
     translation: TranslationConfig
     processing: ProcessingConfig
@@ -226,3 +267,4 @@ class ApplicationConfig:
     export: ExportConfig = ExportConfig()
     logging: LoggingConfig = LoggingConfig()
     evaluation: EvaluationSettings = EvaluationSettings()
+    vlm: VlmConfig = VlmConfig()

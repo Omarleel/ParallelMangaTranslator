@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 
 from parallel_manga_translator.ocr.ocr_manager import OcrManager
+from parallel_manga_translator.ocr.settings import LATIN_SCRIPT_LANGUAGES
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.translation.text_normalization import OcrTextNormalizer
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
@@ -28,6 +29,7 @@ from parallel_manga_translator.processing.translation_orchestrator_mixin import 
 from parallel_manga_translator.processing.translation_geometry import TranslationGeometry
 from parallel_manga_translator.processing.region_extraction_mixin import RegionExtractionMixin
 from parallel_manga_translator.processing.ocr_text_pipeline_mixin import OcrTextPipelineMixin
+from parallel_manga_translator.vision.vlm_region_semantics import VlmRegionSemantics
 from parallel_manga_translator.processing.translation_pipeline_mixin import TranslationPipelineMixin
 from parallel_manga_translator.processing.rendering_pipeline_mixin import RenderingPipelineMixin
 class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin, RegionExtractionMixin, OcrTextPipelineMixin, TranslationPipelineMixin, RenderingPipelineMixin):
@@ -47,6 +49,7 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
         geometry: TranslationGeometry | None = None,
         ocr_manager: OcrManager | None = None,
         translator_manager: TranslatorManager | None = None,
+        region_semantics=None,
     ):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.idioma_entrada = idioma_entrada
@@ -91,12 +94,20 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
             balance_lines=bool(getattr(quality_config, "typography_balance_lines", True)),
             line_spacing_factor=float(getattr(quality_config, "typography_line_spacing_factor", 1.0)),
         )
-        self.text_normalizer = OcrTextNormalizer()
+        # Mayusculas solo para idiomas de alfabeto latino y si la config lo pide.
+        self.text_normalizer = OcrTextNormalizer(
+            uppercase_latin=bool(getattr(ocr_config, "uppercase_latin_transcription", False))
+            and idioma_entrada in LATIN_SCRIPT_LANGUAGES
+        )
         self.source_language_filter = SourceLanguageFilter(idioma_entrada)
         self.onomatopoeia_manager = OnomatopoeiaManager()
         self.historial_contexto = deque(maxlen=3)
         self.ultimo_estilos_texto = []
         self.ultimas_regiones: List[TextRegion] = []
+        # Pagina completa de la ultima extraccion, para el refinamiento semantico.
+        self.ultima_pagina = None
+        # Colaborador opcional. El default no llama a nada: el VLM cuesta por pagina.
+        self.region_semantics = region_semantics if region_semantics is not None else VlmRegionSemantics()
         self.ultimos_textos_originales: List[str] = []
         self.ultimos_textos_traducidos: List[str] = []
         self.ultimos_source_language_flags: List[bool] = []
@@ -107,6 +118,7 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
             self.onomatopoeia_mode = "keep"
         # bubble: OCR sobre el globo completo segmentado; text_hint: recorte más ajustado si hubo OCR global.
         self.ocr_region_mode = str(quality_config.ocr_region_mode or "bubble").strip().lower()
+        self.ocr_crop_debug_dir = str(getattr(quality_config, "ocr_crop_debug_dir", "") or "").strip()
         self.estimate_text_colors = bool(getattr(quality_config, "estimate_text_colors", False))
         self.indice_imagen = 0
         self.transcripcion_queue = None

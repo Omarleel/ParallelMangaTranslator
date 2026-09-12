@@ -12,6 +12,10 @@ PADDLE_LANGS = {
     "Japonés": "japan",
 }
 
+#: Idiomas cuyo rotulado de comic se escribe convencionalmente en MAYUSCULAS. El OCR los
+#: devuelve en minuscula o mezclado, y eso es la mayor parte de su error medido.
+LATIN_SCRIPT_LANGUAGES = frozenset({"Inglés", "Español", "Portugués", "Francés", "Italiano"})
+
 EASY_OCR_LANGS = {
     "Japonés": ["ja", "en"],
     "Inglés": ["en"],

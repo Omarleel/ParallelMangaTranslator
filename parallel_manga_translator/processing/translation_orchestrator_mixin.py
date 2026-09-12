@@ -24,6 +24,9 @@ class TranslationOrchestratorMixin:
         Devuelve ``(cuadros_delimitadores, imagenes_interes)`` y deja las regiones
         ordenadas en ``ultimas_regiones``, que consumen los pasos siguientes.
         """
+        # La pagina completa es el contexto que necesita el refinamiento semantico: el
+        # OCR trabaja por recortes y ahi no se distingue un pensamiento de un dialogo.
+        self.ultima_pagina = imagen
         if text_regions:
             cuadros_delimitadores, imagenes_interes, regiones_ordenadas = self.obtener_areas_interes_desde_regiones(imagen, text_regions)
             self.ultimas_regiones = regiones_ordenadas

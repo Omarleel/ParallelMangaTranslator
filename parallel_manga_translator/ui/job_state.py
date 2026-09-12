@@ -119,6 +119,9 @@ class JobOptions:
     detection_engine: str = "auto"
     transcription_engine: str = "auto"
     translator: str = "llm"  # google | llm
+    # Fuente de regiones por trabajo: yolo | comic_text_detector. Se elige por trabajo
+    # y no globalmente porque su ventaja depende del material, medido en dataset_eval.
+    region_source: str = "yolo"
     inpaint_model: str = "auto"
     page_max_retries: int = 2
     retry_backoff_seconds: float = 2.0

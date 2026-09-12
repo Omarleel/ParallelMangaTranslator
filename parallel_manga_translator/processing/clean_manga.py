@@ -24,6 +24,7 @@ from parallel_manga_translator.processing.clean_onomatopoeia_guard_mixin import 
 from parallel_manga_translator.processing.bubble_fill_policy import BubbleFillPolicy
 from parallel_manga_translator.processing.inpainter_runner import InpainterRunner
 from parallel_manga_translator.processing.clean_mask_strategy import CleanMaskStrategy
+from parallel_manga_translator.quality.ink_mask_sources import create_ink_mask_source
 from parallel_manga_translator.processing.clean_inpainting_pipeline_mixin import CleanInpaintingPipelineMixin
 from parallel_manga_translator.processing.clean_detection_pipeline_mixin import CleanDetectionPipelineMixin
 
@@ -74,6 +75,8 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanInpai
             bubble_fill_edge_margin=self.bubble_fill_edge_margin,
             bubble_fill_text_dilate=self.bubble_fill_text_dilate,
             bubble_fill_flat_max_rectangularity=self.bubble_fill_flat_max_rectangularity,
+            # La eleccion vive en la factory, no aqui: anadir otra fuente no toca esto.
+            ink_source=create_ink_mask_source(quality_config),
         )
         self.bubble_fill_background_std_threshold = float(quality_config.bubble_fill_background_std_threshold)
         self.bubble_fill_inpaint_padding = int(quality_config.bubble_fill_inpaint_padding)

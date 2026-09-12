@@ -209,7 +209,7 @@ def test_new_manual_region_focuses_inline_text_editor_immediately() -> None:
     assert "renderOverlay();" in creation_block
     assert "focusInlineEditorForRegion(state.selectedRegion);" in creation_block
     assert creation_block.index("renderOverlay();") < creation_block.index("focusInlineEditorForRegion(state.selectedRegion);")
-    assert '<script src="/static/app.js?v=10"></script>' in html
+    assert '<script src="/static/app.js?v=12"></script>' in html
 
 
 def test_setup_actions_keep_the_primary_button_usable_with_a_long_project_title() -> None:
@@ -378,3 +378,21 @@ def test_finished_jobs_do_not_keep_three_dead_transport_buttons() -> None:
     assert "document.querySelector('.job-control-row')?.classList.toggle('hidden', terminal);" in javascript
     # Y "Nuevo trabajo" cierra el trabajo, para que la ruta no siga apuntando a él.
     assert "closeCurrentJob({ silent: true }).catch((error) => console.warn(error));" in javascript
+
+
+def test_a_freshly_processed_page_is_never_covered_by_ghost_patches() -> None:
+    """Regresión real: los globos aparecían vacíos en la vista «Actual».
+
+    El cliente encoge `bbox` al área de texto para editar, mientras `source_bbox` sigue
+    siendo la caja del globo. Comparar una con otra daba "movida" en TODAS las regiones de
+    un trabajo recién procesado, y el parche tapaba cada globo con el fondo limpio.
+    El sello `rasterized_bbox` guarda la caja tal como el servidor la dibujó.
+    """
+    javascript = (STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert "rasterized_bbox: [...bbox]," in javascript
+    assert "const source = normalizeBox(region.rasterized_bbox || region.bbox);" in javascript
+    # Comparar contra source_bbox es justamente lo que causaba el fallo.
+    assert "normalizeBox(region.source_bbox || region.bbox)" not in javascript
+    # Y el sello se renueva con lo que el servidor acaba de rasterizar.
+    assert "region.rasterized_bbox = normalizeBox(enviada);" in javascript
