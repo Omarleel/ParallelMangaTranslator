@@ -117,8 +117,13 @@ class ManualEditService:
             raise ValueError("La página todavía no está lista para edición.")
         clean_path = Path(page.clean_path)
         original_path = Path(page.original_path)
-        translated_path = Path(page.translated_path)
-        if not clean_path.exists() or not original_path.exists() or not translated_path.exists():
+        # La página traducida NO hace falta: `render_manual_composite` parte de la capa de
+        # fondo (la limpieza, o la revisión que haya dejado el pincel) y dibuja encima cada
+        # región. Exigirla era un resto del render incremental antiguo, que sí partía de
+        # ella, y dejaba fuera a los trabajos que no rotulan —«solo limpiar» y «limpiar y
+        # transcribir»—: importar textos en uno de ellos fallaba con "faltan imágenes base"
+        # teniendo la limpieza delante.
+        if not clean_path.exists() or not original_path.exists():
             raise ValueError("Faltan imágenes base para renderizar la corrección.")
         image = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
         if image is None:

@@ -1051,12 +1051,19 @@ class JobManager:
             for page in sorted(job.pages, key=lambda item: item.index):
                 corrected = Path(page.corrected_path)
                 translated = Path(page.translated_path)
+                clean = Path(page.clean_path)
                 if corrected.exists():
                     image_path = corrected
                     variant = "corregida"
                 elif page.status == "ready" and translated.exists():
                     image_path = translated
                     variant = "traduccion"
+                elif page.status == "ready" and clean.exists():
+                    # Un trabajo en modo «solo limpiar» no tiene traducida ni corregida, y
+                    # su resultado es precisamente la limpieza. Sin esta rama el export se
+                    # saltaba todas las páginas y moría con "no hay páginas listas".
+                    image_path = clean
+                    variant = "limpieza"
                 else:
                     continue
 

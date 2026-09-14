@@ -240,6 +240,50 @@ def test_round_trip_through_the_manager_rerenders_the_pages(monkeypatch, tmp_pat
     assert Path(job.pages[1].corrected_path).exists()
 
 
+def test_import_works_on_a_job_that_never_rendered(monkeypatch, tmp_path: Path) -> None:
+    """Un trabajo en modo «limpiar» o «limpiar y transcribir» no tiene página traducida.
+
+    La composición no la necesita —parte de la capa de fondo, que es la limpieza—, pero el
+    guardado la exigía por un resto del render incremental antiguo. Importar un guion en uno
+    de esos trabajos fallaba con «faltan imágenes base» teniendo la limpieza delante.
+    """
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, job = _build_job(tmp_path, pages=1)
+    Path(job.pages[0].translated_path).unlink()
+    assert not Path(job.pages[0].translated_path).exists()
+
+    export = manager.export_job_texts("job-id")
+    export["paginas"][0]["regiones"][0]["texto_traducido"] = "traducido fuera"
+    resultado = manager.import_job_texts("job-id", export)
+
+    assert resultado["regiones_actualizadas"] == 1
+    assert resultado["paginas_actualizadas"] == [1]
+    guardadas = {r["region_uid"]: r for r in manager._jobs["job-id"].pages[0].regions}
+    assert guardadas["p0001r0000"]["translated_text"] == "traducido fuera"
+    # Y la página compuesta se escribe, sobre la limpieza.
+    assert Path(job.pages[0].corrected_path).exists()
+
+
+def test_a_clean_only_job_can_still_be_exported(tmp_path: Path) -> None:
+    """El resultado de «solo limpiar» son las páginas limpias, y hay que poder bajárselas.
+
+    El ZIP solo aceptaba corregida o traducida, así que un trabajo que terminó bien se
+    saltaba todas las páginas y moría con «no hay páginas listas para exportar».
+    """
+    import zipfile
+
+    manager, job = _build_job(tmp_path, pages=1)
+    Path(job.pages[0].translated_path).unlink()
+
+    destino = manager.create_export_zip("job-id")
+
+    with zipfile.ZipFile(destino) as archivo:
+        nombres = archivo.namelist()
+        manifiesto = json.loads(archivo.read("manifest_export.json").decode("utf-8"))
+    assert any(n.startswith("imagenes_finales/") for n in nombres), nombres
+    assert manifiesto["pages"][0]["variant"] == "limpieza"
+
+
 def test_import_skips_pages_that_are_not_ready(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
     manager, job = _build_job(tmp_path, pages=2)
