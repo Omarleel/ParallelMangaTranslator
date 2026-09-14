@@ -17,6 +17,7 @@ from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.detection.detection_geometry import DetectionGeometry
 from parallel_manga_translator.processing.clean_manga import CleanManga
 from parallel_manga_translator.processing.translate_manga import TranslateManga
+from parallel_manga_translator.rendering.text_renderer import TextRenderer
 
 #: Una detección con la forma que produce EasyOCR: puntos, texto, confianza.
 DETECCION = ([[10, 20], [50, 20], [50, 60], [10, 60]], "こんにちは", 0.87)
@@ -133,7 +134,7 @@ class ReferenciasHuerfanasTests(unittest.TestCase):
     punto de su jerarquía.
     """
 
-    CLASES = (BubbleDetector, CleanManga, TranslateManga)
+    CLASES = (BubbleDetector, CleanManga, TranslateManga, TextRenderer)
 
     @staticmethod
     def _referencias_y_asignaciones(clase):

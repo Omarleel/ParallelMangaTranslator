@@ -3,20 +3,11 @@ from __future__ import annotations
 import re
 from typing import List, Sequence
 
-import cv2
-import numpy as np
-
-from parallel_manga_translator.config.constants import COLOR_BLANCO, COLOR_NEGRO
+from parallel_manga_translator.rendering.text_prep import normalize_text
 
 
 class TextFittingMixin:
     """Normalización, ajuste de texto y decisión de tamaño de fuente."""
-
-    @staticmethod
-    def _normalize_text(texto: str) -> str:
-        texto = str(texto or " ").replace("\r", "\n")
-        texto = re.sub(r"[ \t\f\v]+", " ", texto)
-        return texto.strip() or " "
 
     @staticmethod
     def _soft_hyphen_points(token: str) -> List[int]:
@@ -97,7 +88,7 @@ class TextFittingMixin:
         El ajuste automático debe reducir la fuente antes de cortar una palabra.
         Solo en el último recurso se permite partir tokens extremos.
         """
-        texto = self._normalize_text(texto)
+        texto = normalize_text(texto)
         tokens: List[str] = []
         for parrafo in texto.split("\n"):
             tokens.extend(parrafo.split())
@@ -109,7 +100,7 @@ class TextFittingMixin:
 
     def _split_lines(self, texto: str, fuente, max_width: int) -> List[str]:
         max_width = max(1, int(max_width))
-        texto = self._normalize_text(texto)
+        texto = normalize_text(texto)
         lineas: List[str] = []
 
         for parrafo in texto.split("\n"):
@@ -181,7 +172,7 @@ class TextFittingMixin:
     def _fit_font(self, texto: str, box_width: int, box_height: int, style: str = "dialogo", line_spacing_factor: float | None = None):
         box_width = max(1, int(box_width))
         box_height = max(1, int(box_height))
-        texto = self._normalize_text(texto)
+        texto = normalize_text(texto)
         spacing_factor = getattr(self, "line_spacing_factor", 1.0) if line_spacing_factor is None else max(0.55, min(2.0, float(line_spacing_factor)))
 
         if style.startswith("onomatopeya"):
@@ -223,35 +214,6 @@ class TextFittingMixin:
         lineas = self._split_lines(texto, fuente, safe_width)
         lineas = self._truncate_to_fit(lineas, fuente, safe_width, safe_height, espacio)
         return fuente, lineas, espacio
-
-    @staticmethod
-    def _resolve_text_colors(imagen_limpia: np.ndarray, x: int, y: int, w: int, h: int):
-        x_margin = max(0, x - 5)
-        y_margin = max(0, y - 5)
-        w_margin = min(w + 10, imagen_limpia.shape[1] - x_margin)
-        h_margin = min(h + 10, imagen_limpia.shape[0] - y_margin)
-        region_alrededor = imagen_limpia[y_margin:y_margin + h_margin, x_margin:x_margin + w_margin]
-        promedio_color = cv2.mean(region_alrededor)[:3]
-        if np.mean(promedio_color) < 128:
-            return COLOR_NEGRO, COLOR_BLANCO
-        return COLOR_BLANCO, COLOR_NEGRO
-
-    @staticmethod
-    def _contorno_por_contraste(color_relleno) -> tuple:
-        """Blanco o negro, el que más se separe del relleno.
-
-        Se usa cuando se conoce el color del texto original pero no el de su contorno.
-        Arrastrar el contorno del par por defecto puede dejar relleno claro sobre borde
-        claro, y el rotulo desaparece.
-        """
-        luminancia = 0.299 * color_relleno[0] + 0.587 * color_relleno[1] + 0.114 * color_relleno[2]
-        return COLOR_NEGRO if luminancia > 127 else COLOR_BLANCO
-
-    @staticmethod
-    def _to_rgba(color):
-        if len(color) == 4:
-            return color
-        return tuple(color) + (255,)
 
     @staticmethod
     def _prepare_display_text(texto: str, style: str) -> str:

@@ -14,6 +14,8 @@ from parallel_manga_translator.detection.bubble_detector import BubbleDetector, 
 from parallel_manga_translator.detection.yolo_bubble_detector import YoloBubbleCandidate, YoloBubbleDetector
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.rendering.text_renderer import TextRenderer
+from parallel_manga_translator.rendering.bubble_slot_layout import connected_lobe_slots_from_mask
+from parallel_manga_translator.rendering.mask_text_area import safe_text_area_from_mask
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
 from parallel_manga_translator.infrastructure.error_handling import PageFailureReport, StageProcessingError, processing_stage, write_failure_report
@@ -504,7 +506,7 @@ class CoreQualityTests(unittest.TestCase):
         cv2.ellipse(mask, (100, 60), (95, 55), 0, 0, 360, 255, -1)
 
         renderer = TextRenderer(absolute_min_font_size=7, inner_margin_ratio=0.03)
-        safe_x, safe_y, safe_w, safe_h = renderer._safe_text_area_from_mask(mask, 200, 120, "dialogo")
+        safe_x, safe_y, safe_w, safe_h = safe_text_area_from_mask(mask, 200, 120, "dialogo")
 
         self.assertGreater(safe_x, 0)
         self.assertGreater(safe_y, 0)
@@ -536,7 +538,7 @@ class CoreQualityTests(unittest.TestCase):
         cv2.rectangle(mask, (108, 55), (132, 65), 255, -1)
 
         renderer = TextRenderer(absolute_min_font_size=7, inner_margin_ratio=0.03)
-        slots = renderer._connected_lobe_slots_from_mask(mask, 240, 120, "dialogo")
+        slots = connected_lobe_slots_from_mask(mask, 240, 120, "dialogo")
         self.assertGreaterEqual(len(slots), 2)
 
         out = renderer.render(
@@ -566,7 +568,7 @@ class CoreQualityTests(unittest.TestCase):
         cv2.rectangle(mask, (200, 180), (270, 270), 255, -1)
 
         renderer = TextRenderer(absolute_min_font_size=7, inner_margin_ratio=0.03)
-        slots = renderer._connected_lobe_slots_from_mask(
+        slots = connected_lobe_slots_from_mask(
             mask,
             439,
             518,

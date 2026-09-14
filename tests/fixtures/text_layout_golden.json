@@ -1,0 +1,2545 @@
+{
+ "build_layout": {
+  "acotado_por_imagen": {
+   "bbox": [
+    150,
+    80,
+    110,
+    60
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      3,
+      2,
+      104,
+      56
+     ],
+     "font_size": 10,
+     "line_spacing": 2.2,
+     "lines": [
+      "Hola mundo, esto",
+      "es una prueba de",
+      "maquetado con",
+      "varias palabras."
+     ],
+     "slot": [
+      0,
+      0,
+      110,
+      60
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "alineado_izq_arriba": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 17,
+     "line_spacing": 3.74,
+     "lines": [
+      "Hola mundo, esto",
+      "es una prueba de",
+      "maquetado con",
+      "varias palabras."
+     ],
+     "slot": [
+      0,
+      0,
+      180,
+      90
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "left",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "top",
+   "writing_mode": "horizontal"
+  },
+  "cjk": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 16,
+     "line_spacing": 3.52,
+     "lines": [
+      "これはテストです。もう一度読んでください。"
+     ],
+     "slot": [
+      0,
+      0,
+      180,
+      90
+     ],
+     "stroke_width": 1,
+     "text": "これはテストです。もう一度読んでください。"
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "clip_dos_lobulos": {
+   "bbox": [
+    0,
+    0,
+    240,
+    120
+   ],
+   "block_count": 2,
+   "blocks": [
+    {
+     "area": [
+      37,
+      37,
+      47,
+      47
+     ],
+     "font_size": 9,
+     "line_spacing": 1.98,
+     "lines": [
+      "Hola",
+      "mundo,",
+      "esto",
+      "es una",
+      "prueba"
+     ],
+     "slot": [
+      35,
+      35,
+      51,
+      51
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba"
+    },
+    {
+     "area": [
+      157,
+      37,
+      47,
+      47
+     ],
+     "font_size": 7,
+     "line_spacing": 1.54,
+     "lines": [
+      "de",
+      "maquetado",
+      "con varias",
+      "palabras."
+     ],
+     "slot": [
+      155,
+      35,
+      51,
+      51
+     ],
+     "stroke_width": 1,
+     "text": "de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": true,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "clip_dos_lobulos_rtl": {
+   "bbox": [
+    0,
+    0,
+    240,
+    120
+   ],
+   "block_count": 2,
+   "blocks": [
+    {
+     "area": [
+      157,
+      37,
+      47,
+      47
+     ],
+     "font_size": 9,
+     "line_spacing": 1.98,
+     "lines": [
+      "Hola",
+      "mundo,",
+      "esto",
+      "es una",
+      "prueba"
+     ],
+     "slot": [
+      155,
+      35,
+      51,
+      51
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba"
+    },
+    {
+     "area": [
+      37,
+      37,
+      47,
+      47
+     ],
+     "font_size": 7,
+     "line_spacing": 1.54,
+     "lines": [
+      "de",
+      "maquetado",
+      "con varias",
+      "palabras."
+     ],
+     "slot": [
+      35,
+      35,
+      51,
+      51
+     ],
+     "stroke_width": 1,
+     "text": "de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": true,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "clip_ovalo": {
+   "bbox": [
+    0,
+    0,
+    200,
+    120
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      41,
+      31,
+      118,
+      59
+     ],
+     "font_size": 11,
+     "line_spacing": 2.42,
+     "lines": [
+      "Hola mundo, esto",
+      "es una prueba de",
+      "maquetado con",
+      "varias palabras."
+     ],
+     "slot": [
+      38,
+      29,
+      124,
+      63
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": true,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "dialogo_corto": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 60,
+     "line_spacing": 13.2,
+     "lines": [
+      "Vale"
+     ],
+     "slot": [
+      0,
+      0,
+      180,
+      90
+     ],
+     "stroke_width": 3,
+     "text": "Vale"
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "dialogo_estrecho": {
+   "bbox": [
+    0,
+    0,
+    70,
+    140
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      2,
+      4,
+      66,
+      132
+     ],
+     "font_size": 10,
+     "line_spacing": 2.2,
+     "lines": [
+      "Hola",
+      "mundo,",
+      "esto es",
+      "una",
+      "prueba de",
+      "maquetado",
+      "con varias",
+      "palabras."
+     ],
+     "slot": [
+      0,
+      0,
+      70,
+      140
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "dialogo_largo": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 17,
+     "line_spacing": 3.74,
+     "lines": [
+      "Hola mundo, esto",
+      "es una prueba de",
+      "maquetado con",
+      "varias palabras."
+     ],
+     "slot": [
+      0,
+      0,
+      180,
+      90
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "interlineado_y_offset": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 17,
+     "line_spacing": 5.236,
+     "lines": [
+      "Hola mundo, esto",
+      "es una prueba de",
+      "maquetado con",
+      "varias palabras."
+     ],
+     "slot": [
+      0,
+      0,
+      180,
+      90
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.4,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 6.0,
+   "text_offset_y": -4.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "narracion": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 17,
+     "line_spacing": 3.74,
+     "lines": [
+      "Hola mundo, esto",
+      "es una prueba de",
+      "maquetado con",
+      "varias palabras."
+     ],
+     "slot": [
+      0,
+      0,
+      180,
+      90
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "narracion",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "onomatopeya": {
+   "bbox": [
+    10,
+    10,
+    120,
+    60
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      4,
+      2,
+      112,
+      56
+     ],
+     "font_size": 35,
+     "line_spacing": 6.314,
+     "lines": [
+      "BOOM"
+     ],
+     "slot": [
+      0,
+      0,
+      120,
+      60
+     ],
+     "stroke_width": 3,
+     "text": "BOOM"
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "onomatopeya",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "rotado": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 7,
+     "line_spacing": 1.54,
+     "lines": [
+      "H",
+      "o",
+      "l",
+      "a",
+      " ",
+      "m",
+      "u",
+      "n",
+      "d",
+      "o",
+      ",",
+      " ",
+      "e",
+      "s",
+      "t",
+      "o",
+      " ",
+      "e",
+      "s",
+      " ",
+      "u",
+      "n",
+      "a",
+      " ",
+      "p",
+      "r",
+      "u",
+      "e",
+      "b",
+      "a",
+      " ",
+      "d",
+      "e",
+      " ",
+      "m",
+      "a",
+      "q",
+      "u",
+      "e",
+      "t",
+      "a",
+      "d",
+      "o",
+      " ",
+      "c",
+      "o",
+      "n",
+      " ",
+      "v",
+      "a",
+      "r",
+      "i",
+      "a",
+      "s",
+      " ",
+      "p",
+      "a",
+      "l",
+      "a",
+      "b",
+      "r",
+      "a",
+      "s",
+      "."
+     ],
+     "slot": [
+      0,
+      0,
+      180,
+      90
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 19.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "vertical_chars"
+  },
+  "tamano_fijo": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 14,
+     "line_spacing": 3.08,
+     "lines": [
+      "Hola mundo, esto",
+      "es una prueba de",
+      "maquetado con",
+      "varias palabras."
+     ],
+     "slot": [
+      0,
+      0,
+      180,
+      90
+     ],
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "vertical_por_rotacion": {
+   "bbox": [
+    70,
+    20,
+    80,
+    150
+   ],
+   "block_count": 1,
+   "blocks": [
+    {
+     "area": [
+      2,
+      4,
+      76,
+      142
+     ],
+     "font_size": 22,
+     "line_spacing": 4.84,
+     "lines": [
+      "A",
+      "N",
+      "G",
+      "L",
+      "E"
+     ],
+     "slot": [
+      0,
+      0,
+      80,
+      150
+     ],
+     "stroke_width": 1,
+     "text": "ANGLE"
+    }
+   ],
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 19.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "uses_clip_mask": false,
+   "version": 2,
+   "vertical_align": "middle",
+   "writing_mode": "vertical_chars"
+  }
+ },
+ "resolve_manual_layout": {
+  "con_layout_previo": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 17,
+     "line_spacing": 3.74,
+     "lines": [
+      {
+       "draw_x": 6.5,
+       "draw_y": 8.89,
+       "glyph_bbox": [
+        0,
+        2,
+        167,
+        18
+       ],
+       "height": 16,
+       "text": "Hola mundo, esto",
+       "visual_x": 6.5,
+       "visual_y": 10.89,
+       "width": 167
+      },
+      {
+       "draw_x": 6.5,
+       "draw_y": 27.630000000000003,
+       "glyph_bbox": [
+        0,
+        3,
+        167,
+        16
+       ],
+       "height": 13,
+       "text": "es una prueba de",
+       "visual_x": 6.5,
+       "visual_y": 30.630000000000003,
+       "width": 167
+      },
+      {
+       "draw_x": 18.0,
+       "draw_y": 44.370000000000005,
+       "glyph_bbox": [
+        0,
+        3,
+        144,
+        17
+       ],
+       "height": 14,
+       "text": "maquetado con",
+       "visual_x": 18.0,
+       "visual_y": 47.370000000000005,
+       "width": 144
+      },
+      {
+       "draw_x": 8.5,
+       "draw_y": 63.110000000000014,
+       "glyph_bbox": [
+        0,
+        2,
+        163,
+        16
+       ],
+       "height": 14,
+       "text": "varias palabras.",
+       "visual_x": 8.5,
+       "visual_y": 65.11000000000001,
+       "width": 163
+      }
+     ],
+     "paragraph_height": 68.22,
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "font_path": "C:\\Users\\Omar\\Documents\\Omarleel\\ParallelMangaTranslator-Stack\\ParallelMangaTranslator\\fonts\\NewWildWordsRoman.ttf",
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "version": 3,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "con_offsets": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 17,
+     "line_spacing": 4.675000000000001,
+     "lines": [
+      {
+       "draw_x": 2.0,
+       "draw_y": 20.974999999999994,
+       "glyph_bbox": [
+        0,
+        2,
+        167,
+        18
+       ],
+       "height": 16,
+       "text": "Hola mundo, esto",
+       "visual_x": 2.0,
+       "visual_y": 22.974999999999994,
+       "width": 167
+      },
+      {
+       "draw_x": 2.0,
+       "draw_y": 40.64999999999999,
+       "glyph_bbox": [
+        0,
+        3,
+        167,
+        16
+       ],
+       "height": 13,
+       "text": "es una prueba de",
+       "visual_x": 2.0,
+       "visual_y": 43.64999999999999,
+       "width": 167
+      },
+      {
+       "draw_x": 25.0,
+       "draw_y": 58.32499999999999,
+       "glyph_bbox": [
+        0,
+        3,
+        144,
+        17
+       ],
+       "height": 14,
+       "text": "maquetado con",
+       "visual_x": 25.0,
+       "visual_y": 61.32499999999999,
+       "width": 144
+      },
+      {
+       "draw_x": 6.0,
+       "draw_y": 77.99999999999999,
+       "glyph_bbox": [
+        0,
+        2,
+        163,
+        16
+       ],
+       "height": 14,
+       "text": "varias palabras.",
+       "visual_x": 6.0,
+       "visual_y": 79.99999999999999,
+       "width": 163
+      }
+     ],
+     "paragraph_height": 71.025,
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "font_path": "C:\\Users\\Omar\\Documents\\Omarleel\\ParallelMangaTranslator-Stack\\ParallelMangaTranslator\\fonts\\NewWildWordsRoman.ttf",
+   "line_spacing_factor": 1.25,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "right",
+   "text_offset_x": -5.0,
+   "text_offset_y": 7.0,
+   "version": 3,
+   "vertical_align": "bottom",
+   "writing_mode": "horizontal"
+  },
+  "dos_lobulos_previo": {
+   "bbox": [
+    0,
+    0,
+    240,
+    120
+   ],
+   "blocks": [
+    {
+     "area": [
+      37,
+      37,
+      47,
+      47
+     ],
+     "font_size": 9,
+     "line_spacing": 1.98,
+     "lines": [
+      {
+       "draw_x": 48.5,
+       "draw_y": 36.54,
+       "glyph_bbox": [
+        0,
+        2,
+        24,
+        9
+       ],
+       "height": 7,
+       "text": "Hola",
+       "visual_x": 48.5,
+       "visual_y": 38.54,
+       "width": 24
+      },
+      {
+       "draw_x": 43.5,
+       "draw_y": 45.519999999999996,
+       "glyph_bbox": [
+        0,
+        2,
+        34,
+        10
+       ],
+       "height": 8,
+       "text": "mundo,",
+       "visual_x": 43.5,
+       "visual_y": 47.519999999999996,
+       "width": 34
+      },
+      {
+       "draw_x": 48.5,
+       "draw_y": 55.5,
+       "glyph_bbox": [
+        0,
+        2,
+        24,
+        9
+       ],
+       "height": 7,
+       "text": "esto",
+       "visual_x": 48.5,
+       "visual_y": 57.5,
+       "width": 24
+      },
+      {
+       "draw_x": 43.5,
+       "draw_y": 64.48,
+       "glyph_bbox": [
+        0,
+        2,
+        34,
+        9
+       ],
+       "height": 7,
+       "text": "es una",
+       "visual_x": 43.5,
+       "visual_y": 66.48,
+       "width": 34
+      },
+      {
+       "draw_x": 42.5,
+       "draw_y": 73.46000000000001,
+       "glyph_bbox": [
+        0,
+        2,
+        36,
+        9
+       ],
+       "height": 7,
+       "text": "prueba",
+       "visual_x": 42.5,
+       "visual_y": 75.46000000000001,
+       "width": 36
+      }
+     ],
+     "paragraph_height": 43.92,
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba"
+    },
+    {
+     "area": [
+      157,
+      37,
+      47,
+      47
+     ],
+     "font_size": 7,
+     "line_spacing": 1.54,
+     "lines": [
+      {
+       "draw_x": 176.5,
+       "draw_y": 43.69,
+       "glyph_bbox": [
+        -1,
+        1,
+        9,
+        7
+       ],
+       "height": 6,
+       "text": "de",
+       "visual_x": 175.5,
+       "visual_y": 44.69,
+       "width": 10
+      },
+      {
+       "draw_x": 159.5,
+       "draw_y": 51.23,
+       "glyph_bbox": [
+        -1,
+        1,
+        43,
+        8
+       ],
+       "height": 7,
+       "text": "maquetado",
+       "visual_x": 158.5,
+       "visual_y": 52.23,
+       "width": 44
+      },
+      {
+       "draw_x": 159.5,
+       "draw_y": 60.769999999999996,
+       "glyph_bbox": [
+        0,
+        0,
+        42,
+        7
+       ],
+       "height": 7,
+       "text": "con varias",
+       "visual_x": 159.5,
+       "visual_y": 60.769999999999996,
+       "width": 42
+      },
+      {
+       "draw_x": 161.5,
+       "draw_y": 68.31,
+       "glyph_bbox": [
+        -1,
+        1,
+        39,
+        8
+       ],
+       "height": 7,
+       "text": "palabras.",
+       "visual_x": 160.5,
+       "visual_y": 69.31,
+       "width": 40
+      }
+     ],
+     "paragraph_height": 31.62,
+     "stroke_width": 1,
+     "text": "de maquetado con varias palabras."
+    }
+   ],
+   "font_path": "C:\\Users\\Omar\\Documents\\Omarleel\\ParallelMangaTranslator-Stack\\ParallelMangaTranslator\\fonts\\NewWildWordsRoman.ttf",
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "version": 3,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "layout_previo_escalado": {
+   "bbox": [
+    10,
+    10,
+    240,
+    120
+   ],
+   "blocks": [
+    {
+     "area": [
+      7,
+      3,
+      227,
+      115
+     ],
+     "font_size": 22,
+     "line_spacing": 4.84,
+     "lines": [
+      {
+       "draw_x": 12.5,
+       "draw_y": 14.240000000000002,
+       "glyph_bbox": [
+        0,
+        2,
+        216,
+        23
+       ],
+       "height": 21,
+       "text": "Hola mundo, esto",
+       "visual_x": 12.5,
+       "visual_y": 16.240000000000002,
+       "width": 216
+      },
+      {
+       "draw_x": 12.5,
+       "draw_y": 39.08,
+       "glyph_bbox": [
+        0,
+        3,
+        216,
+        20
+       ],
+       "height": 17,
+       "text": "es una prueba de",
+       "visual_x": 12.5,
+       "visual_y": 42.08,
+       "width": 216
+      },
+      {
+       "draw_x": 27.5,
+       "draw_y": 60.92,
+       "glyph_bbox": [
+        0,
+        3,
+        186,
+        21
+       ],
+       "height": 18,
+       "text": "maquetado con",
+       "visual_x": 27.5,
+       "visual_y": 63.92,
+       "width": 186
+      },
+      {
+       "draw_x": 15.0,
+       "draw_y": 84.76,
+       "glyph_bbox": [
+        0,
+        2,
+        211,
+        20
+       ],
+       "height": 18,
+       "text": "varias palabras.",
+       "visual_x": 15.0,
+       "visual_y": 86.76,
+       "width": 211
+      }
+     ],
+     "paragraph_height": 88.52,
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "font_path": "C:\\Users\\Omar\\Documents\\Omarleel\\ParallelMangaTranslator-Stack\\ParallelMangaTranslator\\fonts\\NewWildWordsRoman.ttf",
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "version": 3,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "layout_previo_texto_nuevo": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 27,
+     "line_spacing": 5.94,
+     "lines": [
+      {
+       "draw_x": 48.0,
+       "draw_y": 0.060000000000002274,
+       "glyph_bbox": [
+        0,
+        4,
+        84,
+        26
+       ],
+       "height": 22,
+       "text": "Texto",
+       "visual_x": 48.0,
+       "visual_y": 4.060000000000002,
+       "width": 84
+      },
+      {
+       "draw_x": 28.5,
+       "draw_y": 29.0,
+       "glyph_bbox": [
+        0,
+        3,
+        123,
+        29
+       ],
+       "height": 26,
+       "text": "distinto,",
+       "visual_x": 28.5,
+       "visual_y": 32.0,
+       "width": 123
+      },
+      {
+       "draw_x": 6.0,
+       "draw_y": 59.94,
+       "glyph_bbox": [
+        0,
+        4,
+        168,
+        26
+       ],
+       "height": 22,
+       "text": "mas corto.",
+       "visual_x": 6.0,
+       "visual_y": 63.94,
+       "width": 168
+      }
+     ],
+     "paragraph_height": 81.88,
+     "stroke_width": 1,
+     "text": "Texto distinto, mas corto."
+    }
+   ],
+   "font_path": "C:\\Users\\Omar\\Documents\\Omarleel\\ParallelMangaTranslator-Stack\\ParallelMangaTranslator\\fonts\\NewWildWordsRoman.ttf",
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "version": 3,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "rotado": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 7,
+     "line_spacing": 1.54,
+     "lines": [
+      {
+       "draw_x": 87.5,
+       "draw_y": 2.0,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "H",
+       "visual_x": 87.5,
+       "visual_y": 3.0,
+       "width": 5
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 9.54,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "o",
+       "visual_x": 87.0,
+       "visual_y": 10.54,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 17.08,
+       "glyph_bbox": [
+        0,
+        1,
+        4,
+        7
+       ],
+       "height": 6,
+       "text": "l",
+       "visual_x": 88.0,
+       "visual_y": 18.08,
+       "width": 4
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 24.619999999999997,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 25.619999999999997,
+       "width": 6
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 26.159999999999997,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 33.16,
+       "width": 3
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 34.699999999999996,
+       "glyph_bbox": [
+        -1,
+        1,
+        6,
+        7
+       ],
+       "height": 6,
+       "text": "m",
+       "visual_x": 86.5,
+       "visual_y": 35.699999999999996,
+       "width": 7
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 42.239999999999995,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "u",
+       "visual_x": 87.5,
+       "visual_y": 43.239999999999995,
+       "width": 5
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 49.779999999999994,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "n",
+       "visual_x": 87.0,
+       "visual_y": 50.779999999999994,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 57.31999999999999,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "d",
+       "visual_x": 87.0,
+       "visual_y": 58.31999999999999,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 64.86,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "o",
+       "visual_x": 87.0,
+       "visual_y": 65.86,
+       "width": 6
+      },
+      {
+       "draw_x": 89.5,
+       "draw_y": 68.4,
+       "glyph_bbox": [
+        -1,
+        5,
+        2,
+        8
+       ],
+       "height": 3,
+       "text": ",",
+       "visual_x": 88.5,
+       "visual_y": 73.4,
+       "width": 3
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 70.94000000000001,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 77.94000000000001,
+       "width": 3
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 79.48000000000002,
+       "glyph_bbox": [
+        -1,
+        1,
+        4,
+        7
+       ],
+       "height": 6,
+       "text": "e",
+       "visual_x": 87.5,
+       "visual_y": 80.48000000000002,
+       "width": 5
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 87.02000000000002,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "s",
+       "visual_x": 87.5,
+       "visual_y": 88.02000000000002,
+       "width": 5
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 94.56000000000003,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        8
+       ],
+       "height": 7,
+       "text": "t",
+       "visual_x": 87.5,
+       "visual_y": 95.56000000000003,
+       "width": 5
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 103.10000000000002,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "o",
+       "visual_x": 87.0,
+       "visual_y": 104.10000000000002,
+       "width": 6
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 104.64000000000003,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 111.64000000000003,
+       "width": 3
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 113.18000000000004,
+       "glyph_bbox": [
+        -1,
+        1,
+        4,
+        7
+       ],
+       "height": 6,
+       "text": "e",
+       "visual_x": 87.5,
+       "visual_y": 114.18000000000004,
+       "width": 5
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 120.72000000000004,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "s",
+       "visual_x": 87.5,
+       "visual_y": 121.72000000000004,
+       "width": 5
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 122.26000000000005,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 129.26000000000005,
+       "width": 3
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 130.80000000000004,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "u",
+       "visual_x": 87.5,
+       "visual_y": 131.80000000000004,
+       "width": 5
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 138.34000000000003,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "n",
+       "visual_x": 87.0,
+       "visual_y": 139.34000000000003,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 145.88000000000002,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 146.88000000000002,
+       "width": 6
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 147.42000000000002,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 154.42000000000002,
+       "width": 3
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 155.96,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "p",
+       "visual_x": 87.0,
+       "visual_y": 156.96,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 163.5,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "r",
+       "visual_x": 87.0,
+       "visual_y": 164.5,
+       "width": 6
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 171.04,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "u",
+       "visual_x": 87.5,
+       "visual_y": 172.04,
+       "width": 5
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 178.57999999999998,
+       "glyph_bbox": [
+        -1,
+        1,
+        4,
+        7
+       ],
+       "height": 6,
+       "text": "e",
+       "visual_x": 87.5,
+       "visual_y": 179.57999999999998,
+       "width": 5
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 186.11999999999998,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "b",
+       "visual_x": 87.0,
+       "visual_y": 187.11999999999998,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 193.65999999999997,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 194.65999999999997,
+       "width": 6
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 195.19999999999996,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 202.19999999999996,
+       "width": 3
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 203.73999999999995,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "d",
+       "visual_x": 87.0,
+       "visual_y": 204.73999999999995,
+       "width": 6
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 211.27999999999994,
+       "glyph_bbox": [
+        -1,
+        1,
+        4,
+        7
+       ],
+       "height": 6,
+       "text": "e",
+       "visual_x": 87.5,
+       "visual_y": 212.27999999999994,
+       "width": 5
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 212.81999999999994,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 219.81999999999994,
+       "width": 3
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 221.35999999999993,
+       "glyph_bbox": [
+        -1,
+        1,
+        6,
+        7
+       ],
+       "height": 6,
+       "text": "m",
+       "visual_x": 86.5,
+       "visual_y": 222.35999999999993,
+       "width": 7
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 228.89999999999992,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 229.89999999999992,
+       "width": 6
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 236.4399999999999,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        8
+       ],
+       "height": 7,
+       "text": "q",
+       "visual_x": 87.5,
+       "visual_y": 237.4399999999999,
+       "width": 5
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 244.9799999999999,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "u",
+       "visual_x": 87.5,
+       "visual_y": 245.9799999999999,
+       "width": 5
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 252.5199999999999,
+       "glyph_bbox": [
+        -1,
+        1,
+        4,
+        7
+       ],
+       "height": 6,
+       "text": "e",
+       "visual_x": 87.5,
+       "visual_y": 253.5199999999999,
+       "width": 5
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 260.0599999999999,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        8
+       ],
+       "height": 7,
+       "text": "t",
+       "visual_x": 87.5,
+       "visual_y": 261.0599999999999,
+       "width": 5
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 268.5999999999999,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 269.5999999999999,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 276.13999999999993,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "d",
+       "visual_x": 87.0,
+       "visual_y": 277.13999999999993,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 283.67999999999995,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "o",
+       "visual_x": 87.0,
+       "visual_y": 284.67999999999995,
+       "width": 6
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 285.21999999999997,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 292.21999999999997,
+       "width": 3
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 293.76,
+       "glyph_bbox": [
+        0,
+        1,
+        4,
+        7
+       ],
+       "height": 6,
+       "text": "c",
+       "visual_x": 88.0,
+       "visual_y": 294.76,
+       "width": 4
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 301.3,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "o",
+       "visual_x": 87.0,
+       "visual_y": 302.3,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 308.84000000000003,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "n",
+       "visual_x": 87.0,
+       "visual_y": 309.84000000000003,
+       "width": 6
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 310.38000000000005,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 317.38000000000005,
+       "width": 3
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 318.9200000000001,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "v",
+       "visual_x": 87.5,
+       "visual_y": 319.9200000000001,
+       "width": 5
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 326.4600000000001,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 327.4600000000001,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 334.0000000000001,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "r",
+       "visual_x": 87.0,
+       "visual_y": 335.0000000000001,
+       "width": 6
+      },
+      {
+       "draw_x": 89.0,
+       "draw_y": 342.54000000000013,
+       "glyph_bbox": [
+        0,
+        0,
+        2,
+        7
+       ],
+       "height": 7,
+       "text": "i",
+       "visual_x": 89.0,
+       "visual_y": 342.54000000000013,
+       "width": 2
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 350.08000000000015,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 351.08000000000015,
+       "width": 6
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 357.6200000000002,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "s",
+       "visual_x": 87.5,
+       "visual_y": 358.6200000000002,
+       "width": 5
+      },
+      {
+       "draw_x": 88.5,
+       "draw_y": 359.1600000000002,
+       "glyph_bbox": [
+        0,
+        7,
+        3,
+        7
+       ],
+       "height": 1,
+       "text": " ",
+       "visual_x": 88.5,
+       "visual_y": 366.1600000000002,
+       "width": 3
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 367.7000000000002,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "p",
+       "visual_x": 87.0,
+       "visual_y": 368.7000000000002,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 375.24000000000024,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 376.24000000000024,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 382.78000000000026,
+       "glyph_bbox": [
+        0,
+        1,
+        4,
+        7
+       ],
+       "height": 6,
+       "text": "l",
+       "visual_x": 88.0,
+       "visual_y": 383.78000000000026,
+       "width": 4
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 390.3200000000003,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 391.3200000000003,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 397.8600000000003,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "b",
+       "visual_x": 87.0,
+       "visual_y": 398.8600000000003,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 405.4000000000003,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "r",
+       "visual_x": 87.0,
+       "visual_y": 406.4000000000003,
+       "width": 6
+      },
+      {
+       "draw_x": 88.0,
+       "draw_y": 412.94000000000034,
+       "glyph_bbox": [
+        -1,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "a",
+       "visual_x": 87.0,
+       "visual_y": 413.94000000000034,
+       "width": 6
+      },
+      {
+       "draw_x": 87.5,
+       "draw_y": 420.48000000000036,
+       "glyph_bbox": [
+        0,
+        1,
+        5,
+        7
+       ],
+       "height": 6,
+       "text": "s",
+       "visual_x": 87.5,
+       "visual_y": 421.48000000000036,
+       "width": 5
+      },
+      {
+       "draw_x": 89.0,
+       "draw_y": 424.0200000000004,
+       "glyph_bbox": [
+        0,
+        5,
+        2,
+        8
+       ],
+       "height": 3,
+       "text": ".",
+       "visual_x": 89.0,
+       "visual_y": 429.0200000000004,
+       "width": 2
+      }
+     ],
+     "paragraph_height": 429.02,
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "font_path": "C:\\Users\\Omar\\Documents\\Omarleel\\ParallelMangaTranslator-Stack\\ParallelMangaTranslator\\fonts\\NewWildWordsRoman.ttf",
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 12.5,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "version": 3,
+   "vertical_align": "middle",
+   "writing_mode": "vertical_chars"
+  },
+  "sin_layout_previo": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 17,
+     "line_spacing": 3.74,
+     "lines": [
+      {
+       "draw_x": 6.5,
+       "draw_y": 8.89,
+       "glyph_bbox": [
+        0,
+        2,
+        167,
+        18
+       ],
+       "height": 16,
+       "text": "Hola mundo, esto",
+       "visual_x": 6.5,
+       "visual_y": 10.89,
+       "width": 167
+      },
+      {
+       "draw_x": 6.5,
+       "draw_y": 27.630000000000003,
+       "glyph_bbox": [
+        0,
+        3,
+        167,
+        16
+       ],
+       "height": 13,
+       "text": "es una prueba de",
+       "visual_x": 6.5,
+       "visual_y": 30.630000000000003,
+       "width": 167
+      },
+      {
+       "draw_x": 18.0,
+       "draw_y": 44.370000000000005,
+       "glyph_bbox": [
+        0,
+        3,
+        144,
+        17
+       ],
+       "height": 14,
+       "text": "maquetado con",
+       "visual_x": 18.0,
+       "visual_y": 47.370000000000005,
+       "width": 144
+      },
+      {
+       "draw_x": 8.5,
+       "draw_y": 63.110000000000014,
+       "glyph_bbox": [
+        0,
+        2,
+        163,
+        16
+       ],
+       "height": 14,
+       "text": "varias palabras.",
+       "visual_x": 8.5,
+       "visual_y": 65.11000000000001,
+       "width": 163
+      }
+     ],
+     "paragraph_height": 68.22,
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "font_path": "C:\\Users\\Omar\\Documents\\Omarleel\\ParallelMangaTranslator-Stack\\ParallelMangaTranslator\\fonts\\NewWildWordsRoman.ttf",
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "version": 3,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  },
+  "tamano_fijo": {
+   "bbox": [
+    10,
+    10,
+    180,
+    90
+   ],
+   "blocks": [
+    {
+     "area": [
+      5,
+      2,
+      170,
+      86
+     ],
+     "font_size": 16,
+     "line_spacing": 3.52,
+     "lines": [
+      {
+       "draw_x": 11.0,
+       "draw_y": 10.219999999999999,
+       "glyph_bbox": [
+        0,
+        1,
+        158,
+        17
+       ],
+       "height": 16,
+       "text": "Hola mundo, esto",
+       "visual_x": 11.0,
+       "visual_y": 11.219999999999999,
+       "width": 158
+      },
+      {
+       "draw_x": 11.5,
+       "draw_y": 28.74,
+       "glyph_bbox": [
+        0,
+        2,
+        157,
+        15
+       ],
+       "height": 13,
+       "text": "es una prueba de",
+       "visual_x": 11.5,
+       "visual_y": 30.74,
+       "width": 157
+      },
+      {
+       "draw_x": 22.0,
+       "draw_y": 45.26,
+       "glyph_bbox": [
+        0,
+        2,
+        136,
+        16
+       ],
+       "height": 14,
+       "text": "maquetado con",
+       "visual_x": 22.0,
+       "visual_y": 47.26,
+       "width": 136
+      },
+      {
+       "draw_x": 13.0,
+       "draw_y": 63.78,
+       "glyph_bbox": [
+        0,
+        1,
+        154,
+        15
+       ],
+       "height": 14,
+       "text": "varias palabras.",
+       "visual_x": 13.0,
+       "visual_y": 64.78,
+       "width": 154
+      }
+     ],
+     "paragraph_height": 67.56,
+     "stroke_width": 1,
+     "text": "Hola mundo, esto es una prueba de maquetado con varias palabras."
+    }
+   ],
+   "font_path": "C:\\Users\\Omar\\Documents\\Omarleel\\ParallelMangaTranslator-Stack\\ParallelMangaTranslator\\fonts\\NewWildWordsRoman.ttf",
+   "line_spacing_factor": 1.0,
+   "requested_rotation_angle": 0.0,
+   "rotation_angle": 0.0,
+   "style": "dialogo",
+   "text_align": "center",
+   "text_offset_x": 0.0,
+   "text_offset_y": 0.0,
+   "version": 3,
+   "vertical_align": "middle",
+   "writing_mode": "horizontal"
+  }
+ }
+}

@@ -1053,11 +1053,11 @@ class MaturePrecisionAdaptationsTests(unittest.TestCase):
         from parallel_manga_translator.rendering.text_renderer import TextRenderer
 
         renderer = TextRenderer(smart_typography=True, hyphenation=True, balance_lines=True)
-        font = renderer._get_font(18)
+        font = renderer.layout._get_font(18)
         token = "extraordinariamente"
-        max_width = max(20, renderer._text_width(token, font) // 2)
+        max_width = max(20, renderer.layout._text_width(token, font) // 2)
 
-        parts = renderer._break_long_token(token, font, max_width)
+        parts = renderer.layout._break_long_token(token, font, max_width)
 
         self.assertGreaterEqual(len(parts), 2)
         self.assertTrue(any(part.endswith("-") for part in parts[:-1]))
