@@ -79,6 +79,8 @@ class BrushStrokePatch(BaseModel):
     radius: int = 18
     mode: str = "restore_original"
     applied: bool = False
+    #: RGB del pincel de pintar. Lo elige el cuentagotas de la UI.
+    color: Optional[List[int]] = Field(default=None, min_length=3, max_length=3)
 
 
 class RenderRequest(BaseModel):

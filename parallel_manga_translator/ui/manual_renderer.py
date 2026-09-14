@@ -46,12 +46,48 @@ class ManualRegion:
     run_bbox: Optional[Box] = None
 
 
+#: Modos de pincel que pintan un color plano. El cuentagotas de la UI los alimenta.
+PAINT_MODES = frozenset({"paint", "pintar"})
+
+
 @dataclass
 class BrushStroke:
     points: List[Point]
     radius: int = 18
     mode: str = "restore_clean"
     applied: bool = False
+    #: Color del modo `paint`, en **RGB**, como lo manda el navegador. Se conserva en RGB
+    #: por todo el recorrido -JSON incluido- y solo se voltea a BGR al escribir píxeles,
+    #: que es el único sitio que habla el idioma de OpenCV.
+    color: Optional[Tuple[int, int, int]] = None
+
+
+def brush_stroke_to_dict(stroke: "BrushStroke") -> Dict[str, Any]:
+    """Forma serializada de un trazo, la misma en el manifiesto y en las correcciones.
+
+    `color` solo aparece cuando lo hay: emitirlo como `null` en todos los trazos cambiaria
+    la forma de los manifiestos ya guardados sin ganar nada.
+    """
+    datos: Dict[str, Any] = {
+        "points": [list(point) for point in stroke.points],
+        "radius": stroke.radius,
+        "mode": stroke.mode,
+        "applied": stroke.applied,
+    }
+    if stroke.color is not None:
+        datos["color"] = list(stroke.color)
+    return datos
+
+
+def _rgb(raw: Any) -> Optional[Tuple[int, int, int]]:
+    """Color RGB del navegador, acotado a 0-255. Cualquier cosa rara vale `None`."""
+    if not isinstance(raw, (list, tuple)) or len(raw) < 3:
+        return None
+    try:
+        canales = [max(0, min(255, int(round(float(v))))) for v in list(raw)[:3]]
+    except (TypeError, ValueError):
+        return None
+    return (canales[0], canales[1], canales[2])
 
 
 def _raw_box(raw: Any) -> Optional[Box]:
@@ -250,6 +286,7 @@ def parse_brush_strokes(payload: Iterable[Dict[str, Any]], image_width: int, ima
                 radius=max(1, min(180, radius)),
                 mode=str(item.get("mode") or "restore_clean"),
                 applied=_boolish(item.get("applied", False), False),
+                color=_rgb(item.get("color")),
             )
         )
     return strokes
@@ -272,16 +309,27 @@ def _same_box(a: Optional[Box], b: Optional[Box]) -> bool:
 
 
 def _draw_polyline_mask(mask: np.ndarray, points: Sequence[Point], radius: int) -> None:
+    """Rasteriza el trazo del pincel con el tamaño que dice el cursor, ni un píxel más.
+
+    Se dibuja SIN suavizado a propósito. Con `LINE_AA`, el borde sale con valores
+    intermedios (un píxel a 50 de 255) y todo el consumo posterior es `mask > 0`: un píxel
+    apenas rozado contaba como pintado entero y el trazo salía 3 px más ancho de lo que
+    marcaba el cursor. Medido: radio 22 pintaba 47 px de diámetro en vez de 45.
+
+    Quedan `2*radio + 1` píxeles, que es lo que ocupa un círculo lleno centrado en un
+    píxel: de -radio a +radio, ambos incluidos. Ese +1 no se puede quitar, y el cursor lo
+    dibuja igual para que lo que se ve sea lo que se pinta.
+    """
     if not points:
         return
     thickness = max(1, radius * 2)
     if len(points) == 1:
-        cv2.circle(mask, points[0], radius, 255, -1, lineType=cv2.LINE_AA)
+        cv2.circle(mask, points[0], radius, 255, -1, lineType=cv2.LINE_8)
         return
     for p1, p2 in zip(points, points[1:]):
-        cv2.line(mask, p1, p2, 255, thickness, lineType=cv2.LINE_AA)
-    cv2.circle(mask, points[0], radius, 255, -1, lineType=cv2.LINE_AA)
-    cv2.circle(mask, points[-1], radius, 255, -1, lineType=cv2.LINE_AA)
+        cv2.line(mask, p1, p2, 255, thickness, lineType=cv2.LINE_8)
+    cv2.circle(mask, points[0], radius, 255, -1, lineType=cv2.LINE_8)
+    cv2.circle(mask, points[-1], radius, 255, -1, lineType=cv2.LINE_8)
 
 
 def _stroke_mask(stroke: BrushStroke, height: int, width: int) -> np.ndarray:
@@ -374,7 +422,14 @@ def _apply_brush_strokes(base: np.ndarray, *, original_image: np.ndarray, clean_
             continue
         if mode == "inpaint":
             continue
-        if mode in {"restore_clean", "clean"}:
+        if mode in PAINT_MODES:
+            # Pintar tinta a mano: el usuario elige el color con el cuentagotas, así que
+            # aquí no se decide nada. Sin color, no se pinta: mejor no hacer nada que
+            # inventarse un blanco sobre un globo que no lo es.
+            if stroke.color is not None:
+                rojo, verde, azul = stroke.color
+                base[mask > 0] = (azul, verde, rojo)
+        elif mode in {"restore_clean", "clean"}:
             base[mask > 0] = clean_image[mask > 0]
         elif mode in {"mask_eraser", "erase_mask", "eraser", "restore_original", "original"}:
             # La restauración es una edición de fondo. El texto se compone después.
@@ -937,15 +992,7 @@ def write_corrections(path: str | Path, regions: Sequence[ManualRegion], brush_s
             for region in regions
             if region.modified or region.manual or region.deleted
         ],
-        "brush_strokes": [
-            {
-                "points": [list(point) for point in stroke.points],
-                "radius": stroke.radius,
-                "mode": stroke.mode,
-                "applied": stroke.applied,
-            }
-            for stroke in (brush_strokes or [])
-        ],
+        "brush_strokes": [brush_stroke_to_dict(stroke) for stroke in (brush_strokes or [])],
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 

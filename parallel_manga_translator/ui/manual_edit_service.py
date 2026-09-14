@@ -31,7 +31,7 @@ from parallel_manga_translator.infrastructure.execution_control import (
     execution_control_scope,
 )
 from parallel_manga_translator.infrastructure.gpu_scheduler import gpu_slot
-from parallel_manga_translator.ui.manual_renderer import apply_background_brush_strokes, apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, render_manual_composite, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
+from parallel_manga_translator.ui.manual_renderer import apply_background_brush_strokes, brush_stroke_to_dict, apply_pending_inpaint_only, parse_brush_strokes, parse_manual_regions, render_manual_composite, render_manual_region_preview, resolve_manual_region_metrics, write_corrections
 from parallel_manga_translator.ui.job_manifest_store import JobManifestStore
 from parallel_manga_translator.ui.job_state import (
     JobState,
@@ -236,15 +236,7 @@ class ManualEditService:
                     "ui_layout": region.ui_layout or anterior.get("ui_layout"),
                 })
             page.regions = actualizadas
-            page.brush_strokes = [
-                {
-                    "points": [list(point) for point in stroke.points],
-                    "radius": stroke.radius,
-                    "mode": stroke.mode,
-                    "applied": stroke.applied,
-                }
-                for stroke in brush_strokes
-            ]
+            page.brush_strokes = [brush_stroke_to_dict(stroke) for stroke in brush_strokes]
             page.background_revision = next_revision
             page.manual_background_path = "" if next_revision == "base" else str(next_background)
             page.updated_at = time.time()

@@ -209,7 +209,7 @@ def test_new_manual_region_focuses_inline_text_editor_immediately() -> None:
     assert "renderOverlay();" in creation_block
     assert "focusInlineEditorForRegion(state.selectedRegion);" in creation_block
     assert creation_block.index("renderOverlay();") < creation_block.index("focusInlineEditorForRegion(state.selectedRegion);")
-    assert '<script src="/static/app.js?v=15"></script>' in html
+    assert '<script src="/static/app.js?v=16"></script>' in html
 
 
 def test_setup_actions_keep_the_primary_button_usable_with_a_long_project_title() -> None:

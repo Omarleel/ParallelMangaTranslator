@@ -100,6 +100,92 @@ def _region_payload(*, bbox, source_bbox, text="texto") -> dict:
     }
 
 
+def test_el_pincel_pinta_exactamente_el_tamano_que_marca_el_cursor() -> None:
+    """El trazo salía 3 px más ancho de lo que enseñaba el círculo del cursor.
+
+    La máscara se rasterizaba con `LINE_AA` y todo el consumo posterior es `mask > 0`, así
+    que un píxel del borde apenas rozado —valor 50 sobre 255— contaba como pintado entero.
+    Medido antes del arreglo: radio 22 pintaba 47 px de diámetro en vez de 45.
+
+    `2*radio + 1` es lo que ocupa un círculo lleno centrado en un píxel, de -radio a
+    +radio incluidos. Ese +1 es del retículo, no del pincel, y el cursor lo dibuja igual.
+    """
+    from parallel_manga_translator.ui.manual_renderer import _stroke_mask
+
+    for radio in (4, 10, 22, 45):
+        mascara = _stroke_mask(BrushStroke(points=[(60, 60)], radius=radio), 140, 140)
+        pintados = np.flatnonzero(mascara[60] > 0)
+        ancho = int(pintados[-1] - pintados[0] + 1)
+
+        assert ancho == radio * 2 + 1, f"radio {radio}: pinta {ancho} px y el cursor enseña {radio * 2 + 1}"
+        assert set(np.unique(mascara)) <= {0, 255}, "sin bordes a medias: o se pinta o no"
+
+
+def test_un_trazo_de_pintar_llega_desde_la_peticion_hasta_el_fondo(monkeypatch, tmp_path: Path) -> None:
+    """El camino entero del servidor, con el payload tal como lo manda el navegador.
+
+    Probar solo `apply_background_brush_strokes` dejaba fuera la mitad que falló de verdad:
+    el color tiene que sobrevivir a `BrushStrokePatch`, a `parse_brush_strokes` y al
+    horneado de la revisión de fondo.
+    """
+    monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
+    manager, _job, page = _build_ready_manager(tmp_path)
+    trazo = {"points": [[20, 20]], "radius": 6, "mode": "paint", "color": [255, 0, 0], "applied": False}
+
+    guardado = manager.save_manual_render("job-test", 0, [], [trazo], operation="render")
+
+    # El trazo vuelve consumido, no perdido: pintar es una edición de fondo y, una vez
+    # horneada, vive en la revisión inmutable. El color solo tiene que sobrevivir hasta ahí.
+    assert guardado["brush_strokes"] == []
+    fondo_path = manager._jobs["job-test"].pages[0].manual_background_path
+    assert fondo_path, "pintar es una edición de fondo: tiene que crear una revisión"
+    fondo = cv2.imread(str(fondo_path), cv2.IMREAD_COLOR)
+    assert list(fondo[20, 20]) == [0, 0, 255], "el rojo RGB se escribe como BGR en el fondo"
+    assert list(fondo[0, 0]) == [100, 100, 100], "fuera del trazo el fondo no se toca"
+
+
+def test_el_pincel_de_pintar_usa_el_color_que_le_dan(tmp_path: Path) -> None:
+    """Pintar restos de tinta a mano: el color lo elige el usuario con el cuentagotas.
+
+    Se guarda en RGB por todo el recorrido -es lo que manda el navegador- y solo se
+    voltea a BGR al escribir píxeles, que es el único sitio que habla OpenCV.
+    """
+    clean = tmp_path / "clean.png"
+    original = tmp_path / "original.png"
+    salida = tmp_path / "salida.png"
+    _write_uniform(clean, 100)
+    _write_uniform(original, 40)
+    trazo = BrushStroke(points=[(20, 20)], radius=5, mode="paint", color=(255, 0, 0))
+
+    cambiado = manual_renderer.apply_background_brush_strokes(
+        base_path=clean, clean_path=clean, original_path=original,
+        output_path=salida, brush_strokes=[trazo],
+    )
+
+    assert cambiado
+    pintado = cv2.imread(str(salida), cv2.IMREAD_COLOR)
+    assert list(pintado[20, 20]) == [0, 0, 255], "un rojo RGB se escribe como BGR"
+    assert list(pintado[0, 0]) == [100, 100, 100], "fuera del trazo no se toca nada"
+
+
+def test_el_pincel_de_pintar_sin_color_no_inventa_ninguno(tmp_path: Path) -> None:
+    """Mejor no hacer nada que blanquear un globo que no era blanco."""
+    clean = tmp_path / "clean.png"
+    original = tmp_path / "original.png"
+    salida = tmp_path / "salida.png"
+    _write_uniform(clean, 100)
+    _write_uniform(original, 40)
+    trazo = BrushStroke(points=[(20, 20)], radius=5, mode="paint", color=None)
+
+    manual_renderer.apply_background_brush_strokes(
+        base_path=clean, clean_path=clean, original_path=original,
+        output_path=salida, brush_strokes=[trazo],
+    )
+
+    pintado = cv2.imread(str(salida), cv2.IMREAD_COLOR)
+    assert list(pintado[20, 20]) == [100, 100, 100]
+
+
 def test_text_region_is_composited_above_original_restore_brush(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(manual_renderer, "TextRenderer", _SolidTextRenderer)
 

@@ -218,6 +218,9 @@ const dockBrushTool = $('dockBrushTool');
 const dockPanTool = $('dockPanTool');
 const dockFitBtn = $('dockFitBtn');
 const brushMode = $('brushMode');
+const brushColor = $('brushColor');
+const brushColorValue = $('brushColorValue');
+const dockEyedropperTool = $('dockEyedropperTool');
 const brushSize = $('brushSize');
 const brushInpaintModel = $('brushInpaintModel');
 const brushSizeValue = $('brushSizeValue');
@@ -1507,6 +1510,8 @@ function cloneBrushStrokes(strokes) {
     radius: Number(stroke.radius || 18),
     mode: stroke.mode || 'restore_clean',
     applied: Boolean(stroke.applied),
+    // Solo cuando lo hay: añadirlo siempre cambiaría la huella de los trazos de siempre.
+    ...(Array.isArray(stroke.color) ? { color: stroke.color.map(Number) } : {}),
   })).filter((stroke) => stroke.points.length);
 }
 
@@ -1730,9 +1735,79 @@ function updateBrushSizeLabel() {
   if (brushSizeValue && brushSize) brushSizeValue.textContent = `${Number(brushSize.value || 22)} px`;
 }
 
+const PAINT_BRUSH_MODES = ['paint', 'pintar'];
+
+function isPaintMode(mode) {
+  return PAINT_BRUSH_MODES.includes(String(mode || '').toLowerCase());
+}
+
+function hexToRgb(hex) {
+  const limpio = String(hex || '').replace('#', '').trim();
+  if (limpio.length !== 6) return null;
+  const valor = Number.parseInt(limpio, 16);
+  if (!Number.isFinite(valor)) return null;
+  return [(valor >> 16) & 255, (valor >> 8) & 255, valor & 255];
+}
+
+function rgbToHex([r, g, b]) {
+  return `#${[r, g, b].map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function currentPaintColor() {
+  return hexToRgb(brushColor?.value) || [255, 255, 255];
+}
+
+/** Color del píxel de la página bajo (x, y), en coordenadas de imagen. */
+function sampleImageColor(x, y) {
+  if (!pageImage?.naturalWidth || !pageImage.complete) return null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = pageImage.naturalWidth;
+    canvas.height = pageImage.naturalHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(pageImage, 0, 0);
+    const px = ctx.getImageData(
+      Math.max(0, Math.min(canvas.width - 1, Math.round(x))),
+      Math.max(0, Math.min(canvas.height - 1, Math.round(y))),
+      1,
+      1,
+    ).data;
+    return [px[0], px[1], px[2]];
+  } catch (_) {
+    // Lienzo contaminado o imagen aún sin cargar: mejor no pintar que pintar a ciegas.
+    return null;
+  }
+}
+
+function pickColorAt(x, y, { volverAlPincel = true } = {}) {
+  const color = sampleImageColor(x, y);
+  if (!color) {
+    showToast('No se pudo leer el color de la página todavía.');
+    return false;
+  }
+  if (brushColor) brushColor.value = rgbToHex(color);
+  updateBrushColorReadout();
+  if (volverAlPincel) {
+    // Tomar un color es el paso previo a pintar, nunca el objetivo: se vuelve al pincel
+    // ya en modo pintar para no obligar a dos clics más.
+    if (brushMode) brushMode.value = 'paint';
+    setTool('brush');
+  }
+  showToast(`Color tomado: ${rgbToHex(color)}`);
+  return true;
+}
+
+function updateBrushColorReadout() {
+  if (brushColorValue) brushColorValue.textContent = String(brushColor?.value || '').toLowerCase();
+}
+
+brushColor?.addEventListener('input', updateBrushColorReadout);
+updateBrushColorReadout();
+
 function brushModeLabel(mode) {
   const normalized = String(mode || 'restore_clean').toLowerCase();
   if (normalized === 'inpaint') return 'inpaint';
+  if (isPaintMode(normalized)) return 'pintar';
   if (isMaskEraserMode(normalized)) return 'restaurar original';
   return 'limpieza';
 }
@@ -2217,7 +2292,9 @@ function renderOverlay(options = {}) {
   if (activeTool() === 'brush' && state.brushCursor.visible) {
     const radius = Number(brushSize?.value || 22);
     const scale = (scaleX + scaleY) / 2;
-    const visualRadius = Math.max(2, radius * scale);
+    // Lo pintado ocupa 2*radio+1 px: un círculo lleno centrado en un píxel va de -radio a
+    // +radio, ambos incluidos. El cursor dibuja ese mismo diámetro para no mentir.
+    const visualRadius = Math.max(2, ((radius * 2 + 1) / 2) * scale);
     const cursor = document.createElement('div');
     const mode = String(brushMode?.value || 'restore_clean').toLowerCase();
     cursor.className = `brush-cursor mode-${isMaskEraserMode(mode) ? 'mask_eraser' : mode}`;
@@ -2425,10 +2502,18 @@ overlayLayer.addEventListener('pointerdown', (event) => {
     return;
   }
 
+  if (activeTool() === 'eyedropper' || (activeTool() === 'brush' && event.altKey)) {
+    pickColorAt(x, y, { volverAlPincel: true });
+    return;
+  }
+
   if (activeTool() === 'brush') {
     state.brushCursor = { x, y, visible: true };
     pushUndoSnapshot('pincel', { coalesceKey: 'brush-stroke', coalesceMs: 250 });
-    state.drawingStroke = { points: [[x, y]], radius: Number(brushSize.value || 22), mode: brushMode.value || 'restore_clean', applied: false };
+    const modoPincel = brushMode.value || 'restore_clean';
+    state.drawingStroke = { points: [[x, y]], radius: Number(brushSize.value || 22), mode: modoPincel, applied: false };
+    // El color viaja con el trazo: cambiar el selector después no puede repintar lo ya hecho.
+    if (isPaintMode(modoPincel)) state.drawingStroke.color = currentPaintColor();
     safeSetPointerCapture(overlayLayer, event.pointerId);
     markDirty();
     renderOverlay();
@@ -2602,7 +2687,12 @@ document.addEventListener('pointerup', (event) => {
         }
       } else {
         markDirty({ autosave: true, reason: 'pincel' });
-        showToast(state.drawingStroke.mode === 'restore_original' ? 'Restauración agregada. Se guardará sola.' : 'Limpieza agregada. Se guardará sola.');
+        const avisos = {
+          restore_original: 'Restauración agregada. Se guardará sola.',
+          paint: 'Color aplicado. Se guardará solo.',
+          pintar: 'Color aplicado. Se guardará solo.',
+        };
+        showToast(avisos[state.drawingStroke.mode] || 'Limpieza agregada. Se guardará sola.');
       }
     }
     state.drawingStroke = null;
@@ -2698,8 +2788,8 @@ window.addEventListener('resize', () => {
 });
 
 function setTool(tool) {
-  state.tool = ['select', 'region', 'brush', 'pan'].includes(tool) ? tool : 'select';
-  const allToolButtons = [selectTool, newRegionTool, brushTool, panTool, dockSelectTool, dockRegionTool, dockBrushTool, dockPanTool].filter(Boolean);
+  state.tool = ['select', 'region', 'brush', 'eyedropper', 'pan'].includes(tool) ? tool : 'select';
+  const allToolButtons = [selectTool, newRegionTool, brushTool, panTool, dockSelectTool, dockRegionTool, dockBrushTool, dockEyedropperTool, dockPanTool].filter(Boolean);
   allToolButtons.forEach((button) => {
     const active = button.dataset.tool === state.tool;
     button.classList.toggle('active', active);
@@ -2709,6 +2799,7 @@ function setTool(tool) {
     select: ['Herramienta activa: seleccionar', 'Haz clic en una región para editarla, muévela o redimensiónala. Atajos: V, Supr, Ctrl+C, Ctrl+X y Ctrl+V.'],
     region: ['Herramienta activa: nueva región', 'Arrastra sobre la página para crear una caja. Luego usa OCR + traducir región o escribe el texto manualmente. Atajo: R.'],
     brush: ['Herramienta activa: pincel', 'Usa Limpiar texto, Inpaint o Restaurar original. Ajusta tamaño con [ y ]. Atajo: B.'],
+    eyedropper: ['Herramienta activa: cuentagotas', 'Haz clic en la página para tomar ese color y pasar al pincel de pintar. Con el pincel activo, Alt+clic hace lo mismo. Atajo: I.'],
     pan: ['Herramienta activa: mano', 'Arrastra el lienzo para desplazarte como en un editor de imágenes. También puedes mantener Espacio con cualquier herramienta. Atajo: H.'],
   }[state.tool];
   toolHelpTitle.textContent = help[0];
@@ -2721,7 +2812,7 @@ function setTool(tool) {
   updateWorkspaceChrome();
 }
 
-[selectTool, newRegionTool, brushTool, panTool, dockSelectTool, dockRegionTool, dockBrushTool, dockPanTool]
+[selectTool, newRegionTool, brushTool, panTool, dockSelectTool, dockRegionTool, dockBrushTool, dockEyedropperTool, dockPanTool]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener('click', () => setTool(button.dataset.tool));
@@ -3350,6 +3441,7 @@ document.addEventListener('keydown', (event) => {
     if (key === '?' || (key === '/' && event.shiftKey)) { event.preventDefault(); openShortcutModal(); return; }
     if (key === 'v') { event.preventDefault(); setTool('select'); return; }
     if (key === 'b') { event.preventDefault(); setTool('brush'); return; }
+    if (key === 'i') { event.preventDefault(); setTool('eyedropper'); return; }
     if (key === 'r') { event.preventDefault(); setTool('region'); return; }
     if (key === 'h') { event.preventDefault(); setTool('pan'); return; }
     if (key === '[') { event.preventDefault(); nudgeBrushSize(-2); return; }
@@ -3803,6 +3895,9 @@ function buildRenderPayload(operation = 'render') {
       radius: Number(stroke.radius || 18),
       mode: stroke.mode || 'restore_clean',
       applied: Boolean(stroke.applied),
+      // Sin esto el trazo de pintar llega al servidor sin color y, por su regla de "sin
+      // color no se pinta", no hace nada. El pincel funcionaba y moria en el envio.
+      ...(Array.isArray(stroke.color) ? { color: stroke.color.map(Number) } : {}),
     })),
   };
 }
