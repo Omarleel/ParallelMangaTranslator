@@ -28,6 +28,7 @@ class CleanMaskStrategy:
         bubble_fill_whole_interior: bool,
         bubble_fill_edge_margin: int,
         bubble_fill_text_dilate: int,
+        fine_text_mask_dilate: int,
         bubble_fill_flat_max_rectangularity: float,
         ink_source=None,
     ) -> None:
@@ -36,6 +37,10 @@ class CleanMaskStrategy:
         self.bubble_fill_whole_interior = bool(bubble_fill_whole_interior)
         self.bubble_fill_edge_margin = int(bubble_fill_edge_margin)
         self.bubble_fill_text_dilate = int(bubble_fill_text_dilate)
+        # `quality.fine_text_mask_dilate`. Se leia con un `getattr` cuyo defecto era
+        # `bubble_fill_text_dilate`, y como esta clase nunca lo asignaba, el ajuste que
+        # documenta QUALITY_PRECISION.md no hacia nada aqui: siempre ganaba el otro.
+        self.fine_text_mask_dilate = int(fine_text_mask_dilate)
         self.bubble_fill_flat_max_rectangularity = float(bubble_fill_flat_max_rectangularity)
 
     @staticmethod
@@ -255,7 +260,7 @@ class CleanMaskStrategy:
                     options=TextMaskRefinementOptions(
                         enabled=True,
                         fine_text_detection=bool(getattr(self, "fine_text_detection", True)),
-                        fine_mask_dilate=int(getattr(self, "fine_text_mask_dilate", self.bubble_fill_text_dilate)),
+                        fine_mask_dilate=self.fine_text_mask_dilate,
                         min_component_area=int(getattr(self, "ink_mask_min_component_area", 3)),
                         component_anchor_overlap=float(getattr(self, "ink_mask_component_anchor_overlap", 0.03)),
                         component_anchor_max_gap_ratio=float(getattr(self, "ink_mask_component_anchor_max_gap_ratio", 0.45)),
@@ -301,7 +306,7 @@ class CleanMaskStrategy:
                 options=TextMaskRefinementOptions(
                     enabled=True,
                     fine_text_detection=bool(getattr(self, "fine_text_detection", True)),
-                    fine_mask_dilate=int(getattr(self, "fine_text_mask_dilate", self.bubble_fill_text_dilate)),
+                    fine_mask_dilate=self.fine_text_mask_dilate,
                     min_component_area=int(getattr(self, "ink_mask_min_component_area", 3)),
                     component_anchor_overlap=float(getattr(self, "ink_mask_component_anchor_overlap", 0.03)),
                     component_anchor_max_gap_ratio=float(getattr(self, "ink_mask_component_anchor_max_gap_ratio", 0.45)),

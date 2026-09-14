@@ -10,7 +10,11 @@ sus dos colaboradores pesados se inyectan (se puede construir sin traductor ni m
 reales), y encadenar los pasos a mano da exactamente lo mismo que llamar a `traducir_manga`.
 """
 
+import json
+import os
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -73,13 +77,13 @@ def _region(bbox, alto=200, ancho=160):
     return TextRegion(bbox=bbox, text_bbox=bbox, mask=mask, kind="dialogue", confidence=0.9)
 
 
-def _traductor_de_prueba(ocr, traductor):
+def _traductor_de_prueba(ocr, traductor, quality_config=None):
     """Un `TranslateManga` real, sin motor OCR ni traductor de verdad detrás."""
     return TranslateManga(
         "en",
         "es",
         metodo_traduccion="Tradicional",
-        quality_config=QualityConfig(),
+        quality_config=quality_config or QualityConfig(),
         processing_config=ProcessingConfig(),
         ocr_manager=ocr,
         translator_manager=traductor,
@@ -173,6 +177,30 @@ class PasosDelPipelineTests(unittest.TestCase):
         # La igualdad de las dos páginas rotuladas es la equivalencia de verdad: cubre
         # texto, estilo y geometría de una vez.
         np.testing.assert_array_equal(salida_completa, ctx.imagen_final)
+
+    def test_el_volcado_de_recortes_usa_la_pagina_del_contexto(self):
+        """Regresión real: al sacar `indice_imagen` del traductor, este volcado siguió
+        leyéndolo con `getattr(..., 0)` y mandó los recortes de todas las páginas a
+        `pagina_0000`, pisándose. No fallaba nada: el defecto del `getattr` lo tapaba."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tm = _traductor_de_prueba(
+                _OcrFalso(["hello", "world"]),
+                _TraductorFalso(),
+                quality_config=QualityConfig(ocr_crop_debug_dir=tmp),
+            )
+            ctx = PageContext(
+                imagen=self.imagen,
+                indice_pagina=3,
+                mascara_capa=self.mascara,
+                regiones=list(self.regiones),
+            )
+
+            tm.extraer_regiones(ctx)
+
+            carpeta = Path(tmp) / "pagina_0003"
+            self.assertTrue(carpeta.is_dir(), f"esperaba pagina_0003, hay {os.listdir(tmp)}")
+            meta = json.loads((carpeta / "region_00.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["region_uid"], "p0004r0000", "el uid también sale de la página")
 
     def test_el_traductor_no_guarda_estado_de_la_pagina(self):
         """La razón de todo esto: un objeto de vida larga no puede ser el cuaderno de notas."""

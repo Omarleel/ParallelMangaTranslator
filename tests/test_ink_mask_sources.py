@@ -93,6 +93,7 @@ def test_the_detector_runs_once_per_page_not_once_per_region() -> None:
         bubble_fill_whole_interior=False,
         bubble_fill_edge_margin=5,
         bubble_fill_text_dilate=2,
+        fine_text_mask_dilate=2,
         bubble_fill_flat_max_rectangularity=0.86,
         ink_source=source,
     )
@@ -126,6 +127,7 @@ def test_the_strategy_without_a_source_behaves_exactly_as_before() -> None:
         "bubble_fill_whole_interior": False,
         "bubble_fill_edge_margin": 5,
         "bubble_fill_text_dilate": 2,
+        "fine_text_mask_dilate": 2,
         "bubble_fill_flat_max_rectangularity": 0.86,
     }
     sin_fuente = CleanMaskStrategy(**comun)

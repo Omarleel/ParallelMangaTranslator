@@ -123,7 +123,7 @@ class RegionExtractionMixin:
         """El recorte tal como lo recibe el OCR: enmascarado y preprocesado."""
         return self._prepare_crop_for_ocr(self._masked_region_crop(imagen, region))
 
-    def obtener_areas_interes_desde_regiones(self, imagen, regiones):
+    def obtener_areas_interes_desde_regiones(self, imagen, regiones, indice_pagina: int = 0):
         cuadros_delimitadores: List[Box] = []
         imagenes_interes = []
         regiones_ordenadas = self._sort_regions_for_reading(list(regiones))
@@ -132,13 +132,20 @@ class RegionExtractionMixin:
         for indice, region in enumerate(regiones_ordenadas):
             enmascarado = self._masked_region_crop(imagen, region)
             area_limpia = self._prepare_crop_for_ocr(enmascarado)
-            self._dump_ocr_crop(indice, region, enmascarado, area_limpia)
+            self._dump_ocr_crop(indice, region, enmascarado, area_limpia, indice_pagina)
             cuadros_delimitadores.append(region.render_bbox)
             imagenes_interes.append(area_limpia)
 
         return cuadros_delimitadores, imagenes_interes, regiones_ordenadas
 
-    def _dump_ocr_crop(self, indice: int, region: TextRegion, enmascarado: np.ndarray, preparado: np.ndarray) -> None:
+    def _dump_ocr_crop(
+        self,
+        indice: int,
+        region: TextRegion,
+        enmascarado: np.ndarray,
+        preparado: np.ndarray,
+        indice_pagina: int = 0,
+    ) -> None:
         """Vuelca lo que ve el OCR, si `quality.ocr_crop_debug_dir` lo pide.
 
         Se guardan las dos versiones: el enmascarado sirve para probar preprocesos
@@ -154,7 +161,10 @@ class RegionExtractionMixin:
         try:
             from pathlib import Path as _Path
 
-            pagina = int(getattr(self, "indice_imagen", 0) or 0)
+            # La pagina llega por parametro desde el contexto. Cuando la leia de
+            # `self.indice_imagen` con un `getattr` por defecto, quitar ese atributo dejo
+            # todos los recortes cayendo en `pagina_0000` sin que nada fallara.
+            pagina = int(indice_pagina)
             carpeta = _Path(destino) / f"pagina_{pagina:04d}"
             carpeta.mkdir(parents=True, exist_ok=True)
             if enmascarado is not None and getattr(enmascarado, "size", 0):

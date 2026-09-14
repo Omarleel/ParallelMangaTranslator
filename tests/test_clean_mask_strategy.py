@@ -16,6 +16,9 @@ AJUSTES = dict(
     bubble_fill_whole_interior=False,
     bubble_fill_edge_margin=6,
     bubble_fill_text_dilate=2,
+    # A propósito distinto de `bubble_fill_text_dilate`: son dos ajustes, y durante un
+    # tiempo la estrategia leyó el primero cuando le pedían el segundo.
+    fine_text_mask_dilate=3,
     bubble_fill_flat_max_rectangularity=0.82,
 )
 
@@ -36,6 +39,7 @@ class CleanMaskStrategyTests(unittest.TestCase):
         """Antes se leían del `self` del `CleanManga` que la heredara."""
         self.assertEqual(self.e.bubble_fill_edge_margin, 6)
         self.assertEqual(self.e.bubble_fill_text_dilate, 2)
+        self.assertEqual(self.e.fine_text_mask_dilate, 3, "no puede volver a caer en el otro dilate")
         self.assertFalse(self.e.bubble_fill_whole_interior)
         self.assertAlmostEqual(self.e.bubble_fill_flat_max_rectangularity, 0.82)
 

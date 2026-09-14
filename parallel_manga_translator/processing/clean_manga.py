@@ -66,11 +66,12 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanInpai
         self.bubble_fill_feather = float(quality_config.bubble_fill_feather)
         self.bubble_fill_flat_max_rectangularity = float(quality_config.bubble_fill_flat_max_rectangularity)
         # Colaborador explícito: 12 de sus 13 métodos son puros y el otro sólo necesita
-        # estos cuatro ajustes, que antes leía del `self` de quien la heredara.
+        # estos ajustes, que antes leía del `self` de quien la heredara.
         self.mask_strategy = mask_strategy if mask_strategy is not None else CleanMaskStrategy(
             bubble_fill_whole_interior=self.bubble_fill_whole_interior,
             bubble_fill_edge_margin=self.bubble_fill_edge_margin,
             bubble_fill_text_dilate=self.bubble_fill_text_dilate,
+            fine_text_mask_dilate=int(quality_config.fine_text_mask_dilate),
             bubble_fill_flat_max_rectangularity=self.bubble_fill_flat_max_rectangularity,
             # La eleccion vive en la factory, no aqui: anadir otra fuente no toca esto.
             ink_source=create_ink_mask_source(quality_config),

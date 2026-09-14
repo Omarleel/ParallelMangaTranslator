@@ -28,7 +28,7 @@ class TranslationOrchestratorMixin:
         """
         if ctx.regiones:
             ctx.cuadros, ctx.recortes, ctx.regiones_ordenadas = self.obtener_areas_interes_desde_regiones(
-                ctx.imagen, ctx.regiones
+                ctx.imagen, ctx.regiones, ctx.indice_pagina
             )
         else:
             ctx.cuadros, ctx.recortes = self.obtener_areas_interes(ctx.imagen, ctx.mascara_capa)
