@@ -93,6 +93,23 @@ class TraducirTextos:
         self.translator.traducir_textos_de_regiones(ctx)
 
 
+class PublicarTranscripcion:
+    """Deja la transcripción en su cola sin traducir.
+
+    Es lo que separa «limpiar y transcribir» de un solo-OCR que no deja rastro: el OCR ya
+    puso los textos en el contexto, pero quien los escribe en `Transcripción.json` es el
+    paso 3, y ese paso traduce.
+    """
+
+    nombre = "publicar_transcripcion"
+
+    def __init__(self, translator: PageTranslatorPort) -> None:
+        self.translator = translator
+
+    def run(self, ctx: PageContext) -> None:
+        self.translator.publicar_transcripcion(ctx)
+
+
 class RotularPagina:
     """Dibuja los textos ya resueltos sobre la imagen limpia."""
 
@@ -163,12 +180,46 @@ def pipeline_solo_ocr(translator: PageTranslatorPort) -> Pipeline:
 # Una composicion "completa" solo serviria para que alguien la usara y se saltara eso.
 
 
+def pipeline_transcripcion(translator: PageTranslatorPort) -> Pipeline:
+    """Localiza, transcribe y publica. Ni traduce ni rotula."""
+    return Pipeline([ExtraerRegiones(translator), TranscribirTextos(translator), PublicarTranscripcion(translator)])
+
+
+#: Lo que se le puede pedir al pipeline para una página. `traducir` es el de siempre.
+MODOS_PIPELINE = ("traducir", "limpiar", "limpiar_transcribir")
+
+
+def normalizar_modo_pipeline(valor: object, por_defecto: str = "traducir") -> str:
+    modo = str(valor or "").strip().lower()
+    return modo if modo in MODOS_PIPELINE else por_defecto
+
+
+def pipelines_por_modo(
+    modo: str, cleaner: PageCleanerPort, translator: PageTranslatorPort
+) -> tuple[Pipeline, Pipeline]:
+    """Las dos composiciones que recibe `ImageProcessor`, según lo que se quiera obtener.
+
+    Siguen siendo dos porque `procesar_pipeline` las corre en hilos distintos. Parar antes
+    no es un modo degradado: limpiar sin traducir es un trabajo legítimo, y transcribir sin
+    traducir deja el JSON que el editor manual sabe abrir.
+    """
+    modo = normalizar_modo_pipeline(modo)
+    limpieza = pipeline_limpieza(cleaner)
+    if modo == "limpiar":
+        # Sin etapas: `imagen_final` queda a None y el orquestador no escribe traducción.
+        return limpieza, Pipeline([])
+    if modo == "limpiar_transcribir":
+        return limpieza, pipeline_transcripcion(translator)
+    return limpieza, pipeline_traduccion(translator)
+
+
 def pipeline_limpieza_y_ocr(cleaner: PageCleanerPort, translator: PageTranslatorPort) -> Pipeline:
     """Lo que mide `eval_runner`: limpia, localiza y transcribe. No traduce ni rotula."""
     return Pipeline(pipeline_limpieza(cleaner).stages + pipeline_solo_ocr(translator).stages)
 
 
 __all__ = [
+    "MODOS_PIPELINE",
     "PageContext",
     "PageStage",
     "Pipeline",
@@ -181,4 +232,8 @@ __all__ = [
     "pipeline_traduccion",
     "pipeline_solo_ocr",
     "pipeline_limpieza_y_ocr",
+    "pipeline_transcripcion",
+    "pipelines_por_modo",
+    "normalizar_modo_pipeline",
+    "PublicarTranscripcion",
 ]

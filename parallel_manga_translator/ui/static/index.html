@@ -89,6 +89,22 @@
 
         <div class="form-section">
           <div class="section-heading">
+            <h2>Qué quieres hacer</h2>
+            <p>Puedes parar antes de traducir. Limpiar y transcribir son trabajos completos, no versiones a medias.</p>
+          </div>
+          <label class="field compact">
+            <span>Trabajo</span>
+            <select id="pipelineMode" name="modo">
+              <option value="traducir" selected>Traducir (limpiar, transcribir, traducir y rotular)</option>
+              <option value="limpiar_transcribir">Limpiar y transcribir (sin traducir)</option>
+              <option value="limpiar">Solo limpiar (borrar el texto original)</option>
+            </select>
+          </label>
+          <p id="pipelineModeHint" class="hint"></p>
+        </div>
+
+        <div class="form-section">
+          <div class="section-heading">
             <h2>Imágenes</h2>
             <p>Carga una carpeta local o un ZIP. Si eliges ambos, se importarán ambos conjuntos.</p>
           </div>
@@ -831,6 +847,6 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=14"></script>
+  <script src="/static/app.js?v=15"></script>
 </body>
 </html>

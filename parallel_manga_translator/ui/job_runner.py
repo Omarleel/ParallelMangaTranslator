@@ -25,6 +25,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from parallel_manga_translator.bootstrap import build_image_processor
+from parallel_manga_translator.processing.pipeline import normalizar_modo_pipeline
 from parallel_manga_translator.infrastructure.execution_control import (
     ExecutionControl,
     JobCancelledError,
@@ -87,12 +88,25 @@ class JobRunner:
                         trad_queue.put({"agregar_entrada": {"Título": job.title, "Páginas": len(job.pages)}})
 
                         processor = build_image_processor(config)
+                        # Que se espera de cada pagina depende del modo: sin rotulado no
+                        # hay imagen traducida, y exigirla haria fallar un trabajo correcto.
+                        modo = normalizar_modo_pipeline(config.processing.modo_pipeline)
+                        rotula = modo == "traducir"
+                        tarea = {
+                            "traducir": "OCR, limpieza, traducción y renderizado",
+                            "limpiar": "limpieza",
+                            "limpiar_transcribir": "limpieza y transcripción",
+                        }[modo]
                         max_attempts = max(1, int(job.options.page_max_retries) + 1)
                         retry_backoff = max(0.0, float(job.options.retry_backoff_seconds))
 
                         for page in job.pages:
                             control.checkpoint()
-                            if page.status == "ready" and Path(page.clean_path).exists() and Path(page.translated_path).exists():
+                            if (
+                                page.status == "ready"
+                                and Path(page.clean_path).exists()
+                                and (not rotula or Path(page.translated_path).exists())
+                            ):
                                 continue
                             if page.status == "cancelled":
                                 continue
@@ -106,7 +120,7 @@ class JobRunner:
                                     page.attempt_count += 1
                                     page.status = "processing"
                                     page.message = (
-                                        f"Procesando OCR, limpieza, traducción y renderizado "
+                                        f"Procesando {tarea} "
                                         f"(intento {page.attempt_count}/{max_attempts})…"
                                     )
                                     page.last_error = ""
@@ -131,7 +145,9 @@ class JobRunner:
                                     control.checkpoint()
                                     trans_queue.put({"ordenar_por_paginas": {"tipo": "Transcripción"}})
                                     trad_queue.put({"ordenar_por_paginas": {"tipo": "Traducción"}})
-                                    if not Path(page.translated_path).exists() or not Path(page.clean_path).exists():
+                                    if not Path(page.clean_path).exists() or (
+                                        rotula and not Path(page.translated_path).exists()
+                                    ):
                                         raise RuntimeError("El pipeline terminó sin generar las imágenes esperadas.")
 
                                     with self._support.state_lock:

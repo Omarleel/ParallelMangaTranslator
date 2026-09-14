@@ -227,5 +227,9 @@ class PageTranslatorPort(Protocol):
     def traducir_textos_de_regiones(self, ctx: PageContext) -> None:
         ...
 
+    def publicar_transcripcion(self, ctx: PageContext) -> None:
+        """Escribe la transcripción sin traducir. La usa el modo «limpiar y transcribir»."""
+        ...
+
     def rotular(self, ctx: PageContext) -> None:
         ...

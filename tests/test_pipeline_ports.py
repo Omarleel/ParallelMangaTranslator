@@ -28,6 +28,7 @@ METODOS_TRANSLATOR = (
     "extraer_regiones",
     "obtener_textos",
     "traducir_textos_de_regiones",
+    "publicar_transcripcion",
     "rotular",
 )
 
@@ -56,6 +57,9 @@ class _TranslatorFalso:
         pass
 
     def traducir_textos_de_regiones(self, ctx):
+        pass
+
+    def publicar_transcripcion(self, ctx):
         pass
 
     def rotular(self, ctx):

@@ -173,6 +173,22 @@ class TranslationPipelineMixin:
             enriched.append(merged)
         return enriched
 
+    def clasificar_pagina(self, ctx: PageContext, textos_limpios: Sequence[str]) -> List[bool]:
+        """Deja en el contexto qué regiones pasan el filtro de idioma y con qué estilo.
+
+        Lo usan tanto traducir como publicar solo la transcripción, y ambas escriben en las
+        colas de JSON. Si divergieran, el modo «limpiar y transcribir» produciría un
+        `Transcripción.json` distinto del de una traducción completa, que es justo lo que
+        no puede pasar: el editor manual consume el mismo archivo en los dos casos.
+        """
+        regiones = ctx.regiones_ordenadas
+        ctx.flags_idioma_origen = self._source_language_flags_for_texts(textos_limpios, regiones)
+        ctx.estilos = [
+            estilo if ctx.flags_idioma_origen[idx] else "omitido_idioma_origen"
+            for idx, estilo in enumerate(self._clasificar_estilos_texto(textos_limpios, regiones))
+        ]
+        return ctx.flags_idioma_origen
+
     def traducir_textos(self, ctx: PageContext) -> None:
         """Traduce `ctx.textos_originales` y deja en el contexto todo lo que produce.
 
@@ -185,12 +201,7 @@ class TranslationPipelineMixin:
         """
         regiones = ctx.regiones_ordenadas
         textos_limpios = [self.normalizar_texto_ocr(texto) for texto in ctx.textos_originales]
-        source_language_flags = self._source_language_flags_for_texts(textos_limpios, regiones)
-        ctx.flags_idioma_origen = source_language_flags
-        ctx.estilos = [
-            estilo if source_language_flags[idx] else "omitido_idioma_origen"
-            for idx, estilo in enumerate(self._clasificar_estilos_texto(textos_limpios, regiones))
-        ]
+        source_language_flags = self.clasificar_pagina(ctx, textos_limpios)
         base_metadata = self._region_metadata_for_translation(textos_limpios, regiones)
 
         keep_onomatopoeia_flags = [

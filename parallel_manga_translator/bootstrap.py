@@ -38,6 +38,7 @@ from parallel_manga_translator.io.utilities import Utilities
 from parallel_manga_translator.detection.region_source_factory import create_region_source
 from parallel_manga_translator.processing.clean_manga import CleanManga
 from parallel_manga_translator.processing.image_processor import ImageProcessor
+from parallel_manga_translator.processing.pipeline import pipelines_por_modo
 from parallel_manga_translator.processing.translate_manga import TranslateManga
 
 _proceso_configurado = False
@@ -127,7 +128,9 @@ def build_image_processor(config: ApplicationConfig) -> ImageProcessor:
         processing_config=config.processing,
         region_semantics=build_region_semantics(config),
     )
-    return ImageProcessor(cleaner, translator)
+    # Que se le pide al pipeline se decide aqui, no dentro del orquestador.
+    limpieza, traduccion = pipelines_por_modo(config.processing.modo_pipeline, cleaner, translator)
+    return ImageProcessor(cleaner, translator, pipeline_limpieza=limpieza, pipeline_traduccion=traduccion)
 
 
 def ensure_output_directories(config: ApplicationConfig) -> None:

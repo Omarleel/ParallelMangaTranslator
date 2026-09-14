@@ -23,6 +23,9 @@ from parallel_manga_translator.config.constants import MODELOS_INPAINT, normaliz
 from parallel_manga_translator.config.environment import bool_value, float_value, int_value
 
 
+from parallel_manga_translator.processing.pipeline import normalizar_modo_pipeline
+
+
 class ConfigManager:
     """Carga configuración funcional exclusivamente desde YAML/JSON.
 
@@ -217,6 +220,7 @@ class ConfigManager:
             cache=bool_value(processing_section.get("cache", True), True),
             cache_dir=str(processing_section.get("cache_dir", ".cache")),
             max_workers=max_workers,
+            modo_pipeline=normalizar_modo_pipeline(processing_section.get("modo_pipeline", "traducir")),
         )
 
     def _build_quality_config(self) -> QualityConfig:

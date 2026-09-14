@@ -25,6 +25,7 @@ from parallel_manga_translator.processing.pipeline import (
     TranscribirTextos,
     pipeline_limpieza_y_ocr,
     pipeline_solo_ocr,
+    pipelines_por_modo,
 )
 
 
@@ -69,6 +70,10 @@ class _TranslatorFalso:
         ctx.textos_originales = list(ctx.textos)
         ctx.textos_traducidos = ["hola"]
         ctx.textos_para_render = ["hola"]
+
+    def publicar_transcripcion(self, ctx):
+        self.pasos.append("publicar_transcripcion")
+        ctx.textos_originales = list(ctx.textos)
 
     def rotular(self, ctx):
         self.pasos.append("rotular")
@@ -176,6 +181,32 @@ class OrquestadorConComposicionParcialTests(unittest.TestCase):
         # El orquestador renombra la salida por indice de pagina, no conserva el origen.
         self.assertEqual([p.name for p in self.limpieza.iterdir()], ["0001.png"])
         self.assertEqual(list(self.traduccion.iterdir()), [])
+
+    def test_el_modo_solo_limpiar_guarda_la_pagina_limpia_y_nada_mas(self):
+        """Limpiar sin traducir es un trabajo completo, no una ejecución a medias."""
+        translator = _TranslatorFalso()
+        limpieza, traduccion = pipelines_por_modo("limpiar", _CleanerFalso(), translator)
+
+        self._procesar(translator=translator, pipeline_limpieza=limpieza, pipeline_traduccion=traduccion)
+
+        self.assertEqual(translator.pasos, ["json_queue"], "no debe tocar OCR ni traductor")
+        self.assertEqual([p.name for p in self.limpieza.iterdir()], ["0001.png"])
+        self.assertEqual(list(self.traduccion.iterdir()), [])
+
+    def test_el_modo_limpiar_y_transcribir_publica_el_json_sin_traducir(self):
+        """Sin publicar, la transcripción se quedaría en memoria y el editor no vería nada:
+        quien escribe `Transcripción.json` en el modo completo es el paso que traduce."""
+        translator = _TranslatorFalso()
+        limpieza, traduccion = pipelines_por_modo("limpiar_transcribir", _CleanerFalso(), translator)
+
+        self._procesar(translator=translator, pipeline_limpieza=limpieza, pipeline_traduccion=traduccion)
+
+        self.assertEqual(
+            translator.pasos,
+            ["json_queue", "extraer", "transcribir", "publicar_transcripcion"],
+        )
+        self.assertEqual([p.name for p in self.limpieza.iterdir()], ["0001.png"])
+        self.assertEqual(list(self.traduccion.iterdir()), [], "sin rotular no hay página traducida")
 
     def test_la_composicion_por_defecto_si_guarda_la_traduccion(self):
         """El contraste: sin esto, el test de arriba pasaría aunque nada funcionara."""

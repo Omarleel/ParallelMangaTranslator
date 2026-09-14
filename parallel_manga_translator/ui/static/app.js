@@ -63,6 +63,8 @@ const sourceLanguage = $('sourceLanguage');
 const targetLanguage = $('targetLanguage');
 const translatorSelect = $('translatorSelect');
 const regionSource = $('regionSource');
+const pipelineMode = $('pipelineMode');
+const pipelineModeHint = $('pipelineModeHint');
 const inpaintModel = $('inpaintModel');
 const detectionEngine = $('detectionEngine');
 const transcriptionEngine = $('transcriptionEngine');
@@ -849,6 +851,33 @@ async function requestJson(url, options = {}) {
   return payload;
 }
 
+const PIPELINE_MODE_LABELS = {
+  traducir: 'Traducción completa',
+  limpiar_transcribir: 'Limpieza y transcripción',
+  limpiar: 'Solo limpieza',
+};
+
+const PIPELINE_MODE_HINTS = {
+  traducir: 'Limpia el texto original, lo transcribe, lo traduce y rotula la página.',
+  limpiar_transcribir: 'Deja las páginas limpias y el texto transcrito en Transcripción.json. No traduce ni rotula, así que puedes traducir fuera y reimportar con «Importar textos».',
+  limpiar: 'Solo borra el texto original de las páginas. No transcribe ni traduce.',
+};
+
+function updatePipelineModeUi() {
+  const modo = pipelineMode?.value || 'traducir';
+  if (pipelineModeHint) pipelineModeHint.textContent = PIPELINE_MODE_HINTS[modo] || '';
+  // Lo que no se va a usar se desactiva: dejarlo editable sugiere que influye.
+  const traduce = modo === 'traducir';
+  [translatorSelect, targetLanguage].forEach((campo) => {
+    if (!campo) return;
+    campo.disabled = !traduce;
+    campo.closest('.field')?.classList.toggle('field-disabled', !traduce);
+  });
+}
+
+pipelineMode?.addEventListener('change', updatePipelineModeUi);
+updatePipelineModeUi();
+
 advancedToggle.addEventListener('click', () => {
   const willOpen = advancedOptions.classList.contains('hidden');
   advancedOptions.classList.toggle('hidden');
@@ -880,6 +909,7 @@ uploadForm.addEventListener('submit', async (event) => {
   data.append('target_language', targetLanguage.value || 'Español');
   data.append('translator', translatorSelect.value || 'llm');
   data.append('region_source', regionSource?.value || 'yolo');
+  data.append('modo', pipelineMode?.value || 'traducir');
   data.append('inpaint_model', inpaintModel.value || 'auto');
   data.append('detection_engine', detectionEngine.value || 'auto');
   data.append('transcription_engine', transcriptionEngine.value || 'auto');
@@ -1037,7 +1067,13 @@ function renderJob(job) {
   const fuenteRegiones = opts.region_source && opts.region_source !== 'yolo'
     ? ` · Regiones: ${regionSourceLabel(opts.region_source)}`
     : '';
-  jobOptionsSummary.textContent = `${opts.source_language || 'Entrada'} → ${opts.target_language || 'Salida'} · ${opts.translator === 'google' ? 'Google' : 'LLM'} · Inpainting: ${inpaintModelLabel(opts.inpaint_model)}${fuenteRegiones}`;
+  // Un trabajo que no traduce tiene que decirlo lo primero: si no, el resumen prometería
+  // una traducción que nadie pidió y las páginas parecerían salidas a medias.
+  if (opts.modo && opts.modo !== 'traducir') {
+    jobOptionsSummary.textContent = `${PIPELINE_MODE_LABELS[opts.modo] || opts.modo} · ${opts.source_language || 'Entrada'} · Inpainting: ${inpaintModelLabel(opts.inpaint_model)}${fuenteRegiones}`;
+  } else {
+    jobOptionsSummary.textContent = `${opts.source_language || 'Entrada'} → ${opts.target_language || 'Salida'} · ${opts.translator === 'google' ? 'Google' : 'LLM'} · Inpainting: ${inpaintModelLabel(opts.inpaint_model)}${fuenteRegiones}`;
+  }
   jobBadge.textContent = readableStatus(job.status);
   jobBadge.className = `badge ${job.status === 'ready' ? 'ready' : job.status === 'failed' ? 'failed' : ''}`;
   progressBar.style.width = `${job.progress || 0}%`;

@@ -130,6 +130,17 @@ class RenderingPipelineMixin:
         ctx.textos_para_render = self.resolver_textos_para_render(ctx)
         self._push_translated_texts_to_queue(ctx)
 
+    def publicar_transcripcion(self, ctx: PageContext) -> None:
+        """Escribe la transcripción en su cola sin traducir ni rotular.
+
+        `traducir_textos_de_regiones` hace esto como parte de traducir; aquí se necesita
+        suelto, porque el modo «limpiar y transcribir» tiene que dejar el mismo
+        `Transcripción.json` que dejaría una ejecución completa.
+        """
+        ctx.textos_originales = [self.normalizar_texto_ocr(texto) for texto in ctx.textos]
+        self.clasificar_pagina(ctx, ctx.textos_originales)
+        self._push_original_texts_to_queue(ctx)
+
     def rotular(self, ctx: PageContext) -> None:
         """Paso 4: dibuja los textos ya resueltos sobre la imagen limpia."""
         cuadros_delimitadores = ctx.cuadros

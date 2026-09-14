@@ -84,6 +84,13 @@ def safe_flat_name(original_name: str, used: set[str]) -> str:
     return candidate
 
 
+def normalize_pipeline_mode(value: str, fallback: str = "traducir") -> str:
+    """Modo de trabajo elegido en la UI. La lista canónica vive en el pipeline."""
+    from parallel_manga_translator.processing.pipeline import normalizar_modo_pipeline
+
+    return normalizar_modo_pipeline(value, fallback)
+
+
 def normalize_region_source(value: str, fallback: str = "yolo") -> str:
     """Valida la fuente de regiones contra el registry, sin duplicar la lista aqui."""
     from parallel_manga_translator.detection.region_source_factory import REGION_SOURCES
@@ -934,8 +941,12 @@ class JobManager:
                 return manual_background
             return Path(page.clean_path)
         if variant == "current":
-            corrected = Path(page.corrected_path)
-            return corrected if corrected.exists() else Path(page.translated_path)
+            # Corregida > traducida > limpia. La ultima importa: en los modos que no
+            # rotulan no hay imagen traducida, y sin este salto la vista se quedaria rota.
+            for candidata in (Path(page.corrected_path), Path(page.translated_path)):
+                if candidata.exists():
+                    return candidata
+            return Path(page.clean_path)
         raise ValueError("Variante de imagen no soportada.")
 
     def export_job_texts(self, job_id: str) -> Dict[str, Any]:
@@ -1153,6 +1164,7 @@ class JobManager:
             config.processing,
             ruta_carpeta_entrada=job.input_dir,
             cache_dir=str(Path(job.root_dir) / ".cache"),
+            modo_pipeline=normalize_pipeline_mode(options.modo),
         )
         logging = replace(config.logging, file=str(Path(job.root_dir) / "job.log"))
         # `quality` no se replicaba por trabajo, asi que la fuente de regiones elegida en

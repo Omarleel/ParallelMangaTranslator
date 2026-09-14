@@ -122,6 +122,9 @@ class JobOptions:
     # Fuente de regiones por trabajo: yolo | comic_text_detector. Se elige por trabajo
     # y no globalmente porque su ventaja depende del material, medido en dataset_eval.
     region_source: str = "yolo"
+    # Que se le pide al pipeline: traducir (todo), limpiar (solo borrar el texto) o
+    # limpiar_transcribir (deja Transcripción.json, sin traducir ni rotular).
+    modo: str = "traducir"
     inpaint_model: str = "auto"
     page_max_retries: int = 2
     retry_backoff_seconds: float = 2.0

@@ -75,6 +75,9 @@ class ProcessingConfig:
     cache: bool = True
     cache_dir: str = ".cache"
     max_workers: Optional[int] = None
+    #: Qué se le pide al pipeline: `traducir` (todo), `limpiar` (solo borrar el texto) o
+    #: `limpiar_transcribir` (además deja `Transcripción.json`, sin traducir ni rotular).
+    modo_pipeline: str = "traducir"
 
     @property
     def ruta_carpeta_salida(self) -> str:
