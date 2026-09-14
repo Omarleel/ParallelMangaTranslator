@@ -14,7 +14,7 @@ class TranslationProviderConfig:
     # al detectar que nos está limitando. Ver `traditional_translation_mixin`.
     traditional_min_interval: float = 0.5
     traditional_block_cooldown: float = 6.0
-    traditional_block_max_wait: float = 180.0
+    traditional_block_max_wait: float = 60.0
     llm_provider: str = "groq"
     llm_model: str = "qwen/qwen3.8-27b"
     strict_json_schema: bool = True

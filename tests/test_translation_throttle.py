@@ -8,7 +8,9 @@ no se puede traducir".
 
 import time
 import unittest
+from unittest import mock
 
+from parallel_manga_translator.translation import traditional_translation_mixin as throttle
 from parallel_manga_translator.translation.traditional_translation_mixin import (
     TraditionalTranslationMixin,
     _MAX_REINTENTOS_BLOQUEO,
@@ -158,6 +160,24 @@ class TraditionalThrottleTests(unittest.TestCase):
 
         self.assertEqual(provider.traducir_texto("B"), "B")
         self.assertEqual(translator.llamadas.count("B"), 1)
+
+    def test_el_margen_cuenta_la_pausa_que_viene_y_no_se_pasa(self):
+        """El techo tiene que ser un techo de lo que se espera de verdad.
+
+        Se comprobaba **después** de sumar la pausa siguiente, así que el aviso declaraba
+        un tiempo que nunca llegaba a esperarse: con 180s configurados, el log decía
+        "siguió limitando tras 225s". Ahora la pausa que viene entra en la cuenta antes de
+        decidir, así que lo esperado y lo dicho coinciden y no pasan del margen.
+        """
+        translator = _FakeTranslator(fallos={"B"})
+        provider = _Provider(translator, cooldown=1.0, max_wait=3.0)
+        dormido = []
+
+        with mock.patch.object(throttle, "cooperative_sleep", dormido.append):
+            self.assertEqual(provider.traducir_texto("B"), "B")
+
+        self.assertLess(sum(dormido), 3.0, f"esperó {sum(dormido):.1f}s con un margen de 3s")
+        self.assertGreater(len(dormido), 0, "debe reintentar al menos una vez antes de rendirse")
 
     def test_un_bloqueo_aplaza_las_peticiones_siguientes(self):
         castigo = _registrar_bloqueo("google", 1.0)

@@ -119,7 +119,7 @@ class TraditionalTranslationMixin:
     # Los proveedores los sobrescriben desde config.yaml (`translation.traditional_*`).
     traditional_min_interval: float = 0.5
     traditional_block_cooldown: float = 6.0
-    traditional_block_max_wait: float = 180.0
+    traditional_block_max_wait: float = 60.0
 
     def _build_traditional_translator(self):
         if DeeplTranslator is None or GoogleTranslator is None:
@@ -234,14 +234,10 @@ class TraditionalTranslationMixin:
         """
         provider = str(self.provider or "traditional")
         if _es_bloqueo_de_proveedor(exc, texto):
-            castigo = _registrar_bloqueo(provider, self.traditional_block_cooldown)
-            logger.warning(
-                "%s está limitando las peticiones; pausando %.1fs antes de reintentar: %s",
-                provider,
-                castigo,
-                _resumen_texto(texto),
-            )
-            return castigo
+            # Aquí no se avisa de la pausa: quien decide si de verdad habrá reintento es
+            # `traducir_texto`, y anunciar "pausando Xs antes de reintentar" para acto
+            # seguido rendirse era exactamente lo que se leía en los logs.
+            return _registrar_bloqueo(provider, self.traditional_block_cooldown)
 
         logger.warning(
             "Fallo en traducción tradicional intento %s/%s: %s --> %s",
@@ -287,15 +283,31 @@ class TraditionalTranslationMixin:
                 # a los textos que caen dentro de la ventana de bloqueo, elegidos al azar.
                 # Se espera a que pase, con un techo total para no colgar el trabajo.
                 bloqueos += 1
-                espera_por_bloqueo += castigo
-                if espera_por_bloqueo >= self.traditional_block_max_wait or bloqueos >= _MAX_REINTENTOS_BLOQUEO:
+                # El margen se comprueba contando la pausa que viene, no después de
+                # haberla sumado: comprobarlo después dejaba pasar una espera entera por
+                # encima del techo (180s configurados, 225s esperados de verdad).
+                if (espera_por_bloqueo + castigo >= self.traditional_block_max_wait
+                        or bloqueos >= _MAX_REINTENTOS_BLOQUEO):
                     logger.warning(
-                        "%s siguió limitando tras %.0fs; el texto queda sin traducir: %s",
+                        "%s sigue limitando y se agota el margen de %.0fs (esperados %.0fs); "
+                        "el texto queda sin traducir: %s",
                         self.provider,
+                        self.traditional_block_max_wait,
                         espera_por_bloqueo,
                         _resumen_texto(texto),
                     )
                     return texto
+
+                espera_por_bloqueo += castigo
+                logger.warning(
+                    "%s está limitando las peticiones; pausando %.1fs antes de reintentar "
+                    "(%.0fs de %.0fs de margen): %s",
+                    self.provider,
+                    castigo,
+                    espera_por_bloqueo,
+                    self.traditional_block_max_wait,
+                    _resumen_texto(texto),
+                )
 
     def traducir_textos_tradicional(self, textos: Sequence[str]) -> List[str]:
         """Traduce una lista deduplicando y cacheando texto a texto.

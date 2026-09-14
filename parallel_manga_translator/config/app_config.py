@@ -58,7 +58,7 @@ class TranslationConfig:
     # el único freno posible es este. Ver `translation/traditional_translation_mixin.py`.
     traditional_min_interval: float = 0.5
     traditional_block_cooldown: float = 6.0
-    traditional_block_max_wait: float = 180.0
+    traditional_block_max_wait: float = 60.0
     llm: LlmConfig = field(default_factory=LlmConfig)
     project_dir: Optional[str] = None
 
