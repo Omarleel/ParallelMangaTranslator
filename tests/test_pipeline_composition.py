@@ -2,7 +2,7 @@
 
 Antes la secuencia estaba escrita por dentro de `limpiar_manga` y `traducir_manga`, así
 que ejecutar sólo una parte obligaba a reimplementarla. `eval_runner` lo hacía, y al
-hacerlo tocaba `ultimas_regiones` directamente. Estos tests fijan que las composiciones
+hacerlo tocaba el estado interno del traductor. Estos tests fijan que las composiciones
 por defecto son las que ya se ejecutaban y que una parcial funciona de verdad de punta a
 punta, que es lo único que prueba que la composición sirve para algo.
 """
@@ -33,53 +33,48 @@ class _CleanerFalso:
         self.regiones = list(regiones)
         self.paginas = 0
 
-    def limpiar_manga(self, imagen):
+    def limpiar_manga(self, ctx):
         self.paginas += 1
-        mascara = np.zeros(imagen.shape[:2], dtype=np.uint8)
-        return mascara, imagen.copy(), list(self.regiones)
-
-    def set_debug_page_context(self, page_index, *, source_filename=None, output_filename=None):
-        pass
-
-    def clear_debug_page_context(self):
-        pass
-
-    def set_visual_inpaint_debug_context(self, output_root, page_index, filename):
-        pass
-
-    def clear_visual_inpaint_debug_context(self):
-        pass
+        ctx.mascara_capa = np.zeros(ctx.imagen.shape[:2], dtype=np.uint8)
+        ctx.imagen_limpia = ctx.imagen.copy()
+        ctx.regiones = list(self.regiones)
 
 
 class _TranslatorFalso:
-    """Registra qué pasos se ejecutaron, que es lo que distingue una composición de otra."""
+    """Registra qué pasos se ejecutaron, que es lo que distingue una composición de otra.
+
+    Cada paso escribe en el contexto, como los de verdad: el doble de prueba también
+    sirve para fijar que ningún paso devuelve el estado por la puerta de atrás.
+    """
 
     def __init__(self, ordenadas=()):
-        self.ultimas_regiones = list(ordenadas)
+        self.ordenadas = list(ordenadas)
         self.pasos = []
-        self.ultimos_textos_originales = []
-        self.ultimos_textos_traducidos = []
 
-    def insertar_json_queue(self, indice_imagen, transcripcion_queue, traduccion_queue):
+    def insertar_json_queue(self, transcripcion_queue, traduccion_queue):
         self.pasos.append("json_queue")
 
-    def extraer_regiones(self, imagen, mascara_capa, text_regions=None):
+    def extraer_regiones(self, ctx):
         self.pasos.append("extraer")
-        return [(0, 0, 4, 4)], [imagen[:4, :4]]
+        ctx.cuadros = [(0, 0, 4, 4)]
+        ctx.recortes = [ctx.imagen[:4, :4]]
+        ctx.regiones_ordenadas = list(self.ordenadas)
 
-    def obtener_textos(self, imagenes_interes):
+    def obtener_textos(self, ctx):
         self.pasos.append("transcribir")
-        return ["hello"]
+        ctx.textos = ["hello"]
 
-    def traducir_textos_de_regiones(self, cuadros_delimitadores, textos):
+    def traducir_textos_de_regiones(self, ctx):
         self.pasos.append("traducir")
-        return ["hola"]
+        ctx.textos_originales = list(ctx.textos)
+        ctx.textos_traducidos = ["hola"]
+        ctx.textos_para_render = ["hola"]
 
-    def rotular(self, imagen_limpia, cuadros_delimitadores, textos_para_render):
+    def rotular(self, ctx):
         self.pasos.append("rotular")
-        return imagen_limpia
+        ctx.imagen_final = ctx.imagen_limpia
 
-    def traducir_manga(self, imagen, imagen_limpia, mascara_capa, text_regions=None):
+    def traducir_manga(self, imagen, imagen_limpia, mascara_capa, text_regions=None, indice_pagina=0):
         self.pasos.append("traducir_manga")
         return imagen_limpia
 

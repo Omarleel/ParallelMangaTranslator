@@ -4,6 +4,7 @@ from typing import Tuple
 
 
 from parallel_manga_translator.infrastructure.logging_config import get_logger
+from parallel_manga_translator.models.page_context import PageContext
 from parallel_manga_translator.rendering.text_color_estimator import estimar_colores
 
 Box = Tuple[int, int, int, int]
@@ -13,30 +14,28 @@ logger = get_logger(__name__)
 class TranslationOrchestratorMixin:
     """Orquestación de alto nivel para traducir una página."""
 
-    def insertar_json_queue(self, indice_imagen, transcripcion_queue, traduccion_queue):
-        self.indice_imagen = indice_imagen
+    def insertar_json_queue(self, transcripcion_queue, traduccion_queue):
+        """Las colas de salida del trabajo. El índice de página ya no viene por aquí:
+        es estado de la página y viaja en `PageContext.indice_pagina`."""
         self.transcripcion_queue = transcripcion_queue
         self.traduccion_queue = traduccion_queue
 
-    def extraer_regiones(self, imagen, mascara_capa, text_regions=None):
+    def extraer_regiones(self, ctx: PageContext) -> None:
         """Paso 1: qué zonas de la página llevan texto y sus recortes.
 
-        Devuelve ``(cuadros_delimitadores, imagenes_interes)`` y deja las regiones
-        ordenadas en ``ultimas_regiones``, que consumen los pasos siguientes.
+        Deja en el contexto `cuadros`, `recortes` y `regiones_ordenadas`. Los pasos
+        siguientes las leen de ahí; antes se las pasaban por un atributo del traductor.
         """
-        # La pagina completa es el contexto que necesita el refinamiento semantico: el
-        # OCR trabaja por recortes y ahi no se distingue un pensamiento de un dialogo.
-        self.ultima_pagina = imagen
-        if text_regions:
-            cuadros_delimitadores, imagenes_interes, regiones_ordenadas = self.obtener_areas_interes_desde_regiones(imagen, text_regions)
-            self.ultimas_regiones = regiones_ordenadas
+        if ctx.regiones:
+            ctx.cuadros, ctx.recortes, ctx.regiones_ordenadas = self.obtener_areas_interes_desde_regiones(
+                ctx.imagen, ctx.regiones
+            )
         else:
-            cuadros_delimitadores, imagenes_interes = self.obtener_areas_interes(imagen, mascara_capa)
-            self.ultimas_regiones = []
-        self._estimar_colores_de_regiones(imagen)
-        return cuadros_delimitadores, imagenes_interes
+            ctx.cuadros, ctx.recortes = self.obtener_areas_interes(ctx.imagen, ctx.mascara_capa)
+            ctx.regiones_ordenadas = []
+        self._estimar_colores_de_regiones(ctx)
 
-    def _estimar_colores_de_regiones(self, imagen) -> None:
+    def _estimar_colores_de_regiones(self, ctx: PageContext) -> None:
         """Anota en cada region el color de su tinta y de su contorno originales.
 
         Se hace aqui porque es el unico punto donde conviven la imagen ORIGINAL y las
@@ -46,9 +45,10 @@ class TranslationOrchestratorMixin:
         Se trabaja sobre el recorte de cada region, no sobre la pagina entera: con mascaras
         del tamano de la pagina esto multiplicaba el coste sin cambiar el resultado.
         """
-        if not getattr(self, "estimate_text_colors", False) or imagen is None:
+        imagen = ctx.imagen
+        if not self.estimate_text_colors or imagen is None:
             return
-        for region in self.ultimas_regiones or []:
+        for region in ctx.regiones_ordenadas:
             tinta = region.text_mask if getattr(region, "text_mask", None) is not None else region.clean_mask
             if tinta is None:
                 continue
@@ -77,17 +77,27 @@ class TranslationOrchestratorMixin:
                     round(colores.separacion_fondo, 1) if colores.separacion_fondo is not None else None,
                 ]
 
-    def traducir_manga(self, imagen, imagen_limpia, mascara_capa, text_regions=None):
-        """Los cuatro pasos encadenados. Cada uno se puede invocar por separado:
+    def traducir_manga(self, imagen, imagen_limpia, mascara_capa, text_regions=None, indice_pagina=0):
+        """Los cuatro pasos encadenados sobre un mismo contexto:
 
-            cuadros, recortes = tm.extraer_regiones(imagen, mascara, regiones)
-            textos = tm.obtener_textos(recortes)          # aquí acaba un modo solo-OCR
-            para_render = tm.traducir_textos_de_regiones(cuadros, textos)
-            salida = tm.rotular(imagen_limpia, cuadros, para_render)
+            ctx = PageContext(imagen=imagen, imagen_limpia=limpia, mascara_capa=mascara)
+            tm.extraer_regiones(ctx)
+            tm.obtener_textos(ctx)               # aquí acaba un modo solo-OCR
+            tm.traducir_textos_de_regiones(ctx)
+            tm.rotular(ctx)
 
-        `eval_runner` ya reconstruía a mano esa secuencia parcial para medir sin
-        traducir; ahora puede usar los mismos pasos que el pipeline real.
+        Se conserva porque es una API cómoda para una página suelta. El pipeline real no
+        pasa por aquí: compone las mismas cuatro etapas en `processing/pipeline.py`.
         """
-        cuadros_delimitadores, imagenes_interes = self.extraer_regiones(imagen, mascara_capa, text_regions)
-        textos = self.obtener_textos(imagenes_interes)
-        return self.incrustar_textos(imagen_limpia, cuadros_delimitadores, textos)
+        ctx = PageContext(
+            imagen=imagen,
+            imagen_limpia=imagen_limpia,
+            mascara_capa=mascara_capa,
+            regiones=list(text_regions or []),
+            indice_pagina=indice_pagina,
+        )
+        self.extraer_regiones(ctx)
+        self.obtener_textos(ctx)
+        self.traducir_textos_de_regiones(ctx)
+        self.rotular(ctx)
+        return ctx.imagen_final

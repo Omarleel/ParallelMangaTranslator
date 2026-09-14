@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 
+from parallel_manga_translator.models.page_context import PageContext
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.geometry.text_orientation import effective_text_rotation_angle
 from parallel_manga_translator.infrastructure.logging_config import get_logger
@@ -25,14 +26,14 @@ class RenderingPipelineMixin:
     def _es_estilo_onomatopeya(estilo: str) -> bool:
         return str(estilo or "").strip().lower().startswith("onomatopeya")
 
-    def _push_original_texts_to_queue(self, cuadros_delimitadores, textos):
+    def _push_original_texts_to_queue(self, ctx: PageContext) -> None:
         if self.transcripcion_queue is None:
             return
-        for idx, ((x, y, w, h), texto) in enumerate(zip(cuadros_delimitadores, textos)):
-            if idx < len(getattr(self, "ultimos_source_language_flags", [])) and not self.ultimos_source_language_flags[idx]:
+        for idx, ((x, y, w, h), texto) in enumerate(zip(ctx.cuadros, ctx.textos_originales)):
+            if idx < len(ctx.flags_idioma_origen) and not ctx.flags_idioma_origen[idx]:
                 continue
-            region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
-            estilo = self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo"
+            region = ctx.region_en(idx)
+            estilo = ctx.estilos[idx] if idx < len(ctx.estilos) else "dialogo"
             elemento = {
                 "Índice": idx,
                 "Coordenadas": [[x, y], [x + w, y + h]],
@@ -49,8 +50,8 @@ class RenderingPipelineMixin:
                     "Ángulo detectado del original": float(region.metadata.get("text_rotation_detected_angle", region.metadata.get("text_rotation_angle", 0.0)) or 0.0),
                     "Confianza de inclinación": float(region.metadata.get("text_rotation_confidence", 0.0) or 0.0),
                 })
-            if idx < len(self.ultimas_asignaciones_hablante):
-                speaker = self.ultimas_asignaciones_hablante[idx]
+            if idx < len(ctx.asignaciones_hablante):
+                speaker = ctx.asignaciones_hablante[idx]
                 elemento.update({
                     "Hablante": speaker.get("speaker_id", "unknown"),
                     "Confianza hablante": round(float(speaker.get("confidence") or 0.0), 4),
@@ -59,21 +60,21 @@ class RenderingPipelineMixin:
             self.transcripcion_queue.put({
                 "agregar_a_sublista": {
                     "clave_lista": "Transcripción",
-                    "pagina": self.indice_imagen + 1,
+                    "pagina": ctx.indice_pagina + 1,
                     "clave_sublista": "Globos de texto",
                     "elemento_sublista": elemento,
                 }
             })
 
-    def _push_translated_texts_to_queue(self, cuadros_delimitadores, textos_traducidos, textos_para_render=None):
+    def _push_translated_texts_to_queue(self, ctx: PageContext) -> None:
         if self.traduccion_queue is None:
             return
-        textos_para_render = textos_para_render or textos_traducidos
-        for idx, ((x, y, w, h), texto_traducido) in enumerate(zip(cuadros_delimitadores, textos_traducidos)):
-            if idx < len(getattr(self, "ultimos_source_language_flags", [])) and not self.ultimos_source_language_flags[idx]:
+        textos_para_render = ctx.textos_para_render or ctx.textos_traducidos
+        for idx, ((x, y, w, h), texto_traducido) in enumerate(zip(ctx.cuadros, ctx.textos_traducidos)):
+            if idx < len(ctx.flags_idioma_origen) and not ctx.flags_idioma_origen[idx]:
                 continue
-            region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
-            estilo = self.ultimo_estilos_texto[idx] if idx < len(self.ultimo_estilos_texto) else "dialogo"
+            region = ctx.region_en(idx)
+            estilo = ctx.estilos[idx] if idx < len(ctx.estilos) else "dialogo"
             elemento = {
                 "Índice": idx,
                 "Coordenadas": [[x, y], [x + w, y + h]],
@@ -102,8 +103,8 @@ class RenderingPipelineMixin:
                     )
                 except Exception as exc:
                     logger.debug("No se pudo calcular layout UI para región %s: %s", idx, exc)
-            if idx < len(self.ultimas_asignaciones_hablante):
-                speaker = self.ultimas_asignaciones_hablante[idx]
+            if idx < len(ctx.asignaciones_hablante):
+                speaker = ctx.asignaciones_hablante[idx]
                 elemento.update({
                     "Hablante": speaker.get("speaker_id", "unknown"),
                     "Confianza hablante": round(float(speaker.get("confidence") or 0.0), 4),
@@ -111,48 +112,43 @@ class RenderingPipelineMixin:
             self.traduccion_queue.put({
                 "agregar_a_sublista": {
                     "clave_lista": "Traducción",
-                    "pagina": self.indice_imagen + 1,
+                    "pagina": ctx.indice_pagina + 1,
                     "clave_sublista": "Globos de texto",
                     "elemento_sublista": elemento,
                 }
             })
 
-    def traducir_textos_de_regiones(self, cuadros_delimitadores, textos):
+    def traducir_textos_de_regiones(self, ctx: PageContext) -> None:
         """Paso 3: normaliza, traduce y deja el rastro en las colas de JSON.
 
-        Devuelve los textos ya resueltos para rotular. El orden de las dos escrituras a
-        las colas es significativo y se conserva tal cual estaba.
+        Deja en el contexto los textos ya resueltos para rotular. El orden de las dos
+        escrituras a las colas es significativo y se conserva tal cual estaba.
         """
-        textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
-        self.ultimos_textos_originales = textos_limpios
-        textos_traducidos = self.traducir_textos(textos_limpios)
-        self.ultimos_textos_traducidos = textos_traducidos
-        self._push_original_texts_to_queue(cuadros_delimitadores, textos_limpios)
-        textos_para_render = self.resolver_textos_para_render(textos_limpios, textos_traducidos)
-        self._push_translated_texts_to_queue(cuadros_delimitadores, textos_traducidos, textos_para_render)
-        return textos_para_render
+        ctx.textos_originales = [self.normalizar_texto_ocr(texto) for texto in ctx.textos]
+        self.traducir_textos(ctx)
+        self._push_original_texts_to_queue(ctx)
+        ctx.textos_para_render = self.resolver_textos_para_render(ctx)
+        self._push_translated_texts_to_queue(ctx)
 
-    def incrustar_textos(self, imagen_limpia, cuadros_delimitadores, textos):
-        """Composición de traducir + rotular. Se conserva porque es la API que usa el pipeline."""
-        textos_para_render = self.traducir_textos_de_regiones(cuadros_delimitadores, textos)
-        return self.rotular(imagen_limpia, cuadros_delimitadores, textos_para_render)
-
-    def rotular(self, imagen_limpia, cuadros_delimitadores, textos_para_render):
+    def rotular(self, ctx: PageContext) -> None:
         """Paso 4: dibuja los textos ya resueltos sobre la imagen limpia."""
-        alineadas = bool(self.ultimas_regiones) and len(self.ultimas_regiones) == len(cuadros_delimitadores)
-        clip_masks = [region.local_mask() for region in self.ultimas_regiones] if alineadas else None
+        cuadros_delimitadores = ctx.cuadros
+        textos_para_render = ctx.textos_para_render
+        alineadas = ctx.regiones_alineadas
+        regiones = ctx.regiones_ordenadas
+        clip_masks = [region.local_mask() for region in regiones] if alineadas else None
         # Colores del texto original, si `quality.estimate_text_colors` los estimó en el
         # paso 1. Las posiciones sin estimación van a None y el renderizador cae a su
         # regla de contraste de siempre.
-        text_colors = [region.metadata.get("text_fill_color") for region in self.ultimas_regiones] if alineadas else None
-        stroke_colors = [region.metadata.get("text_stroke_color") for region in self.ultimas_regiones] if alineadas else None
-        return self.text_renderer.render(
-            imagen_limpia,
+        text_colors = [region.metadata.get("text_fill_color") for region in regiones] if alineadas else None
+        stroke_colors = [region.metadata.get("text_stroke_color") for region in regiones] if alineadas else None
+        ctx.imagen_final = self.text_renderer.render(
+            ctx.imagen_limpia,
             cuadros_delimitadores,
             textos_para_render,
-            text_styles=self.ultimo_estilos_texto,
+            text_styles=ctx.estilos,
             clip_masks=clip_masks,
-            rotation_angles=[self._region_rotation_angle(region) for region in self.ultimas_regiones]
+            rotation_angles=[self._region_rotation_angle(region) for region in regiones]
             if alineadas
             else None,
             reading_order_right_to_left=self.reading_order_resolver.page_reads_right_to_left,

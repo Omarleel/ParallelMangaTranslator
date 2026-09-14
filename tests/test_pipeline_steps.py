@@ -15,6 +15,7 @@ import unittest
 import numpy as np
 
 from parallel_manga_translator.config.app_config import ProcessingConfig, QualityConfig
+from parallel_manga_translator.models.page_context import PageContext
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.processing.translate_manga import TranslateManga
 
@@ -92,43 +93,62 @@ class PasosDelPipelineTests(unittest.TestCase):
         self.mascara = np.zeros((200, 160), dtype=np.uint8)
         self.regiones = [_region((10, 10, 60, 40)), _region((10, 90, 60, 40))]
 
+    def _contexto(self, regiones=None):
+        return PageContext(
+            imagen=self.imagen,
+            imagen_limpia=self.limpia.copy(),
+            mascara_capa=self.mascara,
+            regiones=list(regiones or []),
+        )
+
     def test_extraer_regiones_devuelve_cajas_y_recortes_alineados(self):
         tm = _traductor_de_prueba(_OcrFalso(["hello", "world"]), _TraductorFalso())
+        ctx = self._contexto(self.regiones)
 
-        cuadros, recortes = tm.extraer_regiones(self.imagen, self.mascara, self.regiones)
+        tm.extraer_regiones(ctx)
 
-        self.assertEqual(len(cuadros), len(recortes))
-        self.assertEqual(len(cuadros), len(tm.ultimas_regiones))
-        self.assertEqual(len(cuadros), 2)
+        self.assertEqual(len(ctx.cuadros), len(ctx.recortes))
+        self.assertEqual(len(ctx.cuadros), len(ctx.regiones_ordenadas))
+        self.assertEqual(len(ctx.cuadros), 2)
 
-    def test_extraer_regiones_sin_regiones_no_arrastra_las_de_la_pagina_anterior(self):
-        """`ultimas_regiones` es estado compartido entre pasos: rotular lo usa para recortar."""
+    def test_cada_pagina_trae_su_contexto_y_no_hereda_el_de_la_anterior(self):
+        """El traductor ya no recuerda la última página: el estado es del contexto.
+
+        Antes esto era un atributo del traductor, así que una página sin regiones se
+        quedaba con las de la anterior si alguien olvidaba limpiarlo.
+        """
         tm = _traductor_de_prueba(_OcrFalso(["hello", "world"]), _TraductorFalso())
-        tm.extraer_regiones(self.imagen, self.mascara, self.regiones)
-        self.assertEqual(len(tm.ultimas_regiones), 2)
+        primera = self._contexto(self.regiones)
+        tm.extraer_regiones(primera)
+        self.assertEqual(len(primera.regiones_ordenadas), 2)
 
-        tm.extraer_regiones(self.imagen, self.mascara, None)
+        segunda = self._contexto()
+        tm.extraer_regiones(segunda)
 
-        self.assertEqual(tm.ultimas_regiones, [])
+        self.assertEqual(segunda.regiones_ordenadas, [])
+        self.assertEqual(len(primera.regiones_ordenadas), 2, "procesar otra página no puede tocar la anterior")
 
     def test_modo_solo_ocr_transcribe_sin_tocar_el_traductor(self):
         ocr = _OcrFalso(["hello", "world"])
         tm = _traductor_de_prueba(ocr, _TraductorProhibido())
+        ctx = self._contexto(self.regiones)
 
-        _, recortes = tm.extraer_regiones(self.imagen, self.mascara, self.regiones)
-        textos = tm.obtener_textos(recortes)
+        tm.extraer_regiones(ctx)
+        tm.obtener_textos(ctx)
 
         self.assertEqual(ocr.llamadas, 1)
-        self.assertEqual([t.lower() for t in textos], ["hello", "world"])
+        self.assertEqual([t.lower() for t in ctx.textos], ["hello", "world"])
 
     def test_rotular_no_traduce(self):
         """Paso 4 recibe textos ya resueltos: quien ya tradujo no debe pagarlo dos veces."""
         tm = _traductor_de_prueba(_OcrFalso(["hello", "world"]), _TraductorProhibido())
-        cuadros, _ = tm.extraer_regiones(self.imagen, self.mascara, self.regiones)
+        ctx = self._contexto(self.regiones)
+        tm.extraer_regiones(ctx)
+        ctx.textos_para_render = ["hola", "mundo"]
 
-        salida = tm.rotular(self.limpia, cuadros, ["hola", "mundo"])
+        tm.rotular(ctx)
 
-        self.assertEqual(salida.shape, self.limpia.shape)
+        self.assertEqual(ctx.imagen_final.shape, self.limpia.shape)
 
     def test_encadenar_los_cuatro_pasos_equivale_a_traducir_manga(self):
         """Si divergen, el modo por pasos mide una cosa y producción hace otra."""
@@ -136,16 +156,43 @@ class PasosDelPipelineTests(unittest.TestCase):
         salida_completa = completo.traducir_manga(self.imagen, self.limpia.copy(), self.mascara, self.regiones)
 
         por_pasos = _traductor_de_prueba(_OcrFalso(["hello", "world"]), _TraductorFalso())
-        cuadros, recortes = por_pasos.extraer_regiones(
-            self.imagen, self.mascara, [_region((10, 10, 60, 40)), _region((10, 90, 60, 40))]
+        ctx = PageContext(
+            imagen=self.imagen,
+            imagen_limpia=self.limpia.copy(),
+            mascara_capa=self.mascara,
+            regiones=[_region((10, 10, 60, 40)), _region((10, 90, 60, 40))],
         )
-        textos = por_pasos.obtener_textos(recortes)
-        para_render = por_pasos.traducir_textos_de_regiones(cuadros, textos)
-        salida_por_pasos = por_pasos.rotular(self.limpia.copy(), cuadros, para_render)
+        por_pasos.extraer_regiones(ctx)
+        por_pasos.obtener_textos(ctx)
+        por_pasos.traducir_textos_de_regiones(ctx)
+        por_pasos.rotular(ctx)
 
-        self.assertEqual(completo.ultimos_textos_originales, por_pasos.ultimos_textos_originales)
-        self.assertEqual(completo.ultimos_textos_traducidos, por_pasos.ultimos_textos_traducidos)
-        np.testing.assert_array_equal(salida_completa, salida_por_pasos)
+        self.assertEqual([t.lower() for t in ctx.textos_originales], ["hello", "world"])
+        self.assertEqual(len(ctx.textos_traducidos), 2)
+        self.assertEqual(len(ctx.textos_para_render), 2)
+        # La igualdad de las dos páginas rotuladas es la equivalencia de verdad: cubre
+        # texto, estilo y geometría de una vez.
+        np.testing.assert_array_equal(salida_completa, ctx.imagen_final)
+
+    def test_el_traductor_no_guarda_estado_de_la_pagina(self):
+        """La razón de todo esto: un objeto de vida larga no puede ser el cuaderno de notas."""
+        tm = _traductor_de_prueba(_OcrFalso(["hello", "world"]), _TraductorFalso())
+        ctx = self._contexto(self.regiones)
+        tm.extraer_regiones(ctx)
+        tm.obtener_textos(ctx)
+        tm.traducir_textos_de_regiones(ctx)
+
+        for atributo in (
+            "ultimas_regiones",
+            "ultima_pagina",
+            "ultimo_estilos_texto",
+            "ultimos_textos_originales",
+            "ultimos_textos_traducidos",
+            "ultimos_source_language_flags",
+            "ultimas_asignaciones_hablante",
+            "indice_imagen",
+        ):
+            self.assertFalse(hasattr(tm, atributo), f"{atributo} volvió a vivir en el traductor")
 
 
 if __name__ == "__main__":

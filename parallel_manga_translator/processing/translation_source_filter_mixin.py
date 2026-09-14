@@ -55,9 +55,19 @@ class TranslationSourceFilterMixin:
             self._mark_region_source_language(region, allowed, filtro.explain_text(texto))
         return bool(allowed)
 
-    def _source_language_flags_for_texts(self, textos: Sequence[str]) -> List[bool]:
+    def _source_language_flags_for_texts(
+        self,
+        textos: Sequence[str],
+        regiones: Sequence[TextRegion] = (),
+    ) -> List[bool]:
+        """Qué textos pasan el filtro, con su región al lado cuando la hay.
+
+        Las regiones llegan por parámetro y no de `self`: sin ellas el filtro sigue
+        funcionando sobre el texto suelto, que es el caso de una extracción sin regiones
+        previas.
+        """
         flags: List[bool] = []
         for idx, texto in enumerate(textos):
-            region = self.ultimas_regiones[idx] if self.ultimas_regiones and idx < len(self.ultimas_regiones) else None
+            region = regiones[idx] if idx < len(regiones) else None
             flags.append(self._text_is_source_language(str(texto or ""), region))
         return flags

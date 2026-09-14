@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 
+from parallel_manga_translator.models.page_context import PageContext
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
@@ -57,13 +58,16 @@ class OcrTextPipelineMixin:
             return ""
         return str(metadata.get("region_ocr_text") or metadata.get("clean_guard_ocr_text") or "").strip()
 
-    def obtener_textos(self, imagenes_interes):
-        if self.ultimas_regiones and len(self.ultimas_regiones) == len(imagenes_interes):
+    def obtener_textos(self, ctx: PageContext) -> None:
+        """Paso 2: transcribe cada recorte y deja el resultado en `ctx.textos`."""
+        imagenes_interes = ctx.recortes
+        regiones = ctx.regiones_ordenadas
+        if regiones and len(regiones) == len(imagenes_interes):
             textos: List[str] = [""] * len(imagenes_interes)
             pendientes = []
             indices_pendientes: List[int] = []
 
-            for indice, (imagen_interes, region) in enumerate(zip(imagenes_interes, self.ultimas_regiones)):
+            for indice, (imagen_interes, region) in enumerate(zip(imagenes_interes, regiones)):
                 if self._region_skipped_by_specialized_ocr_guard(region):
                     textos[indice] = ""
                     continue
@@ -83,7 +87,7 @@ class OcrTextPipelineMixin:
                 textos_ocr = self.ocr_manager.extract_texts(pendientes)
                 for indice, texto in zip(indices_pendientes, textos_ocr):
                     texto_normalizado = self.normalizar_texto_ocr(texto)
-                    region = self.ultimas_regiones[indice] if indice < len(self.ultimas_regiones) else None
+                    region = ctx.region_en(indice)
                     if region is not None:
                         metadata = getattr(region, "metadata", None)
                         if isinstance(metadata, dict):
@@ -91,25 +95,28 @@ class OcrTextPipelineMixin:
                             metadata["region_ocr_text_source"] = "translation_region_ocr"
                             metadata["region_ocr_cache_reusable"] = True
                     textos[indice] = texto_normalizado if self._text_is_source_language(texto_normalizado, region) else ""
-            self._refinar_semantica_de_regiones(textos)
-            return textos
+            self._refinar_semantica_de_regiones(ctx, textos)
+            ctx.textos = textos
+            return
 
         textos = self.ocr_manager.extract_texts(imagenes_interes)
         textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
-        return [texto if self._text_is_source_language(texto) else "" for texto in textos_limpios]
+        ctx.textos = [texto if self._text_is_source_language(texto) else "" for texto in textos_limpios]
 
-    def _refinar_semantica_de_regiones(self, textos: List[str]) -> None:
+    def _refinar_semantica_de_regiones(self, ctx: PageContext, textos: List[str]) -> None:
         """Deja que el VLM diga qué es cada bloque, si está configurado.
 
         Es un colaborador opcional: sin él —el caso por defecto— esto no hace nada y no
         cuesta ni una llamada. Tampoco puede tumbar la página: el servicio ya absorbe
         sus propios fallos y devuelve vacío.
         """
-        semantics_service = getattr(self, "region_semantics", None)
+        semantics_service = self.region_semantics
         if semantics_service is None or not getattr(semantics_service, "enabled", False):
             return
-        regiones = list(getattr(self, "ultimas_regiones", []) or [])
-        pagina = getattr(self, "ultima_pagina", None)
+        # La pagina completa es el contexto que necesita el refinamiento semantico: el
+        # OCR trabaja por recortes y ahi no se distingue un pensamiento de un dialogo.
+        regiones = list(ctx.regiones_ordenadas)
+        pagina = ctx.imagen
         if not regiones or pagina is None:
             return
         semantics = semantics_service.refine(pagina, regiones, textos)

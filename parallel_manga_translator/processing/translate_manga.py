@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, Dict, List, Tuple
+from typing import Tuple
 
 import torch
 
@@ -12,7 +12,6 @@ from parallel_manga_translator.translation.text_normalization import OcrTextNorm
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.rendering.text_renderer import TextRenderer
 from parallel_manga_translator.translation.translator_manager import TranslatorManager
-from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.config.constants import RUTA_FUENTE, TAMANIO_MINIMO_FUENTE
@@ -101,17 +100,12 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
         )
         self.source_language_filter = SourceLanguageFilter(idioma_entrada)
         self.onomatopoeia_manager = OnomatopoeiaManager()
+        # Memoria ENTRE paginas: el contexto bilingue que el LLM arrastra de una a otra.
+        # Es lo unico con memoria que queda aqui; el estado de la pagina en curso vive en
+        # `PageContext` y se pasa explicito a cada paso.
         self.historial_contexto = deque(maxlen=3)
-        self.ultimo_estilos_texto = []
-        self.ultimas_regiones: List[TextRegion] = []
-        # Pagina completa de la ultima extraccion, para el refinamiento semantico.
-        self.ultima_pagina = None
         # Colaborador opcional. El default no llama a nada: el VLM cuesta por pagina.
         self.region_semantics = region_semantics if region_semantics is not None else VlmRegionSemantics()
-        self.ultimos_textos_originales: List[str] = []
-        self.ultimos_textos_traducidos: List[str] = []
-        self.ultimos_source_language_flags: List[bool] = []
-        self.ultimas_asignaciones_hablante: List[Dict[str, Any]] = []
         self.onomatopoeia_mode = str(onomatopoeia_config.mode or "translate").strip().lower()
         self.translate_onomatopoeia = bool(onomatopoeia_config.translate)
         if not self.translate_onomatopoeia:
@@ -120,7 +114,7 @@ class TranslateManga(TranslationSourceFilterMixin, TranslationOrchestratorMixin,
         self.ocr_region_mode = str(quality_config.ocr_region_mode or "bubble").strip().lower()
         self.ocr_crop_debug_dir = str(getattr(quality_config, "ocr_crop_debug_dir", "") or "").strip()
         self.estimate_text_colors = bool(getattr(quality_config, "estimate_text_colors", False))
-        self.indice_imagen = 0
+        # Colas del trabajo, no de la pagina: las pone `insertar_json_queue` una vez.
         self.transcripcion_queue = None
         self.traduccion_queue = None
 

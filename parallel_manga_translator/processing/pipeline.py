@@ -5,8 +5,7 @@ Por qué
 `limpiar_manga` y `traducir_manga` encadenaban las etapas por dentro. Quien quisiera
 ejecutar sólo una parte —medir sin traducir, transcribir sin rotular— no podía
 componerla: tenía que reescribir la secuencia. `eval_runner` hacía exactamente eso, y al
-reescribirla metía la mano en `ultimas_regiones`, que es estado interno de
-`TranslateManga`. Dos secuencias paralelas para el mismo trabajo es una que se
+reescribirla metía la mano en el estado interno de `TranslateManga`. Dos secuencias paralelas para el mismo trabajo es una que se
 desincroniza en silencio, y aquí la que se desincroniza es la que mide.
 
 Aquí las etapas son objetos y la secuencia es un dato:
@@ -26,38 +25,10 @@ ejecutaba el código, escritas como lo que son.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Iterable, List, Optional, Protocol, runtime_checkable
-
-import numpy as np
+from typing import Iterable, List, Protocol, runtime_checkable
 
 from parallel_manga_translator.architecture.ports import PageCleanerPort, PageTranslatorPort
-from parallel_manga_translator.models.processing_models import TextRegion
-
-
-@dataclass
-class PageContext:
-    """Lo que una página acumula al pasar por las etapas.
-
-    Empieza con la imagen original y cada etapa rellena lo suyo. Los campos son
-    `Optional` a propósito: una composición parcial deja vacíos los de las etapas que no
-    incluye, y quien la use tiene que mirarlos. `imagen_final` a `None` significa que
-    nadie rotuló, no que el rotulado fallara.
-    """
-
-    imagen: np.ndarray
-    imagen_limpia: Optional[np.ndarray] = None
-    mascara_capa: Optional[np.ndarray] = None
-    regiones: List[TextRegion] = field(default_factory=list)
-    #: Las que sobreviven a la extraccion, en orden de lectura y alineadas con `cuadros`.
-    #: No es lo mismo que `regiones`: la extraccion puede descartar, asi que medir
-    #: limpieza sobre estas en vez de sobre las crudas cambiaria lo que se mide.
-    regiones_ordenadas: List[TextRegion] = field(default_factory=list)
-    cuadros: List[Any] = field(default_factory=list)
-    recortes: List[Any] = field(default_factory=list)
-    textos: List[str] = field(default_factory=list)
-    textos_para_render: List[str] = field(default_factory=list)
-    imagen_final: Optional[np.ndarray] = None
+from parallel_manga_translator.models.page_context import PageContext
 
 
 @runtime_checkable
@@ -79,8 +50,7 @@ class LimpiarPagina:
         self.cleaner = cleaner
 
     def run(self, ctx: PageContext) -> None:
-        ctx.mascara_capa, ctx.imagen_limpia, regiones = self.cleaner.limpiar_manga(ctx.imagen)
-        ctx.regiones = list(regiones)
+        self.cleaner.limpiar_manga(ctx)
 
 
 class ExtraerRegiones:
@@ -96,13 +66,7 @@ class ExtraerRegiones:
         self.translator = translator
 
     def run(self, ctx: PageContext) -> None:
-        ctx.cuadros, ctx.recortes = self.translator.extraer_regiones(
-            ctx.imagen, ctx.mascara_capa, ctx.regiones or None
-        )
-        # `extraer_regiones` deja las ordenadas en el traductor y los pasos siguientes
-        # las leen de ahi. Copiarlas al contexto hace explicito ese acoplamiento en vez
-        # de obligar a cada consumidor a hurgar en el estado del traductor.
-        ctx.regiones_ordenadas = list(self.translator.ultimas_regiones)
+        self.translator.extraer_regiones(ctx)
 
 
 class TranscribirTextos:
@@ -114,7 +78,7 @@ class TranscribirTextos:
         self.translator = translator
 
     def run(self, ctx: PageContext) -> None:
-        ctx.textos = self.translator.obtener_textos(ctx.recortes)
+        self.translator.obtener_textos(ctx)
 
 
 class TraducirTextos:
@@ -126,7 +90,7 @@ class TraducirTextos:
         self.translator = translator
 
     def run(self, ctx: PageContext) -> None:
-        ctx.textos_para_render = self.translator.traducir_textos_de_regiones(ctx.cuadros, ctx.textos)
+        self.translator.traducir_textos_de_regiones(ctx)
 
 
 class RotularPagina:
@@ -138,7 +102,7 @@ class RotularPagina:
         self.translator = translator
 
     def run(self, ctx: PageContext) -> None:
-        ctx.imagen_final = self.translator.rotular(ctx.imagen_limpia, ctx.cuadros, ctx.textos_para_render)
+        self.translator.rotular(ctx)
 
 
 class Pipeline:

@@ -10,6 +10,7 @@ import unittest
 import numpy as np
 
 from parallel_manga_translator.processing.bubble_fill_policy import strategy_honored
+from parallel_manga_translator.processing.visual_inpaint_debug import DEPURACION_APAGADA
 
 
 class ContratoDeRellenoTests(unittest.TestCase):
@@ -74,7 +75,7 @@ class ConstanciaEnLaMetadataTests(unittest.TestCase):
         )
 
         [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
-        cleaner._fill_bubble_interiors(image, [prepared])
+        cleaner._fill_bubble_interiors(image, [prepared], DEPURACION_APAGADA)
 
         self.assertEqual(prepared.metadata["bubble_fill_strategy"], "solid")
         self.assertFalse(

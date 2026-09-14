@@ -17,8 +17,9 @@ from parallel_manga_translator.quality.visual_inpaint_verifier import VisualInpa
 from parallel_manga_translator.translation.translation_response_schema import validate_translation_response
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.processing.clean_manga import CleanManga
-from parallel_manga_translator.processing.clean_inpainting_pipeline_mixin import CleanInpaintingPipelineMixin
+from parallel_manga_translator.processing.visual_inpaint_debug import DEPURACION_APAGADA, VisualInpaintDebugWriter
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
+from parallel_manga_translator.models.page_context import PageContext
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.processing.translate_manga import TranslateManga
@@ -31,11 +32,7 @@ class _DetectorDeGlobosFalso:
     def detect_regions(self, image, detections):
         return []
 
-    def set_debug_page_context(self, page_index, *, source_filename=None, output_filename=None):
-        pass
 
-    def clear_debug_page_context(self):
-        pass
 
 
 class _DetectorDeTextoFalso:
@@ -211,14 +208,9 @@ class VisualInpaintVerifierTests(unittest.TestCase):
         self.assertIn("flat_patch", report.failed_checks)
 
     def test_debug_artifacts_are_written_under_debug_inpaint(self):
-        class DummyDebugWriter(CleanInpaintingPipelineMixin):
-            pass
-
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            writer = DummyDebugWriter()
-            writer.visual_inpaint_debug = True
-            writer.set_visual_inpaint_debug_context(str(root), 0, "0001.jpg")
+            writer = VisualInpaintDebugWriter(output_root=str(root), page_index=0, filename="0001.jpg")
 
             before, mask, context = self._bubble_fixture()
             after = before.copy()
@@ -232,7 +224,7 @@ class VisualInpaintVerifierTests(unittest.TestCase):
             )
             report = VisualInpaintVerifier().evaluate(before, after, mask, context_mask=context)
 
-            metadata = writer._write_visual_inpaint_region_debug_summary(
+            metadata = writer.write_region_summary(
                 region_index=0,
                 region=region,
                 before_image=before,
@@ -338,9 +330,13 @@ class SourceLanguageFilterTests(unittest.TestCase):
         )
         region = OnomatopoeiaKeepModeTests._region("free_text")
         region.source_text_hint = "EAST"
-        translator.ultimas_regiones = [region]
+        regiones_pagina = [region]
 
-        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+        translator.region_semantics = None
+        ctx = _contexto_de_pagina(regiones_pagina)
+
+        translator.obtener_textos(ctx)
+        textos = ctx.textos
 
         self.assertEqual(textos, [""])
         self.assertFalse(region.metadata["source_language_allowed"])
@@ -413,9 +409,13 @@ class SourceLanguageFilterTests(unittest.TestCase):
             "region_ocr_cache_reusable": True,
             "region_ocr_text": "行くぞ",
         })
-        translator.ultimas_regiones = [region]
+        regiones_pagina = [region]
 
-        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+        translator.region_semantics = None
+        ctx = _contexto_de_pagina(regiones_pagina)
+
+        translator.obtener_textos(ctx)
+        textos = ctx.textos
 
         self.assertEqual(textos, ["行くぞ"])
 
@@ -432,9 +432,13 @@ class SourceLanguageFilterTests(unittest.TestCase):
             "specialized_ocr_guard_empty": True,
             "processing_skip_reason": "ocr_especializado_sin_texto",
         })
-        translator.ultimas_regiones = [region]
+        regiones_pagina = [region]
 
-        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+        translator.region_semantics = None
+        ctx = _contexto_de_pagina(regiones_pagina)
+
+        translator.obtener_textos(ctx)
+        textos = ctx.textos
 
         self.assertEqual(textos, [""])
 
@@ -477,13 +481,30 @@ class SourceLanguageFilterTests(unittest.TestCase):
         region = OnomatopoeiaKeepModeTests._region("dialogue")
         region.source_text_hint = "は"
         region.metadata.update({"free_text_onomatopoeia": True, "onomatopoeia": True})
-        translator.ultimas_regiones = [region]
+        regiones_pagina = [region]
 
-        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+        translator.region_semantics = None
+        ctx = _contexto_de_pagina(regiones_pagina)
+
+        translator.obtener_textos(ctx)
+        textos = ctx.textos
 
         self.assertEqual(textos, ["ハッ"])
         self.assertTrue(region.metadata["source_language_allowed"])
         self.assertNotIn("processing_skipped", region.metadata)
+
+
+def _contexto_de_pagina(regiones, recortes=1):
+    """Contexto mínimo para invocar un paso suelto sobre regiones ya conocidas.
+
+    Antes estas regiones se le clavaban al traductor en `ultimas_regiones`; ahora son
+    lo que son: el estado de una página, que se pasa al paso.
+    """
+    return PageContext(
+        imagen=np.zeros((40, 40, 3), dtype=np.uint8),
+        recortes=[np.zeros((20, 20, 3), dtype=np.uint8) for _ in range(recortes)],
+        regiones_ordenadas=list(regiones),
+    )
 
 
 class OnomatopoeiaKeepModeTests(unittest.TestCase):
@@ -504,12 +525,12 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
     def test_translator_keeps_any_sfx_region_out_of_llm_payload(self):
         translator = object.__new__(TranslateManga)
         translator.onomatopoeia_mode = "keep"
-        translator.ultimas_regiones = [self._region("sfx")]
+        regiones_pagina = [self._region("sfx")]
         translator.idioma_entrada = "Japonés"
         translator.idioma_salida = "Español"
         translator.onomatopoeia_manager = OnomatopoeiaManager()
 
-        self.assertEqual(translator._traducir_onomatopeyas_con_diccionario(["texto raro"]), ["texto raro"])
+        self.assertEqual(translator._traducir_onomatopeyas_con_diccionario(["texto raro"], regiones_pagina), ["texto raro"])
 
     def test_cleaner_uses_free_text_onomatopoeia_metadata(self):
         cleaner = _cleaner_de_prueba(
@@ -539,13 +560,13 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
         translator = object.__new__(TranslateManga)
         translator.onomatopoeia_mode = "translate"
         translator.translate_onomatopoeia = False
-        translator.ultimas_regiones = [self._region("free_text")]
-        translator.ultimas_regiones[0].metadata["free_text_onomatopoeia"] = True
+        regiones_pagina = [self._region("free_text")]
+        regiones_pagina[0].metadata["free_text_onomatopoeia"] = True
         translator.idioma_entrada = "Japonés"
         translator.idioma_salida = "Español"
         translator.onomatopoeia_manager = OnomatopoeiaManager()
 
-        self.assertEqual(translator._traducir_onomatopeyas_con_diccionario(["ドン"]), ["ドン"])
+        self.assertEqual(translator._traducir_onomatopeyas_con_diccionario(["ドン"], regiones_pagina), ["ドン"])
 
     def test_translator_reuses_clean_guard_ocr_for_kept_free_text_onomatopoeia(self):
         translator = object.__new__(TranslateManga)
@@ -553,13 +574,17 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
         region.metadata["free_text_onomatopoeia_keep"] = True
         region.metadata["free_text_onomatopoeia"] = True
         region.metadata["clean_guard_ocr_text"] = "ハッハッ"
-        translator.ultimas_regiones = [region]
+        regiones_pagina = [region]
         translator.normalizar_texto_ocr = lambda texto: texto
         translator.ocr_manager = types.SimpleNamespace(
             extract_texts=lambda _imagenes: (_ for _ in ()).throw(AssertionError("no debe repetir OCR"))
         )
 
-        textos = translator.obtener_textos([np.zeros((20, 20, 3), dtype=np.uint8)])
+        translator.region_semantics = None
+        ctx = _contexto_de_pagina(regiones_pagina)
+
+        translator.obtener_textos(ctx)
+        textos = ctx.textos
 
         self.assertEqual(textos, ["ハッハッ"])
 
@@ -577,11 +602,11 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
     def test_translator_never_marks_dialogue_as_onomatopoeia_by_heuristic(self):
         translator = object.__new__(TranslateManga)
         translator.onomatopoeia_mode = "translate"
-        translator.ultimas_regiones = [self._region("dialogue"), self._region("sfx")]
+        regiones_pagina = [self._region("dialogue"), self._region("sfx")]
         translator.idioma_entrada = "Japonés"
         translator.onomatopoeia_manager = OnomatopoeiaManager()
 
-        estilos = translator._clasificar_estilos_texto(["ドバ", "ドバ"])
+        estilos = translator._clasificar_estilos_texto(["ドバ", "ドバ"], regiones_pagina)
 
         self.assertEqual(estilos, ["dialogo", "onomatopeya"])
 
@@ -594,16 +619,19 @@ class OnomatopoeiaKeepModeTests(unittest.TestCase):
                 self.items.append(item)
 
         translator = object.__new__(TranslateManga)
-        translator.indice_imagen = 0
         translator.transcripcion_queue = DummyQueue()
         translator.traduccion_queue = DummyQueue()
-        translator.ultimas_regiones = [self._region("dialogue"), self._region("sfx")]
-        translator.ultimo_estilos_texto = ["dialogo", "onomatopeya"]
-        translator.ultimas_asignaciones_hablante = []
 
-        boxes = [(1, 2, 30, 40), (50, 60, 70, 80)]
-        translator._push_original_texts_to_queue(boxes, ["やあ", "ドン"])
-        translator._push_translated_texts_to_queue(boxes, ["Hola", "BOOM"])
+        ctx = PageContext(
+            imagen=np.zeros((100, 100, 3), dtype=np.uint8),
+            cuadros=[(1, 2, 30, 40), (50, 60, 70, 80)],
+            regiones_ordenadas=[self._region("dialogue"), self._region("sfx")],
+            estilos=["dialogo", "onomatopeya"],
+            textos_originales=["やあ", "ドン"],
+            textos_traducidos=["Hola", "BOOM"],
+        )
+        translator._push_original_texts_to_queue(ctx)
+        translator._push_translated_texts_to_queue(ctx)
 
         transcripcion = [
             item["agregar_a_sublista"]["elemento_sublista"]
@@ -783,7 +811,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
 
         cleaner = self._cleaner()
         [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
-        filled = cleaner._fill_bubble_interiors(image, [prepared])
+        filled = cleaner._fill_bubble_interiors(image, [prepared], DEPURACION_APAGADA)
 
         self.assertLess(float(np.mean(filled[45:52, 42:60])), 55.0)
         self.assertLess(float(np.mean(prepared.metadata["fill_color_bgr"])), 55.0)
@@ -806,7 +834,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
 
         cleaner = self._cleaner()
         [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
-        filled = cleaner._fill_bubble_interiors(image, [prepared])
+        filled = cleaner._fill_bubble_interiors(image, [prepared], DEPURACION_APAGADA)
 
         self.assertGreater(float(np.mean(filled[45:52, 42:60])), 215.0)
         self.assertGreater(float(np.mean(prepared.metadata["fill_color_bgr"])), 215.0)
@@ -840,7 +868,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         cleaner.bubble_fill_background_std_threshold = 999.0
         cleaner.inpainter = DummyConfiguredInpainter()
         [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
-        filled = cleaner._fill_bubble_interiors(image, [prepared])
+        filled = cleaner._fill_bubble_interiors(image, [prepared], DEPURACION_APAGADA)
 
         self.assertEqual(cleaner.inpainter.calls, 1)
         self.assertEqual(prepared.metadata["bubble_fill_method"], "configured_inpaint")
@@ -881,7 +909,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         cleaner.bubble_fill_background_std_threshold = 4.0
         cleaner.inpainter = DummyConfiguredInpainter()
         [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
-        filled = cleaner._fill_bubble_interiors(image, [prepared])
+        filled = cleaner._fill_bubble_interiors(image, [prepared], DEPURACION_APAGADA)
 
         self.assertEqual(cleaner.inpainter.calls, 1)
         self.assertEqual(prepared.metadata["bubble_fill_method"], "configured_inpaint")
@@ -927,7 +955,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         cleaner.inpainter = self._InpainterEspia()
 
         [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
-        cleaner._fill_bubble_interiors(image, [prepared])
+        cleaner._fill_bubble_interiors(image, [prepared], DEPURACION_APAGADA)
 
         self.assertEqual(cleaner.inpainter.calls, 0)
         self.assertEqual(prepared.metadata["bubble_fill_method"], "solid_color")
@@ -951,7 +979,7 @@ class CleanMaskSeparationTests(unittest.TestCase):
         cleaner.inpainter = self._InpainterEspia()
 
         [prepared] = cleaner.mask_strategy.attach_clean_masks(image, [region])
-        cleaner._fill_bubble_interiors(image, [prepared])
+        cleaner._fill_bubble_interiors(image, [prepared], DEPURACION_APAGADA)
 
         self.assertEqual(cleaner.inpainter.calls, 1)
         self.assertTrue(
@@ -1084,12 +1112,12 @@ class FreeTextRegionCleaningTests(unittest.TestCase):
         llamadas = []
         original = CleanManga._clean_region_with_masks
 
-        def espia(self, salida, region, region_index, clean_mask, safe_mask):
+        def espia(self, salida, region, region_index, clean_mask, safe_mask, debug):
             llamadas.append((region_index, int(cv2.countNonZero(clean_mask))))
-            return original(self, salida, region, region_index, clean_mask, safe_mask)
+            return original(self, salida, region, region_index, clean_mask, safe_mask, debug)
 
         cleaner._clean_region_with_masks = espia.__get__(cleaner, CleanManga)
-        limpia = cleaner._clean_free_text_regions(image, regions, debug_index_offset=3)
+        limpia = cleaner._clean_free_text_regions(image, regions, DEPURACION_APAGADA, debug_index_offset=3)
 
         self.assertEqual([indice for indice, _ in llamadas], [3, 4])
         self.assertTrue(all(pixeles > 0 for _, pixeles in llamadas))
@@ -1101,7 +1129,7 @@ class FreeTextRegionCleaningTests(unittest.TestCase):
         cleaner = self._cleaner()
         regions = [self._free_text_region(image.shape, rect) for rect in rects]
 
-        limpia = cleaner._clean_free_text_regions(image, regions)
+        limpia = cleaner._clean_free_text_regions(image, regions, DEPURACION_APAGADA)
 
         union = np.zeros(image.shape[:2], dtype=np.uint8)
         for x, y, w, h in rects:
@@ -1513,6 +1541,7 @@ class BestOfInpaintCandidateTests(unittest.TestCase):
             background_variation=variacion,
             variation_threshold=self.UMBRAL,
             sigma=0.6,
+            debug=DEPURACION_APAGADA,
         )
         return resultado, aplicados
 

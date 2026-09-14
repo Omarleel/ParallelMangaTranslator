@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
-from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
@@ -11,10 +8,11 @@ from PIL import Image
 
 from parallel_manga_translator.processing.bubble_fill_policy import BubbleFillPolicy, strategy_honored
 from parallel_manga_translator.processing.inpainter_runner import InpainterRunner
-from parallel_manga_translator.io.image_io import try_write_image
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.infrastructure.logging_config import get_logger
+from parallel_manga_translator.models.page_context import PageContext
 from parallel_manga_translator.models.processing_models import TextRegion
+from parallel_manga_translator.processing.visual_inpaint_debug import DEPURACION_APAGADA, VisualInpaintDebugWriter
 
 logger = get_logger(__name__)
 Detection = Tuple[Sequence[Sequence[float]], str, float]
@@ -47,31 +45,61 @@ class CleanInpaintingPipelineMixin:
         return globos, libres
 
 
-    def limpiar_manga(self, imagen: np.ndarray):
-        if self._visual_inpaint_debug_enabled():
-            self._visual_inpaint_debug_records = []
+    def limpiar_manga(self, ctx: PageContext) -> None:
+        """Detecta las regiones con texto y borra su tinta. Deja todo en el contexto.
 
-        # Flujo YOLO: primero detectar todos los globos con el segmentador entrenado.
-        # El OCR global se ejecuta después solo para asociar pistas, onomatopeyas y texto libre.
-        regiones_primarias = self.bubble_detector.detect_primary_bubble_regions(imagen)
-        resultados = self.obtener_cuadros_delimitadores(imagen)
-        regiones = self.bubble_detector.build_regions_from_bubbles_and_text(imagen, regiones_primarias, resultados)
+        El escritor de depuración se crea aquí, para **esta** página, y se pasa a los tres
+        métodos que lo usan. Antes eran cuatro atributos del limpiador que dos métodos del
+        puerto empujaban antes de cada página y trece `getattr` leían después.
+        """
+        imagen = ctx.imagen
+        debug = (
+            VisualInpaintDebugWriter(
+                output_root=ctx.debug_root,
+                page_index=ctx.indice_pagina,
+                filename=ctx.nombre_archivo,
+            )
+            if self.visual_inpaint_debug
+            else DEPURACION_APAGADA
+        )
+        # El detector tiene su propio contexto de depuración, y solo corre aquí dentro:
+        # acotarlo a esta llamada es más estrecho que hacerlo desde el orquestador.
+        self.bubble_detector.set_debug_page_context(
+            ctx.indice_pagina,
+            source_filename=ctx.archivo_origen or None,
+            output_filename=ctx.nombre_archivo or None,
+        )
+        try:
+            # Flujo YOLO: primero detectar todos los globos con el segmentador entrenado.
+            # El OCR global se ejecuta después solo para asociar pistas, onomatopeyas y texto libre.
+            regiones_primarias = self.bubble_detector.detect_primary_bubble_regions(imagen)
+            resultados = self.obtener_cuadros_delimitadores(imagen)
+            regiones = self.bubble_detector.build_regions_from_bubbles_and_text(imagen, regiones_primarias, resultados)
+        finally:
+            self.bubble_detector.clear_debug_page_context()
         regiones = self._filter_regions_by_source_language(regiones)
         regiones = self._filter_regions_by_specialized_ocr_guard(imagen, regiones)
         regiones = self.mask_strategy.attach_clean_masks(imagen, regiones)
-        self.last_regions = regiones
 
         # Esta es la máscara de limpieza/tinta, no la máscara completa de globo.
         # La máscara de globo se conserva en region.mask como zona segura para OCR/render.
         mascara_capa = BubbleDetector.compose_clean_mask(regiones, imagen.shape) if regiones else np.zeros(imagen.shape[:2], dtype=np.uint8)
 
-        imagen_limpia = self._clean_with_regions(imagen, mascara_capa, resultados, regiones)
-        return mascara_capa, imagen_limpia, regiones
+        ctx.mascara_capa = mascara_capa
+        ctx.imagen_limpia = self._clean_with_regions(imagen, mascara_capa, resultados, regiones, debug)
+        ctx.regiones = list(regiones)
 
     
 
 
-    def _clean_with_regions(self, imagen: np.ndarray, mascara_capa: np.ndarray, resultados, regiones: Sequence[TextRegion]) -> np.ndarray:
+    def _clean_with_regions(
+        self,
+        imagen: np.ndarray,
+        mascara_capa: np.ndarray,
+        resultados,
+        regiones: Sequence[TextRegion],
+        debug: VisualInpaintDebugWriter,
+    ) -> np.ndarray:
         if not regiones:
             return imagen.copy()
 
@@ -84,12 +112,14 @@ class CleanInpaintingPipelineMixin:
         bubble_regions, sfx_regions = self.regiones_a_limpiar(imagen, regiones)
 
         if self.bubble_fill and self.inpaint_mode in {"auto", "fast", "bubble_only", "quality", "sfx"}:
-            imagen_base = self._fill_bubble_interiors(imagen_base, bubble_regions)
+            imagen_base = self._fill_bubble_interiors(imagen_base, bubble_regions, debug)
 
         if self.inpaint_mode == "bubble_only":
             return imagen_base
 
-        imagen_base = self._clean_free_text_regions(imagen_base, sfx_regions, debug_index_offset=len(bubble_regions))
+        imagen_base = self._clean_free_text_regions(
+            imagen_base, sfx_regions, debug, debug_index_offset=len(bubble_regions)
+        )
 
         if self.inpaint_mode == "quality" and not self.bubble_fill:
             res_impainting = self.inpainter_runner.ejecutar_inpainting(imagen, mascara_capa, resultados)
@@ -118,193 +148,6 @@ class CleanInpaintingPipelineMixin:
 
 
 
-    @staticmethod
-    def _safe_debug_token(value: object, fallback: str = "page") -> str:
-        token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or "").strip())
-        token = token.strip("._-")
-        return token or fallback
-
-    def set_visual_inpaint_debug_context(self, output_root: str, page_index: int, filename: str) -> None:
-        """Configura dónde se guardarán los artefactos de debug de inpainting."""
-        self.visual_inpaint_debug_output_root = str(output_root or "")
-        self.visual_inpaint_debug_page_index = int(page_index)
-        self.visual_inpaint_debug_filename = str(filename or "page")
-        self._visual_inpaint_debug_records = []
-
-    def clear_visual_inpaint_debug_context(self) -> None:
-        self.visual_inpaint_debug_output_root = ""
-        self.visual_inpaint_debug_page_index = None
-        self.visual_inpaint_debug_filename = ""
-        self._visual_inpaint_debug_records = []
-
-    def _visual_inpaint_debug_enabled(self) -> bool:
-        return bool(getattr(self, "visual_inpaint_debug", False)) and bool(
-            getattr(self, "visual_inpaint_debug_output_root", "")
-        )
-
-    def _visual_inpaint_debug_page_dir(self) -> Optional[Path]:
-        if not self._visual_inpaint_debug_enabled():
-            return None
-
-        output_root = Path(str(getattr(self, "visual_inpaint_debug_output_root", "")))
-        page_index = getattr(self, "visual_inpaint_debug_page_index", None)
-        filename = str(getattr(self, "visual_inpaint_debug_filename", "page") or "page")
-        page_stem = self._safe_debug_token(Path(filename).stem, "page")
-        if isinstance(page_index, int):
-            page_number = f"{page_index + 1:04d}"
-            folder_name = page_number if page_stem == page_number else f"{page_number}_{page_stem}"
-        else:
-            folder_name = page_stem
-
-        page_dir = output_root / "debug_inpaint" / folder_name
-        page_dir.mkdir(parents=True, exist_ok=True)
-        return page_dir
-
-    def _visual_inpaint_debug_relpath(self, path: Path) -> str:
-        """Ruta relativa con separadores `/`.
-
-        Estas rutas viajan dentro de JSON que consumen la UI y otras herramientas, así que
-        no pueden depender del separador del sistema: en Windows saldrían con `\\`.
-        """
-        output_root = Path(str(getattr(self, "visual_inpaint_debug_output_root", "")))
-        try:
-            return path.relative_to(output_root).as_posix()
-        except Exception:
-            return Path(path).as_posix()
-
-    @staticmethod
-    def _json_safe(value):
-        if isinstance(value, np.generic):
-            return value.item()
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-        if isinstance(value, Path):
-            return str(value)
-        raise TypeError(f"Objeto no serializable: {type(value)!r}")
-
-    def _visual_inpaint_debug_bbox(
-        self,
-        clean_mask: np.ndarray,
-        safe_mask: Optional[np.ndarray],
-        image_shape,
-        padding: int = 12,
-    ) -> Tuple[int, int, int, int]:
-        bbox_mask = safe_mask if safe_mask is not None and cv2.countNonZero(safe_mask) > 0 else clean_mask
-        return InpainterRunner.mask_bounding_rect(bbox_mask, image_shape, padding=padding)
-
-    def _write_visual_inpaint_debug_image(
-        self,
-        image_or_mask: np.ndarray,
-        clean_mask: np.ndarray,
-        safe_mask: Optional[np.ndarray],
-        region_index: Optional[int],
-        label: str,
-    ) -> Optional[str]:
-        page_dir = self._visual_inpaint_debug_page_dir()
-        if page_dir is None or image_or_mask is None or region_index is None:
-            return None
-
-        x, y, w, h = self._visual_inpaint_debug_bbox(clean_mask, safe_mask, image_or_mask.shape, padding=12)
-        if w <= 0 or h <= 0:
-            return None
-
-        crop = image_or_mask[y:y + h, x:x + w]
-        if crop.size == 0:
-            return None
-
-        safe_label = self._safe_debug_token(label, "crop")
-        path = page_dir / f"r{int(region_index):03d}_{safe_label}.png"
-        try_write_image(path, crop, logger=logger)
-        return self._visual_inpaint_debug_relpath(path)
-
-    def _write_visual_inpaint_debug_manifest(self) -> Optional[str]:
-        page_dir = self._visual_inpaint_debug_page_dir()
-        if page_dir is None:
-            return None
-
-        page_index = getattr(self, "visual_inpaint_debug_page_index", None)
-        filename = str(getattr(self, "visual_inpaint_debug_filename", "") or "")
-        manifest = {
-            "page_index": page_index,
-            "page_number": int(page_index) + 1 if isinstance(page_index, int) else None,
-            "filename": filename,
-            "regions": list(getattr(self, "_visual_inpaint_debug_records", []) or []),
-        }
-        manifest_path = page_dir / "manifest.json"
-        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=self._json_safe), encoding="utf-8")
-        return self._visual_inpaint_debug_relpath(manifest_path)
-
-    def _write_visual_inpaint_region_debug_summary(
-        self,
-        *,
-        region_index: int,
-        region: TextRegion,
-        before_image: Optional[np.ndarray],
-        after_image: np.ndarray,
-        clean_mask: np.ndarray,
-        safe_mask: np.ndarray,
-        fill_color,
-        fill_strategy: str,
-        method: str,
-        chosen_candidate: str,
-        report,
-        attempts: List[dict],
-    ) -> dict:
-        page_dir = self._visual_inpaint_debug_page_dir()
-        if page_dir is None:
-            return {}
-
-        files = {
-            "before_crop": self._write_visual_inpaint_debug_image(before_image, clean_mask, safe_mask, region_index, "before") if before_image is not None else None,
-            "chosen_crop": self._write_visual_inpaint_debug_image(after_image, clean_mask, safe_mask, region_index, "chosen"),
-            "clean_mask": self._write_visual_inpaint_debug_image(clean_mask, clean_mask, safe_mask, region_index, "clean_mask"),
-            "safe_mask": self._write_visual_inpaint_debug_image(safe_mask, clean_mask, safe_mask, region_index, "safe_mask"),
-        }
-        files = {key: value for key, value in files.items() if value}
-
-        x, y, w, h = region.bbox
-        tx, ty, tw, th = region.text_bbox
-        payload = {
-            "region_index": int(region_index),
-            "kind": str(region.kind),
-            "confidence": round(float(region.confidence), 4),
-            "bbox": [int(x), int(y), int(w), int(h)],
-            "text_bbox": [int(tx), int(ty), int(tw), int(th)],
-            "fill_strategy": str(fill_strategy),
-            "fill_color_bgr": [int(c) for c in fill_color],
-            "method": str(method),
-            "chosen_candidate": str(chosen_candidate),
-            "passed": bool(getattr(report, "passed", True)) if report is not None else None,
-            "score": round(float(getattr(report, "score", 0.0)), 4) if report is not None else None,
-            "failed_checks": list(getattr(report, "failed_checks", [])) if report is not None else [],
-            "attempts": attempts,
-            "report": report.to_dict() if report is not None and hasattr(report, "to_dict") else None,
-            "files": files,
-        }
-
-        report_path = page_dir / f"r{int(region_index):03d}_report.json"
-        report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=self._json_safe), encoding="utf-8")
-        payload["report_file"] = self._visual_inpaint_debug_relpath(report_path)
-
-        records = getattr(self, "_visual_inpaint_debug_records", None)
-        if not isinstance(records, list):
-            records = []
-            self._visual_inpaint_debug_records = records
-        records.append(payload)
-        manifest_path = self._write_visual_inpaint_debug_manifest()
-
-        return {
-            "visual_inpaint_debug_dir": self._visual_inpaint_debug_relpath(page_dir),
-            "visual_inpaint_debug_manifest": manifest_path,
-            "visual_inpaint_debug_report": payload["report_file"],
-            "visual_inpaint_debug_files": files,
-        }
-
-
-
-
-
-
     def _apply_bubble_cleaning_with_visual_verifier(
         self,
         imagen: np.ndarray,
@@ -316,6 +159,7 @@ class CleanInpaintingPipelineMixin:
         background_variation: float,
         variation_threshold: float,
         sigma: float,
+        debug: VisualInpaintDebugWriter,
         debug_region_index: Optional[int] = None,
     ) -> tuple[np.ndarray, str, Optional[object], List[dict], str]:
         should_use_inpaint = fill_strategy == "inpaint" or (
@@ -365,7 +209,7 @@ class CleanInpaintingPipelineMixin:
                 "score": round(float(report.score), 4),
                 "failed_checks": report.failed_checks,
             }
-            debug_crop = self._write_visual_inpaint_debug_image(
+            debug_crop = debug.write_crop(
                 candidate_image,
                 clean_mask,
                 safe_mask,
@@ -398,7 +242,7 @@ class CleanInpaintingPipelineMixin:
             "score": round(float(getattr(best_report, "score", 0.0)), 4),
             "failed_checks": getattr(best_report, "failed_checks", []),
         }
-        debug_crop = self._write_visual_inpaint_debug_image(
+        debug_crop = debug.write_crop(
             fallback,
             clean_mask,
             safe_mask,
@@ -410,7 +254,9 @@ class CleanInpaintingPipelineMixin:
         attempts.append(fallback_attempt)
         return fallback, "solid_color:last_resort", best_report, attempts, "solid"
 
-    def _fill_bubble_interiors(self, imagen: np.ndarray, regiones: Sequence[TextRegion]) -> np.ndarray:
+    def _fill_bubble_interiors(
+        self, imagen: np.ndarray, regiones: Sequence[TextRegion], debug: VisualInpaintDebugWriter
+    ) -> np.ndarray:
         salida = imagen.copy()
         for region_index, region in enumerate(regiones):
             safe_mask = self.mask_strategy.safe_bubble_mask(region.mask, salida.shape, self.bubble_fill_edge_margin)
@@ -427,7 +273,7 @@ class CleanInpaintingPipelineMixin:
             if cv2.countNonZero(clean_mask) == 0:
                 continue
 
-            salida = self._clean_region_with_masks(salida, region, region_index, clean_mask, safe_mask)
+            salida = self._clean_region_with_masks(salida, region, region_index, clean_mask, safe_mask, debug)
         return salida
 
 
@@ -454,6 +300,7 @@ class CleanInpaintingPipelineMixin:
         self,
         imagen: np.ndarray,
         regiones: Sequence[TextRegion],
+        debug: VisualInpaintDebugWriter,
         *,
         debug_index_offset: int = 0,
     ) -> np.ndarray:
@@ -473,7 +320,7 @@ class CleanInpaintingPipelineMixin:
                 continue
             context_mask = self._free_text_context_mask(clean_mask, salida.shape)
             salida = self._clean_region_with_masks(
-                salida, region, debug_index_offset + offset, clean_mask, context_mask
+                salida, region, debug_index_offset + offset, clean_mask, context_mask, debug
             )
         return salida
 
@@ -484,6 +331,7 @@ class CleanInpaintingPipelineMixin:
         region_index: int,
         clean_mask: np.ndarray,
         safe_mask: np.ndarray,
+        debug: VisualInpaintDebugWriter,
     ) -> np.ndarray:
         """Borra la tinta de una región y verifica el resultado.
 
@@ -510,7 +358,7 @@ class CleanInpaintingPipelineMixin:
             sigma = min(sigma, 0.65)
 
         if bool(getattr(self, "visual_inpaint_verifier_enabled", False)):
-            debug_before_image = salida.copy() if self._visual_inpaint_debug_enabled() else None
+            debug_before_image = salida.copy() if debug.enabled else None
             salida_verificada, method, report, attempts, chosen_candidate = self._apply_bubble_cleaning_with_visual_verifier(
                 salida,
                 clean_mask,
@@ -520,6 +368,7 @@ class CleanInpaintingPipelineMixin:
                 background_variation=background_variation,
                 variation_threshold=variation_threshold,
                 sigma=sigma,
+                debug=debug,
                 debug_region_index=region_index,
             )
             salida = salida_verificada
@@ -540,7 +389,7 @@ class CleanInpaintingPipelineMixin:
                         metadata["visual_inpaint_report"] = report.to_dict()
                 if bool(getattr(self, "visual_inpaint_debug", False)):
                     metadata["visual_inpaint_attempts"] = attempts
-                    debug_metadata = self._write_visual_inpaint_region_debug_summary(
+                    debug_metadata = debug.write_region_summary(
                         region_index=region_index,
                         region=region,
                         before_image=debug_before_image,

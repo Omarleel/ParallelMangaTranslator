@@ -310,8 +310,8 @@ def _page_rows(translate_manga, cuadros: Sequence, textos: Sequence[str], region
     predicción. Ese filtro es parte de la detección efectiva, no un detalle de formato.
     """
     textos_limpios = [translate_manga.normalizar_texto_ocr(texto) for texto in textos]
-    flags = translate_manga._source_language_flags_for_texts(textos_limpios)
-    estilos = translate_manga._clasificar_estilos_texto(textos_limpios)
+    flags = translate_manga._source_language_flags_for_texts(textos_limpios, regiones)
+    estilos = translate_manga._clasificar_estilos_texto(textos_limpios, regiones)
 
     rows: List[Dict[str, Any]] = []
     for idx, ((x, y, w, h), texto) in enumerate(zip(cuadros, textos_limpios)):
@@ -421,22 +421,17 @@ def run_case(case: EvalCase, settings: RunSettings, *, base_config_path: str = "
             logger.warning("No se pudo leer %s", image_path)
             continue
 
-        clean_manga.set_debug_page_context(index, source_filename=image_path.name, output_filename=image_path.name)
-        # Mismo contrato que ImageProcessor: sin este contexto, visual_inpaint_debug no
-        # escribe nada y `--debug-artifacts` se queda sin los informes por región.
-        if settings.debug_artifacts:
-            clean_manga.set_visual_inpaint_debug_context(
-                output_root=config.processing.ruta_carpeta_salida,
-                page_index=index,
-                filename=image_path.name,
-            )
-        else:
-            clean_manga.clear_visual_inpaint_debug_context()
-        translate_manga.insertar_json_queue(index, None, None)
-        try:
-            contexto = pipeline.run(PageContext(imagen=imagen))
-        finally:
-            clean_manga.clear_debug_page_context()
+        translate_manga.insertar_json_queue(None, None)
+        # Mismo contrato que ImageProcessor: la identidad de la página y el destino de los
+        # artefactos viajan en el contexto. Sin `debug_root`, `--debug-artifacts` se queda
+        # sin los informes por región.
+        contexto = pipeline.run(PageContext(
+            imagen=imagen,
+            indice_pagina=index,
+            nombre_archivo=image_path.name,
+            archivo_origen=image_path.name,
+            debug_root=str(config.processing.ruta_carpeta_salida) if settings.debug_artifacts else "",
+        ))
 
         imagen_limpia = contexto.imagen_limpia
         regiones = contexto.regiones

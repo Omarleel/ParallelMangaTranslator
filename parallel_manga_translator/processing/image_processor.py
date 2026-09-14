@@ -134,15 +134,11 @@ class ImageProcessor:
             self._registrar_pagina(transcripcion_queue, "Transcripción", indice_imagen, imagen)
             self._registrar_pagina(traduccion_queue, "Traducción", indice_imagen, imagen)
 
-            self.clean_manga.set_debug_page_context(
-                indice_imagen,
-                source_filename=archivo,
-                output_filename=nuevo_archivo,
-            )
             try:
                 self._process_with_retry(
                     indice_imagen=indice_imagen,
                     archivo=nuevo_archivo,
+                    archivo_origen=archivo,
                     imagen=imagen,
                     ruta_limpieza_salida=ruta_limpieza_salida,
                     ruta_traduccion_salida=ruta_traduccion_salida,
@@ -155,7 +151,6 @@ class ImageProcessor:
                 logger.exception("Fallo definitivo al procesar %s: %s", archivo, exc)
                 self._registrar_fallo(ruta_traduccion_salida, indice_imagen, nuevo_archivo, image_path, exc)
             finally:
-                self.clean_manga.clear_debug_page_context()
                 del imagen
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -228,11 +223,6 @@ class ImageProcessor:
 
                     self._registrar_pagina(transcripcion_queue, "Transcripción", indice_imagen, imagen)
                     self._registrar_pagina(traduccion_queue, "Traducción", indice_imagen, imagen)
-                    self.clean_manga.set_debug_page_context(
-                        indice_imagen,
-                        source_filename=archivo,
-                        output_filename=nuevo_archivo,
-                    )
                     try:
                         preparada = self._prepare_page_with_retry(
                             indice_imagen=indice_imagen,
@@ -254,7 +244,6 @@ class ImageProcessor:
                             ruta_traduccion_salida, indice_imagen, nuevo_archivo, image_path, exc
                         )
                     finally:
-                        self.clean_manga.clear_debug_page_context()
                         del imagen
             except BaseException as exc:  # comunica fallos inesperados al consumidor
                 producer_errors.append(exc)
@@ -362,15 +351,13 @@ class ImageProcessor:
                 with processing_stage(
                     PipelineStage.LIMPIEZA, logger=logger, page_index=indice_imagen, filename=output_filename
                 ):
-                    if bool(getattr(self.clean_manga, "visual_inpaint_debug", False)):
-                        self.clean_manga.set_visual_inpaint_debug_context(
-                            output_root=output_root,
-                            page_index=indice_imagen,
-                            filename=output_filename,
-                        )
-                    else:
-                        self.clean_manga.clear_visual_inpaint_debug_context()
-                    contexto = self.pipeline_limpieza.run(PageContext(imagen=imagen_actual))
+                    contexto = self.pipeline_limpieza.run(PageContext(
+                        imagen=imagen_actual,
+                        indice_pagina=indice_imagen,
+                        nombre_archivo=output_filename,
+                        archivo_origen=source_filename,
+                        debug_root=output_root,
+                    ))
                 mascara_capa, imagen_limpia, regiones = contexto.mascara_capa, contexto.imagen_limpia, contexto.regiones
 
                 metrics.timings["limpieza"] = round(time.perf_counter() - t0, 4)
@@ -430,7 +417,6 @@ class ImageProcessor:
         traduccion_queue,
     ) -> None:
         self.translate_manga.insertar_json_queue(
-            indice_imagen=item.indice_imagen,
             transcripcion_queue=transcripcion_queue,
             traduccion_queue=traduccion_queue,
         )
@@ -443,22 +429,15 @@ class ImageProcessor:
         ):
             contexto = self.pipeline_traduccion.run(PageContext(
                 imagen=item.imagen_original,
+                indice_pagina=item.indice_imagen,
                 imagen_limpia=item.imagen_limpia,
                 mascara_capa=item.mascara_capa,
                 regiones=list(item.regiones),
             ))
             imagen_traducida = contexto.imagen_final
         item.metrics.timings["ocr_traduccion_render"] = round(time.perf_counter() - t0, 4)
-        item.metrics.ocr_empty = sum(
-            1
-            for texto in getattr(self.translate_manga, "ultimos_textos_originales", [])
-            if not str(texto).strip()
-        )
-        item.metrics.translations_empty = sum(
-            1
-            for texto in getattr(self.translate_manga, "ultimos_textos_traducidos", [])
-            if not str(texto).strip()
-        )
+        item.metrics.ocr_empty = sum(1 for texto in contexto.textos_originales if not str(texto).strip())
+        item.metrics.translations_empty = sum(1 for texto in contexto.textos_traducidos if not str(texto).strip())
 
         if imagen_traducida is None:
             # La composicion no incluye rotulado (por ejemplo, un pipeline solo-OCR):
@@ -532,6 +511,7 @@ class ImageProcessor:
         ruta_traduccion_salida,
         transcripcion_queue,
         traduccion_queue,
+        archivo_origen: str = "",
         max_retries: int = 3,
     ) -> None:
         imagen_actual = imagen
@@ -547,15 +527,13 @@ class ImageProcessor:
             try:
                 t0 = time.perf_counter()
                 with processing_stage(PipelineStage.LIMPIEZA, logger=logger, page_index=indice_imagen, filename=archivo):
-                    if bool(getattr(self.clean_manga, "visual_inpaint_debug", False)):
-                        self.clean_manga.set_visual_inpaint_debug_context(
-                            output_root=output_root,
-                            page_index=indice_imagen,
-                            filename=archivo,
-                        )
-                    else:
-                        self.clean_manga.clear_visual_inpaint_debug_context()
-                    contexto = self.pipeline_limpieza.run(PageContext(imagen=imagen_actual))
+                    contexto = self.pipeline_limpieza.run(PageContext(
+                        imagen=imagen_actual,
+                        indice_pagina=indice_imagen,
+                        nombre_archivo=archivo,
+                        archivo_origen=archivo_origen,
+                        debug_root=output_root,
+                    ))
                 mascara_capa, imagen_limpia, regiones = contexto.mascara_capa, contexto.imagen_limpia, contexto.regiones
                 metrics.timings["limpieza"] = round(time.perf_counter() - t0, 4)
                 metrics.detected_regions = len(regiones)
@@ -567,7 +545,6 @@ class ImageProcessor:
                     self._write_image(archivo_limpieza_salida, imagen_limpia)
 
                 self.translate_manga.insertar_json_queue(
-                    indice_imagen=indice_imagen,
                     transcripcion_queue=transcripcion_queue,
                     traduccion_queue=traduccion_queue,
                 )
@@ -575,14 +552,15 @@ class ImageProcessor:
                 with processing_stage(PipelineStage.OCR_TRADUCCION_RENDER, logger=logger, page_index=indice_imagen, filename=archivo):
                     contexto = self.pipeline_traduccion.run(PageContext(
                         imagen=imagen_actual,
+                        indice_pagina=indice_imagen,
                         imagen_limpia=imagen_limpia,
                         mascara_capa=mascara_capa,
                         regiones=list(regiones),
                     ))
                     imagen_traducida = contexto.imagen_final
                 metrics.timings["ocr_traduccion_render"] = round(time.perf_counter() - t1, 4)
-                metrics.ocr_empty = sum(1 for t in getattr(self.translate_manga, "ultimos_textos_originales", []) if not str(t).strip())
-                metrics.translations_empty = sum(1 for t in getattr(self.translate_manga, "ultimos_textos_traducidos", []) if not str(t).strip())
+                metrics.ocr_empty = sum(1 for t in contexto.textos_originales if not str(t).strip())
+                metrics.translations_empty = sum(1 for t in contexto.textos_traducidos if not str(t).strip())
 
                 if imagen_traducida is None:
                     logger.info(

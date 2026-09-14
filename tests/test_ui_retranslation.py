@@ -329,12 +329,9 @@ class _StubTranslateManga:
     """Doble de `TranslateManga` con las mismas piezas que usa el retraductor."""
 
     def __init__(self, *args, **kwargs) -> None:
-        self.indice_imagen = 0
-        self.ultimas_regiones = []
-        self.ultimas_asignaciones_hablante = []
-        self.ultimo_estilos_texto = []
-        self.ultimos_source_language_flags = []
         self.textos_recibidos = []
+        #: El contexto que recibió, para comprobar que el retraductor arma el suyo.
+        self.contexto_recibido = None
         self.reading_order_resolver = mock.Mock(page_reads_right_to_left=True)
         self.translator_manager = mock.Mock(provider=mock.Mock(llm_fallback_reason=""))
         self.text_renderer = mock.Mock()
@@ -343,17 +340,18 @@ class _StubTranslateManga:
     def normalizar_texto_ocr(self, texto: str) -> str:
         return texto.strip()
 
-    def traducir_textos(self, textos):
-        self.textos_recibidos = list(textos)
-        self.ultimo_estilos_texto = ["dialogo", "onomatopeya"][: len(textos)]
-        self.ultimos_source_language_flags = [True] * len(textos)
-        return [f"es:{texto}" for texto in textos]
+    def traducir_textos(self, ctx):
+        self.contexto_recibido = ctx
+        self.textos_recibidos = list(ctx.textos_originales)
+        ctx.estilos = ["dialogo", "onomatopeya"][: len(ctx.textos_originales)]
+        ctx.flags_idioma_origen = [True] * len(ctx.textos_originales)
+        ctx.textos_traducidos = [f"es:{texto}" for texto in ctx.textos_originales]
 
-    def resolver_textos_para_render(self, limpios, traducidos):
+    def resolver_textos_para_render(self, ctx):
         # Regla real del pipeline: la onomatopeya conservada no se dibuja.
         return [
             "" if estilo == "onomatopeya" else traducido
-            for estilo, traducido in zip(self.ultimo_estilos_texto, traducidos)
+            for estilo, traducido in zip(ctx.estilos, ctx.textos_traducidos)
         ]
 
 
@@ -395,7 +393,8 @@ class RetranslatorPageTests(unittest.TestCase):
                 )
 
             stub = retranslator.translator
-            self.assertEqual(stub.indice_imagen, 3)
+            # El indice de pagina viaja en el contexto, no escrito en el traductor.
+            self.assertEqual(stub.contexto_recibido.indice_pagina, 3)
             self.assertEqual(stub.textos_recibidos, ["こんにちは", "ドン"])
             self.assertEqual([resultado.index for resultado in resultados], [0, 1])
             self.assertEqual(resultados[0].translated_text, "es:こんにちは")

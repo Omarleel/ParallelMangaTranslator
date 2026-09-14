@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 from parallel_manga_translator.infrastructure.logging_config import get_logger
+from parallel_manga_translator.models.page_context import PageContext
 from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.processing.translate_manga import TranslateManga
 
@@ -102,13 +103,23 @@ class JobRetranslator:
             for region in usable
         ]
 
-        self.translator.indice_imagen = page_index
-        self.translator.ultimas_regiones = text_regions
-        self.translator.ultimas_asignaciones_hablante = []
-        traducidos = self.translator.traducir_textos(originales)
-        textos_para_render = self.translator.resolver_textos_para_render(originales, traducidos)
-        estilos = list(self.translator.ultimo_estilos_texto)
-        flags = list(self.translator.ultimos_source_language_flags)
+        # La retraduccion es una pagina mas: se le arma su contexto y se reusan los
+        # mismos pasos. Antes habia que escribir en los atributos del traductor para
+        # simular el estado que habria dejado el pipeline, que es una capa de arriba
+        # fabricando el estado interno de una de abajo.
+        contexto = PageContext(
+            imagen=clean_image,
+            indice_pagina=page_index,
+            regiones_ordenadas=list(text_regions),
+            cuadros=[region.bbox for region in text_regions],
+            textos_originales=list(originales),
+        )
+        self.translator.traducir_textos(contexto)
+        contexto.textos_para_render = self.translator.resolver_textos_para_render(contexto)
+        traducidos = list(contexto.textos_traducidos)
+        textos_para_render = list(contexto.textos_para_render)
+        estilos = list(contexto.estilos)
+        flags = list(contexto.flags_idioma_origen)
         rotaciones = [float(region.get("rotation_angle") or 0.0) for region in usable]
         cajas = [region.bbox for region in text_regions]
         layouts = [region.get("ui_layout") if isinstance(region.get("ui_layout"), dict) else None for region in usable]

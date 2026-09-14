@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 from parallel_manga_translator.infrastructure.logging_config import get_logger
+from parallel_manga_translator.models.page_context import PageContext
+from parallel_manga_translator.models.processing_models import TextRegion
 
 Box = Tuple[int, int, int, int]
 logger = get_logger(__name__)
@@ -12,16 +14,13 @@ logger = get_logger(__name__)
 class TranslationPipelineMixin:
     """Traducción de regiones y reglas de onomatopeyas."""
 
-    def _es_onomatopeya_de_texto_libre(self, indice: int, texto: str) -> bool:
+    def _es_onomatopeya_de_texto_libre(self, region: Optional[TextRegion], texto: str) -> bool:
         """Detecta SFX/onomatopeyas que el detector dejó como free_text.
 
         En ese caso se conserva el original y no se envía al traductor normal/LLM,
         porque las onomatopeyas grandes fuera de globo suelen ser parte del arte.
         """
-        if not (self.ultimas_regiones and indice < len(self.ultimas_regiones)):
-            return False
-        region = self.ultimas_regiones[indice]
-        if region.kind != "free_text":
+        if region is None or region.kind != "free_text":
             return False
 
         metadata = getattr(region, "metadata", {}) or {}
@@ -51,8 +50,7 @@ class TranslationPipelineMixin:
             or not getattr(self, "translate_onomatopoeia", True)
         )
 
-    def _should_keep_original_onomatopoeia(self, indice: int, texto: str) -> bool:
-        region = self.ultimas_regiones[indice] if self.ultimas_regiones and indice < len(self.ultimas_regiones) else None
+    def _should_keep_original_onomatopoeia(self, region: Optional[TextRegion], texto: str) -> bool:
         # Una onomatopeya dentro de un globo es contenido de diálogo/reacción:
         # se limpia, se transcribe y se traduce incluso si el modo global conserva
         # SFX externos.
@@ -62,11 +60,11 @@ class TranslationPipelineMixin:
             return False
         if region is not None and region.kind in {"sfx", "onomatopoeia"}:
             return True
-        if region is not None and region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(indice, texto):
+        if region is not None and region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(region, texto):
             return True
         return self.onomatopoeia_manager.is_onomatopoeia(texto, self.idioma_entrada)
 
-    def _clasificar_estilos_texto(self, textos: Sequence[str]) -> List[str]:
+    def _clasificar_estilos_texto(self, textos: Sequence[str], regiones: Sequence[TextRegion] = ()) -> List[str]:
         # Clasificación final conservadora:
         # - diálogo normal: sólo diccionario exacto/normalizado,
         # - free_text/SFX: puede usar similitud o heurística previa de candidato,
@@ -75,9 +73,9 @@ class TranslationPipelineMixin:
             "onomatopeya" if self.onomatopoeia_manager.is_onomatopoeia(texto, self.idioma_entrada) else "dialogo"
             for texto in textos
         ]
-        if self.ultimas_regiones and len(self.ultimas_regiones) == len(estilos):
-            for i, region in enumerate(self.ultimas_regiones):
-                if region.kind in {"sfx", "onomatopoeia"} or region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(i, textos[i]):
+        if regiones and len(regiones) == len(estilos):
+            for i, region in enumerate(regiones):
+                if region.kind in {"sfx", "onomatopoeia"} or region.kind == "free_text" and self._es_onomatopeya_de_texto_libre(region, textos[i]):
                     estilos[i] = "onomatopeya"
                 elif region.kind == "narration":
                     estilos[i] = "narracion"
@@ -88,20 +86,21 @@ class TranslationPipelineMixin:
             estilos = ["onomatopeya_subtitle" if e == "onomatopeya" else e for e in estilos]
         return estilos
 
-    def _traducir_onomatopeyas_con_diccionario(self, textos: Sequence[str]):
+    def _traducir_onomatopeyas_con_diccionario(self, textos: Sequence[str], regiones: Sequence[TextRegion] = ()):
         """
         Devuelve una lista parcial de traducciones para onomatopeyas conocidas.
         Las posiciones con None quedan para el traductor normal o LLM.
         """
         parciales = []
         for indice, texto in enumerate(textos):
-            if self._should_keep_original_onomatopoeia(indice, texto):
+            region = regiones[indice] if indice < len(regiones) else None
+            if self._should_keep_original_onomatopoeia(region, texto):
                 parciales.append(texto)
                 continue
             if self.onomatopoeia_mode in {"keep", "original", "none", "off"}:
                 parciales.append(None)
                 continue
-            if self._es_onomatopeya_de_texto_libre(indice, texto):
+            if self._es_onomatopeya_de_texto_libre(region, texto):
                 parciales.append(texto)
                 continue
             traduccion = self.onomatopoeia_manager.translate(
@@ -114,27 +113,25 @@ class TranslationPipelineMixin:
             parciales.append(traduccion)
         return parciales
 
-    def resolver_textos_para_render(
-        self,
-        textos_limpios: Sequence[str],
-        textos_traducidos: Sequence[str],
-    ) -> List[str]:
+    def resolver_textos_para_render(self, ctx: PageContext) -> List[str]:
         """Decide qué texto se dibuja realmente en cada región ya traducida.
 
         Queda vacío lo que el filtro de idioma de origen descartó y las onomatopeyas
         que deben conservar el arte original. La retraducción de la UI reutiliza esta
-        misma regla para producir la misma imagen que habría producido el pipeline.
+        misma regla —sobre su propio contexto— para producir la misma imagen que habría
+        producido el pipeline.
         """
+        flags = ctx.flags_idioma_origen
         return [
-            "" if (idx < len(self.ultimos_source_language_flags) and not self.ultimos_source_language_flags[idx])
-            else ("" if self._should_keep_original_onomatopoeia(idx, original) else traducido)
-            for idx, (original, traducido) in enumerate(zip(textos_limpios, textos_traducidos))
+            "" if (idx < len(flags) and not flags[idx])
+            else ("" if self._should_keep_original_onomatopoeia(ctx.region_en(idx), original) else traducido)
+            for idx, (original, traducido) in enumerate(zip(ctx.textos_originales, ctx.textos_traducidos))
         ]
 
-    def _region_metadata_for_translation(self, textos: Sequence[str]) -> List[Dict[str, Any]]:
+    def _region_metadata_for_translation(self, textos: Sequence[str], regiones: Sequence[TextRegion] = ()) -> List[Dict[str, Any]]:
         metadata: List[Dict[str, Any]] = []
         for idx, texto in enumerate(textos):
-            region = self.ultimas_regiones[idx] if idx < len(self.ultimas_regiones) else None
+            region = regiones[idx] if idx < len(regiones) else None
             row: Dict[str, Any] = {"source_index": idx, "max_chars": max(16, min(120, int(len(str(texto or "")) * 1.8 + 18)))}
             if region is not None:
                 x, y, w, h = region.bbox
@@ -176,30 +173,39 @@ class TranslationPipelineMixin:
             enriched.append(merged)
         return enriched
 
-    def traducir_textos(self, textos: Sequence[str]):
-        textos_limpios = [self.normalizar_texto_ocr(texto) for texto in textos]
-        source_language_flags = self._source_language_flags_for_texts(textos_limpios)
-        self.ultimos_source_language_flags = source_language_flags
-        self.ultimo_estilos_texto = self._clasificar_estilos_texto(textos_limpios)
-        self.ultimo_estilos_texto = [
+    def traducir_textos(self, ctx: PageContext) -> None:
+        """Traduce `ctx.textos_originales` y deja en el contexto todo lo que produce.
+
+        Escribe `textos_traducidos`, `estilos`, `flags_idioma_origen` y
+        `asignaciones_hablante`. Antes los dejaba en cuatro atributos del traductor que
+        leían los dos pasos siguientes sin que nada lo declarase.
+
+        `historial_contexto` sí se queda en el objeto: es memoria **entre** páginas, no
+        estado de esta.
+        """
+        regiones = ctx.regiones_ordenadas
+        textos_limpios = [self.normalizar_texto_ocr(texto) for texto in ctx.textos_originales]
+        source_language_flags = self._source_language_flags_for_texts(textos_limpios, regiones)
+        ctx.flags_idioma_origen = source_language_flags
+        ctx.estilos = [
             estilo if source_language_flags[idx] else "omitido_idioma_origen"
-            for idx, estilo in enumerate(self.ultimo_estilos_texto)
+            for idx, estilo in enumerate(self._clasificar_estilos_texto(textos_limpios, regiones))
         ]
-        base_metadata = self._region_metadata_for_translation(textos_limpios)
+        base_metadata = self._region_metadata_for_translation(textos_limpios, regiones)
 
         keep_onomatopoeia_flags = [
-            self._should_keep_original_onomatopoeia(i, texto) if source_language_flags[i] else False
+            self._should_keep_original_onomatopoeia(ctx.region_en(i), texto) if source_language_flags[i] else False
             for i, texto in enumerate(textos_limpios)
         ]
 
-        self.ultimas_asignaciones_hablante = []
+        ctx.asignaciones_hablante = []
         metadata_con_hablantes = list(base_metadata)
         if self.metodo_traduccion == "LLM":
             # No gastamos tokens de memoria de personajes en onomatopeyas conservadas ni en textos ajenos al idioma de origen.
             memory_texts = ["" if (keep or not source_ok) else texto for keep, source_ok, texto in zip(keep_onomatopoeia_flags, source_language_flags, textos_limpios)]
-            self.ultimas_asignaciones_hablante = self.translator_manager.analyze_character_memory(
+            ctx.asignaciones_hablante = self.translator_manager.analyze_character_memory(
                 memory_texts,
-                page_index=self.indice_imagen,
+                page_index=ctx.indice_pagina,
                 region_metadata=base_metadata,
                 contexto_previo=list(self.historial_contexto),
             )
@@ -212,13 +218,13 @@ class TranslationPipelineMixin:
                         "is_narration": False,
                         "evidence": "onomatopeya_conservada_sin_llm",
                     }
-                    if idx < len(self.ultimas_asignaciones_hablante):
-                        self.ultimas_asignaciones_hablante[idx] = assignment
+                    if idx < len(ctx.asignaciones_hablante):
+                        ctx.asignaciones_hablante[idx] = assignment
                     else:
-                        self.ultimas_asignaciones_hablante.append(assignment)
-            metadata_con_hablantes = self._metadata_with_speaker_assignments(base_metadata, self.ultimas_asignaciones_hablante)
+                        ctx.asignaciones_hablante.append(assignment)
+            metadata_con_hablantes = self._metadata_with_speaker_assignments(base_metadata, ctx.asignaciones_hablante)
 
-        traducciones_onomatopeyas = self._traducir_onomatopeyas_con_diccionario(textos_limpios)
+        traducciones_onomatopeyas = self._traducir_onomatopeyas_con_diccionario(textos_limpios, regiones)
         indices_por_traducir = [
             i for i, traduccion in enumerate(traducciones_onomatopeyas)
             if source_language_flags[i] and traduccion is None
@@ -248,7 +254,7 @@ class TranslationPipelineMixin:
 
         textos_traducidos_limpios = [
             self.text_normalizer.normalize_translated_text(texto_traducido, estilo)
-            for texto_traducido, estilo in zip(textos_traducidos_brutos, self.ultimo_estilos_texto)
+            for texto_traducido, estilo in zip(textos_traducidos_brutos, ctx.estilos)
         ]
 
         if self.metodo_traduccion == "LLM":
@@ -260,4 +266,6 @@ class TranslationPipelineMixin:
             if contexto_bilingue:
                 self.historial_contexto.append(contexto_bilingue)
 
-        return [texto if source_language_flags[idx] else "" for idx, texto in enumerate(textos_traducidos_limpios)]
+        ctx.textos_traducidos = [
+            texto if source_language_flags[idx] else "" for idx, texto in enumerate(textos_traducidos_limpios)
+        ]

@@ -21,13 +21,7 @@ from parallel_manga_translator.processing.translate_manga import TranslateManga
 
 #: Los métodos que el orquestador necesita de cada etapa. Escritos a mano a propósito:
 #: si alguien amplía un puerto, este test obliga a decidir si la etapa real lo cumple.
-METODOS_CLEANER = (
-    "limpiar_manga",
-    "set_debug_page_context",
-    "clear_debug_page_context",
-    "set_visual_inpaint_debug_context",
-    "clear_visual_inpaint_debug_context",
-)
+METODOS_CLEANER = ("limpiar_manga",)
 METODOS_TRANSLATOR = (
     "insertar_json_queue",
     "traducir_manga",
@@ -42,56 +36,37 @@ class _CleanerFalso:
     def __init__(self):
         self.paginas = []
 
-    def limpiar_manga(self, imagen):
-        self.paginas.append(imagen)
-        return imagen, np.zeros(imagen.shape[:2], dtype=np.uint8), []
-
-    def set_debug_page_context(self, page_index, *, source_filename=None, output_filename=None):
-        pass
-
-    def clear_debug_page_context(self):
-        pass
-
-    def set_visual_inpaint_debug_context(self, output_root, page_index, filename):
-        pass
-
-    def clear_visual_inpaint_debug_context(self):
-        pass
+    def limpiar_manga(self, ctx):
+        self.paginas.append(ctx.imagen)
+        ctx.mascara_capa = np.zeros(ctx.imagen.shape[:2], dtype=np.uint8)
+        ctx.imagen_limpia = ctx.imagen
 
 
 class _TranslatorFalso:
-    ultimas_regiones = ()
-
-    def insertar_json_queue(self, indice_imagen, transcripcion_queue, traduccion_queue):
+    def insertar_json_queue(self, transcripcion_queue, traduccion_queue):
         pass
 
-    def traducir_manga(self, imagen, imagen_limpia, mascara_capa, text_regions=None):
+    def traducir_manga(self, imagen, imagen_limpia, mascara_capa, text_regions=None, indice_pagina=0):
         return imagen_limpia
 
-    def extraer_regiones(self, imagen, mascara_capa, text_regions=None):
-        return [], []
+    def extraer_regiones(self, ctx):
+        pass
 
-    def obtener_textos(self, imagenes_interes):
-        return []
+    def obtener_textos(self, ctx):
+        pass
 
-    def traducir_textos_de_regiones(self, cuadros_delimitadores, textos):
-        return []
+    def traducir_textos_de_regiones(self, ctx):
+        pass
 
-    def rotular(self, imagen_limpia, cuadros_delimitadores, textos_para_render):
-        return imagen_limpia
+    def rotular(self, ctx):
+        ctx.imagen_final = ctx.imagen_limpia
 
 
 class _CleanerIncompleto:
-    """Le falta el contexto de depuración de inpaint."""
+    """No sabe limpiar una página: es lo único que el puerto exige."""
 
-    def limpiar_manga(self, imagen):
-        return imagen, None, []
-
-    def set_debug_page_context(self, page_index, *, source_filename=None, output_filename=None):
-        pass
-
-    def clear_debug_page_context(self):
-        pass
+    def regiones_a_limpiar(self, imagen, regiones):
+        return [], []
 
 
 class PuertosDelPipelineTests(unittest.TestCase):

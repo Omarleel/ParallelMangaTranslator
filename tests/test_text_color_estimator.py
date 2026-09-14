@@ -15,6 +15,8 @@ import unittest
 import cv2
 import numpy as np
 
+from parallel_manga_translator.models.page_context import PageContext
+
 from parallel_manga_translator.rendering.text_color_estimator import estimar_colores
 
 LADO = 120
@@ -135,8 +137,6 @@ class CableadoEnElPipelineTests(unittest.TestCase):
                 return [""] * len(imagenes)
 
         class _TraductorFalso:
-            ultimas_regiones = ()
-
             def traducir_textos(self, textos, **kwargs):
                 return list(textos)
 
@@ -179,18 +179,16 @@ class CableadoEnElPipelineTests(unittest.TestCase):
         self.assertFalse(QualityConfig().estimate_text_colors)
         traductor = self._traductor()
         imagen, region = self._region()
-        traductor.ultimas_regiones = [region]
 
-        traductor._estimar_colores_de_regiones(imagen)
+        traductor._estimar_colores_de_regiones(PageContext(imagen=imagen, regiones_ordenadas=[region]))
 
         self.assertNotIn("text_fill_color", region.metadata)
 
     def test_encendido_anota_el_color_de_la_tinta(self):
         traductor = self._traductor(estimate_text_colors=True)
         imagen, region = self._region()
-        traductor.ultimas_regiones = [region]
 
-        traductor._estimar_colores_de_regiones(imagen)
+        traductor._estimar_colores_de_regiones(PageContext(imagen=imagen, regiones_ordenadas=[region]))
 
         self.assertEqual(region.metadata["text_fill_color"], [255, 0, 0])
 
@@ -198,7 +196,6 @@ class CableadoEnElPipelineTests(unittest.TestCase):
         traductor = self._traductor(estimate_text_colors=True)
         _imagen, region = self._region()
         region.metadata["text_fill_color"] = [255, 0, 0]
-        traductor.ultimas_regiones = [region]
         recogido = {}
 
         def _render(imagen_limpia, cuadros, textos, **kwargs):
@@ -206,7 +203,13 @@ class CableadoEnElPipelineTests(unittest.TestCase):
             return imagen_limpia
 
         traductor.text_renderer.render = _render
-        traductor.rotular(_lienzo(BGR_BLANCO), [region.bbox], ["hola"])
+        traductor.rotular(PageContext(
+            imagen=_lienzo(BGR_BLANCO),
+            imagen_limpia=_lienzo(BGR_BLANCO),
+            cuadros=[region.bbox],
+            regiones_ordenadas=[region],
+            textos_para_render=["hola"],
+        ))
 
         self.assertEqual(recogido["text_colors"], [[255, 0, 0]])
         self.assertEqual(recogido["stroke_colors"], [None])

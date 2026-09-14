@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import List
-
 import nest_asyncio
 import torch
 
 from parallel_manga_translator.language.onomatopoeia_manager import OnomatopoeiaManager
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
-from parallel_manga_translator.models.processing_models import TextRegion
 from parallel_manga_translator.language.source_language_filter import SourceLanguageFilter
 from parallel_manga_translator.architecture.ports import InpainterPort, RegionDetectorPort, TextDetectionPort
 from parallel_manga_translator.config.app_config import OcrConfig, OnomatopoeiaConfig, ProcessingConfig, QualityConfig
@@ -140,7 +137,6 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanInpai
             text_detector if text_detector is not None
             else TextDetectionFactory.create(idioma_entrada, ocr_config)
         )
-        self.last_regions: List[TextRegion] = []
     @property
     def inpainter(self):
         """Delega en el runner: una sola fuente de verdad, como con la estrategia."""
@@ -163,19 +159,3 @@ class CleanManga(CleanSourceFilterMixin, CleanOnomatopoeiaGuardMixin, CleanInpai
     def bubble_fill_strategy(self, value: str) -> None:
         self.fill_policy.bubble_fill_strategy = str(value or "inpaint").strip().lower()
 
-    def set_debug_page_context(
-        self,
-        page_index: int,
-        *,
-        source_filename: str | None = None,
-        output_filename: str | None = None,
-    ) -> None:
-        """Propaga al detector el índice global de la página que se está procesando."""
-        self.bubble_detector.set_debug_page_context(
-            page_index,
-            source_filename=source_filename,
-            output_filename=output_filename,
-        )
-
-    def clear_debug_page_context(self) -> None:
-        self.bubble_detector.clear_debug_page_context()

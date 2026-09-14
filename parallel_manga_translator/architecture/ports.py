@@ -4,6 +4,7 @@ from typing import Any, Mapping, Optional, Protocol, Sequence, Tuple, runtime_ch
 
 import numpy as np
 
+from parallel_manga_translator.models.page_context import PageContext
 from parallel_manga_translator.models.processing_models import TextRegion
 
 Box = Tuple[int, int, int, int]
@@ -176,29 +177,15 @@ class PageCleanerPort(Protocol):
     """Etapa de limpieza vista por el orquestador de páginas.
 
     El contrato es exactamente lo que `ImageProcessor` necesita, ni más ni menos: limpiar
-    una página y acotar el contexto de los artefactos de depuración. Todo lo demás que
-    hoy expone `CleanManga` es detalle interno suyo.
+    una página. Todo lo demás que hoy expone `CleanManga` es detalle interno suyo.
+
+    Tenía además cuatro métodos para acotar el contexto de los artefactos de depuración
+    (`set_debug_page_context`, `set_visual_inpaint_debug_context` y sus `clear_`): existían
+    solo para empujar estado de la página a un objeto de vida larga antes de cada llamada.
+    Ahora eso viaja en el `PageContext`, que es donde vive lo de la página.
     """
 
-    def limpiar_manga(self, imagen: np.ndarray):
-        ...
-
-    def set_debug_page_context(
-        self,
-        page_index: int,
-        *,
-        source_filename: Optional[str] = None,
-        output_filename: Optional[str] = None,
-    ) -> None:
-        ...
-
-    def clear_debug_page_context(self) -> None:
-        ...
-
-    def set_visual_inpaint_debug_context(self, output_root: str, page_index: int, filename: str) -> None:
-        ...
-
-    def clear_visual_inpaint_debug_context(self) -> None:
+    def limpiar_manga(self, ctx: PageContext) -> None:
         ...
 
 
@@ -206,11 +193,9 @@ class PageCleanerPort(Protocol):
 class PageTranslatorPort(Protocol):
     """Etapa de OCR + traducción + rotulado vista por el orquestador de páginas."""
 
-    #: Regiones que sobrevivieron a `extraer_regiones`, en orden de lectura. Los pasos
-    #: siguientes las leen de aquí, así que es contrato entre etapas, no estado privado.
-    ultimas_regiones: Sequence[TextRegion]
-
-    def insertar_json_queue(self, indice_imagen: int, transcripcion_queue: Any, traduccion_queue: Any) -> None:
+    def insertar_json_queue(self, transcripcion_queue: Any, traduccion_queue: Any) -> None:
+        """Las colas de salida del trabajo. El índice de página no viene por aquí: es
+        estado de la página y viaja en `PageContext.indice_pagina`."""
         ...
 
     def traducir_manga(
@@ -219,6 +204,7 @@ class PageTranslatorPort(Protocol):
         imagen_limpia: np.ndarray,
         mascara_capa: np.ndarray,
         text_regions: Optional[Sequence[TextRegion]] = None,
+        indice_pagina: int = 0,
     ):
         ...
 
@@ -226,27 +212,20 @@ class PageTranslatorPort(Protocol):
     # `processing.pipeline` los ejecuta por separado: una composicion parcial —solo-OCR—
     # llama a unos y no a otros, asi que exigir solo el metodo compuesto dejaria fuera
     # justo lo que el orquestador necesita para componer.
+    #
+    # Todos reciben el contexto de la pagina y escriben en el. Antes se pasaban el
+    # resultado por atributos del traductor (`ultimas_regiones` y companyia), que este
+    # puerto tuvo que declarar como parte del contrato: un objeto de vida larga haciendo
+    # de cuaderno de notas de la pagina en curso.
 
-    def extraer_regiones(
-        self,
-        imagen: np.ndarray,
-        mascara_capa: Optional[np.ndarray],
-        text_regions: Optional[Sequence[TextRegion]] = None,
-    ):
+    def extraer_regiones(self, ctx: PageContext) -> None:
         ...
 
-    def obtener_textos(self, imagenes_interes: Sequence[np.ndarray]) -> Sequence[str]:
+    def obtener_textos(self, ctx: PageContext) -> None:
         ...
 
-    def traducir_textos_de_regiones(
-        self, cuadros_delimitadores: Sequence[Any], textos: Sequence[str]
-    ) -> Sequence[str]:
+    def traducir_textos_de_regiones(self, ctx: PageContext) -> None:
         ...
 
-    def rotular(
-        self,
-        imagen_limpia: np.ndarray,
-        cuadros_delimitadores: Sequence[Any],
-        textos_para_render: Sequence[str],
-    ):
+    def rotular(self, ctx: PageContext) -> None:
         ...
