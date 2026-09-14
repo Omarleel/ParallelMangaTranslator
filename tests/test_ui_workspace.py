@@ -209,7 +209,7 @@ def test_new_manual_region_focuses_inline_text_editor_immediately() -> None:
     assert "renderOverlay();" in creation_block
     assert "focusInlineEditorForRegion(state.selectedRegion);" in creation_block
     assert creation_block.index("renderOverlay();") < creation_block.index("focusInlineEditorForRegion(state.selectedRegion);")
-    assert '<script src="/static/app.js?v=12"></script>' in html
+    assert '<script src="/static/app.js?v=14"></script>' in html
 
 
 def test_setup_actions_keep_the_primary_button_usable_with_a_long_project_title() -> None:
@@ -360,7 +360,9 @@ def test_job_actions_live_in_a_modal_so_the_page_list_gets_the_room() -> None:
         assert f'id="{moved}"' in html
 
     modal = html[html.index('id="jobActionsModal"'):html.index('id="datasetModal"')]
-    assert modal.count("data-job-action") == 6
+    # Retraducir, eventos, exportar ZIP, exportar textos, importar textos, dataset_eval,
+    # historial y nuevo trabajo.
+    assert modal.count("data-job-action") == 8
 
     assert "function openJobActionsModal()" in javascript
     assert "jobActionsBtn?.addEventListener('click', openJobActionsModal);" in javascript

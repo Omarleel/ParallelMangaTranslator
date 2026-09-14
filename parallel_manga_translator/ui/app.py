@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -67,6 +67,10 @@ class RegionPatch(BaseModel):
     text_offset_x: float = 0.0
     text_offset_y: float = 0.0
     ui_layout: Optional[Dict[str, Any]] = None
+    # Qué región de la ejecución corrige esta caja. El editor reasigna `index`, así que
+    # sin esto una corrección no se puede volver a emparejar con lo que vio el pipeline.
+    region_uid: str = ""
+    run_bbox: Optional[List[float]] = Field(default=None, min_length=4, max_length=4)
 
 
 class BrushStrokePatch(BaseModel):
@@ -281,6 +285,38 @@ def build_dataset_case(job_id: str, request: DatasetCaseRequest):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/jobs/{job_id}/textos")
+def export_job_texts(job_id: str):
+    """Descarga el texto de todo el trabajo con las coordenadas de cada globo."""
+    from parallel_manga_translator.ui.text_exchange import export_filename
+
+    try:
+        payload = manager.export_job_texts(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="El trabajo no existe.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    nombre = export_filename(str(payload.get("titulo") or job_id))
+    return JSONResponse(payload, headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@app.post("/api/jobs/{job_id}/textos")
+def import_job_texts(job_id: str, payload: Dict[str, Any] = Body(...), dry_run: bool = False):
+    """Aplica un archivo de textos editado fuera y vuelve a renderizar lo que cambie.
+
+    `dry_run=true` devuelve el mismo informe sin tocar nada: es lo que la UI enseña para
+    confirmar, porque una importación cambia el trabajo entero de una vez.
+    """
+    try:
+        return manager.import_job_texts(job_id, payload, dry_run=bool(dry_run))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="El trabajo no existe.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

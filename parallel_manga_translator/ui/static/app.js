@@ -102,6 +102,18 @@ const jobActionsBackdrop = $('jobActionsBackdrop');
 const closeJobActionsBtn = $('closeJobActionsBtn');
 const jobActionsSubtitle = $('jobActionsSubtitle');
 const datasetBtn = $('datasetBtn');
+const exportTextsBtn = $('exportTextsBtn');
+const exportTextsBtnLabel = $('exportTextsBtnLabel');
+const importTextsBtn = $('importTextsBtn');
+const importTextsInput = $('importTextsInput');
+const textsModal = $('textsModal');
+const textsModalBackdrop = $('textsModalBackdrop');
+const closeTextsModalBtn = $('closeTextsModalBtn');
+const cancelTextsBtn = $('cancelTextsBtn');
+const confirmTextsBtn = $('confirmTextsBtn');
+const textsSummary = $('textsSummary');
+const textsWarning = $('textsWarning');
+const textsFileName = $('textsFileName');
 const datasetModal = $('datasetModal');
 const datasetModalBackdrop = $('datasetModalBackdrop');
 const closeDatasetModalBtn = $('closeDatasetModalBtn');
@@ -1061,6 +1073,20 @@ function renderJob(job) {
         ? 'Corrige al menos una página a mano para poder congelarla como caso de regresión.'
         : `Congelar ${corrected} página(s) corregida(s) como caso de dataset_eval.`;
   }
+  const regionesTotales = (job.pages || []).reduce((total, page) => total + (page.regions || []).length, 0);
+  if (exportTextsBtn) {
+    exportTextsBtn.disabled = regionesTotales === 0;
+    exportTextsBtn.title = regionesTotales === 0
+      ? 'Todavía no hay texto transcrito que exportar.'
+      : 'Descarga el guión completo con las coordenadas de cada globo.';
+  }
+  if (exportTextsBtnLabel) exportTextsBtnLabel.textContent = regionesTotales > 0 ? `Exportar textos (${regionesTotales})` : 'Exportar textos';
+  if (importTextsBtn) {
+    importTextsBtn.disabled = !terminal || regionesTotales === 0;
+    importTextsBtn.title = !terminal
+      ? 'Disponible cuando el trabajo termina.'
+      : 'Aplica un JSON de textos editado fuera.';
+  }
   const exportablePages = (job.pages || []).filter((page) => page.status === 'ready' || page.has_corrected).length;
   exportBtn.disabled = exportablePages === 0;
   // El botón ya no es solo texto: escribir su `textContent` borraría icono y descripción.
@@ -1400,6 +1426,10 @@ function cloneRegions(regions) {
       index: Number(region.index ?? idx),
       bbox,
       source_bbox: sourceBox,
+      // Qué región de la ejecución es esta. El editor reordena y reasigna `index`, así
+      // que es lo único que permite devolverle al servidor una corrección identificada.
+      region_uid: region.region_uid || '',
+      run_bbox: Array.isArray(region.run_bbox) ? normalizeBox(region.run_bbox) : null,
       // Caja con la que esta región ya está dibujada en la imagen que sirve el servidor.
       // NO es `source_bbox`: el cliente encoge `bbox` al área de texto para editar, así
       // que compararlas daría "movida" en todas las regiones de un trabajo recién hecho.
@@ -3560,31 +3590,53 @@ confirmRetranslateBtn?.addEventListener('click', submitRetranslation);
 resumeJobBtn.addEventListener('click', () => controlCurrentJob('resume'));
 cancelJobBtn.addEventListener('click', () => controlCurrentJob('cancel'));
 
+async function downloadResponseAsFile(response, fallbackName) {
+  if (!response.ok) {
+    let payload = null;
+    try { payload = await response.json(); } catch (_) {}
+    throw new Error(payload?.detail || response.statusText || 'No se pudo exportar.');
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const disposition = response.headers.get('content-disposition') || '';
+  const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+  link.href = url;
+  link.download = decodeURIComponent(match?.[1] || fallbackName);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 exportBtn.addEventListener('click', async () => {
   if (!state.job) return;
   exportBtn.disabled = true;
   try {
     showToast('Preparando ZIP de resultados…');
     const response = await fetch(`/api/jobs/${state.job.job_id}/export`);
-    if (!response.ok) {
-      let payload = null;
-      try { payload = await response.json(); } catch (_) {}
-      throw new Error(payload?.detail || response.statusText || 'No se pudo exportar.');
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const disposition = response.headers.get('content-disposition') || '';
-    const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
-    link.href = url;
-    link.download = decodeURIComponent(match?.[1] || `${state.job.title || 'manga'}_resultado.zip`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    await downloadResponseAsFile(response, `${state.job.title || 'manga'}_resultado.zip`);
     showToast('ZIP exportado.');
   } catch (error) {
     showToast(error.message);
+  } finally {
+    renderJob(state.job);
+  }
+});
+
+exportTextsBtn?.addEventListener('click', async () => {
+  if (!state.job) return;
+  exportTextsBtn.disabled = true;
+  try {
+    // Se guarda antes: exportar el guión sin lo que acabas de escribir sería una trampa
+    // silenciosa, y lo pendiente vive solo en el navegador hasta el autoguardado.
+    if (state.dirty) await saveCurrentPage({ silent: true, force: true, reason: 'exportar textos' }).catch(() => {});
+    showToast('Preparando el guión…');
+    const response = await fetch(`/api/jobs/${encodeURIComponent(state.job.job_id)}/textos`);
+    await downloadResponseAsFile(response, `${state.job.title || 'manga'}_textos.json`);
+    showToast('Textos exportados con sus coordenadas.');
+  } catch (error) {
+    showToast(error.message || 'No se pudieron exportar los textos.');
   } finally {
     renderJob(state.job);
   }
@@ -3603,6 +3655,8 @@ function regionToRenderPatch(region, idx) {
     manual: Boolean(region.manual),
     deleted: Boolean(region.deleted),
     source_bbox: region.source_bbox || region.bbox,
+    region_uid: region.region_uid || '',
+    run_bbox: Array.isArray(region.run_bbox) ? region.run_bbox : null,
     auto_font_size: region.auto_font_size !== false,
     font_size: region.auto_font_size === false ? clampFontSize(region.font_size, null) : null,
     rotation_angle: clampRotationAngle(region.rotation_angle || 0),
@@ -4085,6 +4139,116 @@ async function submitDatasetCase() {
     confirmDatasetBtn.textContent = previousLabel;
   }
 }
+
+function renderTextsSummary(report, fileName) {
+  if (textsFileName) textsFileName.textContent = fileName || '';
+  const paginas = report.paginas_actualizadas || [];
+  const omitidas = report.paginas_omitidas || [];
+  const filas = [
+    ['Globos que cambian', report.regiones_actualizadas || 0],
+    ['Páginas afectadas', paginas.length],
+    ['Páginas sin emparejar', (report.paginas_desconocidas || []).length],
+    ['Globos sin emparejar', report.sin_emparejar_total || 0],
+  ];
+  if (textsSummary) {
+    textsSummary.innerHTML = filas
+      .map(([etiqueta, valor]) => `<div><dt>${escapeHtml(etiqueta)}</dt><dd>${escapeHtml(String(valor))}</dd></div>`)
+      .join('');
+  }
+  const avisos = [];
+  if (omitidas.length) {
+    avisos.push(`Se saltarán las páginas ${omitidas.join(', ')}: todavía no están listas y no hay nada sobre lo que componer.`);
+  }
+  if (report.sin_emparejar_total) {
+    const muestra = (report.sin_emparejar || []).slice(0, 6).join(', ');
+    avisos.push(`${report.sin_emparejar_total} globo(s) del archivo no existen en este trabajo y se ignorarán${muestra ? ` (${muestra}…)` : ''}.`);
+  }
+  if (textsWarning) {
+    textsWarning.classList.toggle('hidden', avisos.length === 0);
+    textsWarning.textContent = avisos.join(' ');
+  }
+  if (confirmTextsBtn) confirmTextsBtn.disabled = !(report.regiones_actualizadas > 0);
+}
+
+function closeTextsModal() {
+  textsModal?.classList.add('hidden');
+  state.pendingTextImport = null;
+  if (importTextsInput) importTextsInput.value = '';
+}
+
+async function previewTextImport(file) {
+  if (!state.job?.job_id || !file) return;
+  let payload = null;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch (_) {
+    showToast('Ese archivo no es un JSON válido.');
+    if (importTextsInput) importTextsInput.value = '';
+    return;
+  }
+  try {
+    if (state.dirty) await saveCurrentPage({ silent: true, force: true, reason: 'importar textos' }).catch(() => {});
+    const report = await requestJson(`/api/jobs/${encodeURIComponent(state.job.job_id)}/textos?dry_run=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!report.regiones_actualizadas) {
+      showToast('El archivo no cambia ningún texto de este trabajo.');
+      if (importTextsInput) importTextsInput.value = '';
+      return;
+    }
+    state.pendingTextImport = payload;
+    renderTextsSummary(report, file.name);
+    textsModal?.classList.remove('hidden');
+  } catch (error) {
+    showToast(error.message || 'No se pudo leer el archivo de textos.');
+    if (importTextsInput) importTextsInput.value = '';
+  }
+}
+
+async function submitTextImport() {
+  if (!state.job?.job_id || !state.pendingTextImport || !confirmTextsBtn) return;
+  const payload = state.pendingTextImport;
+  confirmTextsBtn.disabled = true;
+  const etiquetaPrevia = confirmTextsBtn.textContent;
+  confirmTextsBtn.textContent = 'Aplicando…';
+  try {
+    const report = await requestJson(`/api/jobs/${encodeURIComponent(state.job.job_id)}/textos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    closeTextsModal();
+    // El trabajo entero ha cambiado en el servidor: se recarga para que las regiones y
+    // las páginas compuestas que se ven sean las nuevas, no las de antes de importar.
+    const job = await requestJson(`/api/jobs/${encodeURIComponent(state.job.job_id)}`);
+    state.job = job;
+    renderJob(job);
+    const paginas = (report.paginas_actualizadas || []).length;
+    showToast(`Importados ${report.regiones_actualizadas || 0} globo(s) en ${paginas} página(s).`);
+  } catch (error) {
+    showToast(error.message || 'No se pudieron importar los textos.');
+  } finally {
+    confirmTextsBtn.disabled = false;
+    confirmTextsBtn.textContent = etiquetaPrevia;
+  }
+}
+
+importTextsBtn?.addEventListener('click', () => importTextsInput?.click());
+importTextsInput?.addEventListener('change', (event) => {
+  const file = event.target?.files?.[0];
+  if (file) previewTextImport(file);
+});
+closeTextsModalBtn?.addEventListener('click', closeTextsModal);
+cancelTextsBtn?.addEventListener('click', closeTextsModal);
+textsModalBackdrop?.addEventListener('click', closeTextsModal);
+confirmTextsBtn?.addEventListener('click', submitTextImport);
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !textsModal || textsModal.classList.contains('hidden')) return;
+  event.preventDefault();
+  closeTextsModal();
+}, true);
 
 datasetBtn?.addEventListener('click', openDatasetModal);
 closeDatasetModalBtn?.addEventListener('click', closeDatasetModal);

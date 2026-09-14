@@ -938,6 +938,93 @@ class JobManager:
             return corrected if corrected.exists() else Path(page.translated_path)
         raise ValueError("Variante de imagen no soportada.")
 
+    def export_job_texts(self, job_id: str) -> Dict[str, Any]:
+        """Todo el texto del trabajo, con las coordenadas de cada globo.
+
+        Se mide la página **traducida**, no la original: si un reintento por memoria
+        redujo la imagen, las cajas están en el sistema de coordenadas de la reducida y
+        dar el tamaño del original haría que no cuadrara nada.
+        """
+        from parallel_manga_translator.ui.text_exchange import build_job_export
+
+        job = self.get_job(job_id)
+        with self._lock:
+            sizes = {page.index: size for page in job.pages if (size := self._page_size(page))}
+            return build_job_export(job, sizes)
+
+    @staticmethod
+    def _page_size(page: PageState) -> Optional[tuple[int, int]]:
+        """(ancho, alto) de la página, leyendo solo la cabecera del archivo."""
+        for raw in (page.translated_path, page.clean_path, page.original_path):
+            if not raw:
+                continue
+            path = Path(raw)
+            if not path.is_file():
+                continue
+            try:
+                from PIL import Image
+
+                with Image.open(path) as imagen:
+                    return (int(imagen.width), int(imagen.height))
+            except Exception:  # noqa: BLE001 - el tamaño es contexto, no un dato crítico
+                continue
+        return None
+
+    def import_job_texts(self, job_id: str, payload: Any, *, dry_run: bool = False) -> Dict[str, Any]:
+        """Aplica un archivo de textos editado fuera y vuelve a renderizar lo que cambie.
+
+        Pasa por el mismo camino que una corrección del editor (`save_manual_render`), así
+        que lo importado queda en `correcciones/` y en la página compuesta, no solo en el
+        manifiesto. Por eso una página que todavía no está lista se salta en vez de
+        aplicarse a medias: sin limpieza ni traducción no hay nada sobre lo que componer.
+
+        Con `dry_run` se calcula exactamente el mismo informe sin escribir nada. Es lo que
+        la UI enseña antes de confirmar: una importación toca el trabajo entero, y el
+        usuario merece ver cuántos globos cambian y cuáles no encontraron pareja **antes**
+        de que ocurra.
+        """
+        from parallel_manga_translator.ui.text_exchange import manifest_region_to_payload, plan_job_import
+
+        job = self.get_job(job_id)
+        with self._lock:
+            if self._execution.controls.get(job_id) is not None:
+                raise ValueError("Espera a que el trabajo termine antes de importar textos.")
+
+        plan = plan_job_import(job, payload)
+        aplicadas: List[int] = []
+        omitidas: List[int] = []
+        regiones = 0
+        for pendiente in plan.changed_pages:
+            page = page_of(job, pendiente.index)
+            if page.status != "ready":
+                omitidas.append(pendiente.index + 1)
+                continue
+            if dry_run:
+                aplicadas.append(pendiente.index + 1)
+                regiones += pendiente.changed
+                continue
+            self.manual_edits.save_manual_render(
+                job_id=job_id,
+                page_index=pendiente.index,
+                regions_payload=[manifest_region_to_payload(region, position) for position, region in enumerate(pendiente.regions)],
+                brush_strokes_payload=[dict(stroke) for stroke in (page.brush_strokes or []) if isinstance(stroke, dict)],
+                operation="render",
+            )
+            aplicadas.append(pendiente.index + 1)
+            regiones += pendiente.changed
+
+        if not dry_run:
+            logger.info("Importados textos en %s: %s página(s), %s región(es).", job_id, len(aplicadas), regiones)
+        return {
+            "simulacion": bool(dry_run),
+            "paginas_actualizadas": aplicadas,
+            "regiones_actualizadas": regiones,
+            "paginas_omitidas": omitidas,
+            "sin_emparejar": plan.unmatched[:50],
+            "sin_emparejar_total": len(plan.unmatched),
+            "paginas_desconocidas": plan.unknown_pages[:50],
+        }
+
     def create_export_zip(self, job_id: str) -> Path:
         job = self.get_job(job_id)
         export_dir = Path(job.root_dir) / "exports"

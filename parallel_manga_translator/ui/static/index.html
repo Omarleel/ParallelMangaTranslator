@@ -596,6 +596,21 @@
             <span>Páginas finales, tus correcciones y el manifiesto del export.</span>
           </span>
         </button>
+        <button id="exportTextsBtn" class="job-action" type="button" data-job-action disabled>
+          <span class="job-action-icon" aria-hidden="true">⎘</span>
+          <span class="job-action-copy">
+            <strong id="exportTextsBtnLabel">Exportar textos</strong>
+            <span>Todo el guión en un JSON, con las coordenadas de cada globo.</span>
+          </span>
+        </button>
+        <button id="importTextsBtn" class="job-action" type="button" data-job-action disabled>
+          <span class="job-action-icon" aria-hidden="true">⇪</span>
+          <span class="job-action-copy">
+            <strong>Importar textos</strong>
+            <span>Aplica un JSON editado fuera y vuelve a componer las páginas.</span>
+          </span>
+        </button>
+        <input id="importTextsInput" type="file" accept="application/json,.json" hidden />
         <button id="datasetBtn" class="job-action" type="button" data-job-action disabled>
           <span class="job-action-icon" aria-hidden="true">◎</span>
           <span class="job-action-copy">
@@ -669,6 +684,29 @@
       <div class="retranslate-actions">
         <button id="cancelDatasetBtn" class="ghost" type="button">Cancelar</button>
         <button id="confirmDatasetBtn" class="primary" type="button">Crear caso</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="textsModal" class="shortcut-modal dataset-modal hidden" role="dialog" aria-modal="true" aria-labelledby="textsModalTitle">
+    <button id="textsModalBackdrop" class="shortcut-modal-backdrop" type="button" aria-label="Cerrar"></button>
+    <section class="shortcut-dialog dataset-dialog">
+      <header>
+        <div>
+          <span class="eyebrow">Guión del trabajo</span>
+          <h2 id="textsModalTitle">Importar textos</h2>
+        </div>
+        <button id="closeTextsModalBtn" class="icon-button" type="button" aria-label="Cerrar">×</button>
+      </header>
+      <p class="muted">Esto es lo que cambiaría. Cada globo se empareja por su identidad (<code>region_uid</code>), no por su posición, así que reordenar o borrar regiones en el editor no descoloca la importación.</p>
+
+      <p id="textsFileName" class="dataset-path"></p>
+      <dl id="textsSummary" class="dataset-summary"></dl>
+      <p id="textsWarning" class="dataset-warning hidden"></p>
+
+      <div class="retranslate-actions">
+        <button id="cancelTextsBtn" class="ghost" type="button">Cancelar</button>
+        <button id="confirmTextsBtn" class="primary" type="button">Aplicar cambios</button>
       </div>
     </section>
   </div>
@@ -793,6 +831,6 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=12"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>

@@ -126,7 +126,11 @@ def ground_truth_region(region: Mapping[str, Any], index: int) -> Optional[Dict[
         return None
     return {
         "index": index,
+        # Identidad de la región de la ejecución que el humano corrigió. `index` aquí es
+        # sólo la posición en esta lista: sirve para leer el archivo, no para emparejar.
+        "region_uid": str(region.get("region_uid") or ""),
         "bbox": bbox,
+        "bbox_run": _int_box(region.get("run_bbox")),
         "bbox_texto": _int_box(region.get("bbox")),
         "origen": "manual" if region.get("manual") else "pipeline",
         "tipo": _effective_type(region),

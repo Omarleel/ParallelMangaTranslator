@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from parallel_manga_translator.models.processing_models import TextRegion
+from parallel_manga_translator.models.region_identity import run_region_uid
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 
 Box = Tuple[int, int, int, int]
@@ -166,6 +167,7 @@ class RegionExtractionMixin:
                 _json.dumps(
                     {
                         "indice": int(indice),
+                        "region_uid": run_region_uid(pagina + 1, indice),
                         "bbox": [int(v) for v in region.bbox],
                         "text_bbox": [int(v) for v in region.text_bbox],
                         "kind": str(region.kind or ""),

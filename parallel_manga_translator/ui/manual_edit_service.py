@@ -46,6 +46,39 @@ from parallel_manga_translator.ui.page_regions import (
 from typing import Callable
 
 
+class _RegionLookup:
+    """Encuentra la versión previa de una región: por identidad y, si no la hay, por índice.
+
+    El índice es un apaño de compatibilidad, no un identificador: el editor lo reasigna al
+    reordenar o borrar. Mientras `region_uid` viaje en el payload, manda él.
+    """
+
+    def __init__(self, regions: Sequence[Any] | None) -> None:
+        self._by_uid: Dict[str, Dict[str, Any]] = {}
+        self._by_index: Dict[int, Dict[str, Any]] = {}
+        for position, region in enumerate(regions or []):
+            if not isinstance(region, dict):
+                continue
+            uid = str(region.get("region_uid") or "")
+            if uid:
+                self._by_uid.setdefault(uid, region)
+            try:
+                index = int(region.get("index", position))
+            except (TypeError, ValueError):
+                index = position
+            self._by_index.setdefault(index, region)
+
+    def find(self, region: Any) -> Dict[str, Any]:
+        uid = str(getattr(region, "region_uid", "") or "")
+        if uid and uid in self._by_uid:
+            return self._by_uid[uid]
+        try:
+            index = int(getattr(region, "index", -1))
+        except (TypeError, ValueError):
+            return {}
+        return self._by_index.get(index, {})
+
+
 class ManualEditService:
     """Todo lo que el editor del navegador puede hacer sobre una pagina ya procesada."""
 
@@ -163,40 +196,41 @@ class ManualEditService:
         for region in regions:
             region.source_bbox = region.bbox
 
+        # `source_bbox` avanza en cada guardado, así que no dice de qué región del run
+        # salió esta corrección. Eso lo dice `region_uid`, y se restituye antes de
+        # escribir nada para que el archivo de correcciones ya lo lleve.
+        self._restore_region_identity(page, regions)
+
         write_corrections(page.corrections_path, regions, brush_strokes)
         with self._lock:
-            previous_by_index = {
-                int(region.get("index", idx)): region
-                for idx, region in enumerate(page.regions)
-                if isinstance(region, dict)
-            }
-            payload_by_index = {
-                int(region.get("index", idx)): region
-                for idx, region in enumerate(regions_payload)
-                if isinstance(region, dict)
-            }
-            page.regions = [
-                {
-                    **previous_by_index.get(region.index, {}),
+            previous = _RegionLookup(page.regions)
+            payload = _RegionLookup(regions_payload)
+            actualizadas = []
+            for region in regions:
+                anterior = previous.find(region)
+                enviada = payload.find(region)
+                actualizadas.append({
+                    **anterior,
                     "index": region.index,
+                    "region_uid": region.region_uid or str(anterior.get("region_uid") or ""),
+                    "run_bbox": list(region.run_bbox) if region.run_bbox else anterior.get("run_bbox"),
                     "bbox": list(region.bbox),
                     "source_bbox": list(region.source_bbox or region.bbox),
-                    "original_text": payload_by_index.get(region.index, {}).get("original_text", previous_by_index.get(region.index, {}).get("original_text", "")),
+                    "original_text": enviada.get("original_text", anterior.get("original_text", "")),
                     "translated_text": region.text,
                     "style": region.style,
-                    "type": previous_by_index.get(region.index, {}).get("type", "manual" if region.manual else "dialogue"),
+                    "type": anterior.get("type", "manual" if region.manual else "dialogue"),
                     "restore_original": region.restore_original,
                     "visible": region.visible,
                     "modified": region.modified,
-                    "manual": region.manual or bool(previous_by_index.get(region.index, {}).get("manual", False)),
+                    "manual": region.manual or bool(anterior.get("manual", False)),
                     "deleted": region.deleted,
                     "auto_font_size": region.auto_font_size,
                     "font_size": region.font_size,
                     "rotation_angle": region.rotation_angle,
-                    "ui_layout": region.ui_layout or previous_by_index.get(region.index, {}).get("ui_layout"),
-                }
-                for region in regions
-            ]
+                    "ui_layout": region.ui_layout or anterior.get("ui_layout"),
+                })
+            page.regions = actualizadas
             page.brush_strokes = [
                 {
                     "points": [list(point) for point in stroke.points],
@@ -436,6 +470,31 @@ class ManualEditService:
         if model in {"auto", "B/N"}:
             return "lama_mpe"
         return model
+
+    @staticmethod
+    def _restore_region_identity(page: PageState, regions: Sequence[Any]) -> None:
+        """Deja a cada región guardada sabiendo qué región de la ejecución corrige.
+
+        El navegador devuelve `region_uid`, pero una corrección escrita antes de que el
+        campo existiera no lo lleva: entonces se recupera del manifiesto por `index`, que
+        es lo único que ambos lados comparten en ese momento. Una región dibujada a mano no
+        corrige ninguna región del run, así que recibe identidad propia (`manual-…`) para
+        poder seguirla entre guardados.
+        """
+        previous = _RegionLookup(page.regions)
+        for region in regions:
+            anterior = previous.find(region)
+            if not region.region_uid:
+                region.region_uid = str(anterior.get("region_uid") or "")
+            if not region.region_uid and region.manual:
+                region.region_uid = f"manual-{uuid.uuid4().hex[:8]}"
+            if region.run_bbox is None:
+                caja = anterior.get("run_bbox")
+                if isinstance(caja, (list, tuple)) and len(caja) >= 4:
+                    try:
+                        region.run_bbox = tuple(int(round(float(v))) for v in caja[:4])
+                    except (TypeError, ValueError):
+                        region.run_bbox = None
 
     @staticmethod
     def _pending_inpaint_strokes(brush_strokes):

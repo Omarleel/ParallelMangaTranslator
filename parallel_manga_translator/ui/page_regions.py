@@ -28,6 +28,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from parallel_manga_translator.models.region_identity import run_region_uid
 from parallel_manga_translator.ui.job_state import JobState, PageState
 from parallel_manga_translator.ui.queue_adapter import CapturingJsonQueue
 
@@ -77,6 +78,8 @@ def merge_page_regions(job: JobState,
         by_index.setdefault(idx, {"index": idx})
         by_index[idx].update(
             {
+                "region_uid": run_region_uid(page_no, idx),
+                "run_bbox": list(bbox),
                 "bbox": bbox,
                 "source_bbox": bbox,
                 "original_text": item.get("Texto", ""),
@@ -101,6 +104,8 @@ def merge_page_regions(job: JobState,
         by_index.setdefault(idx, {"index": idx})
         by_index[idx].update(
             {
+                "region_uid": by_index[idx].get("region_uid") or run_region_uid(page_no, idx),
+                "run_bbox": by_index[idx].get("run_bbox") or list(bbox),
                 "bbox": by_index[idx].get("bbox") or bbox,
                 "source_bbox": by_index[idx].get("source_bbox") or bbox,
                 "translated_text": item.get("Texto", ""),
@@ -132,6 +137,8 @@ def apply_saved_corrections(regions: List[Dict[str, Any]], corrections: List[Dic
             source_bbox = correction.get("source_bbox") or region.get("source_bbox") or region.get("bbox")
             region = {
                 **region,
+                "region_uid": region.get("region_uid") or correction.get("region_uid") or "",
+                "run_bbox": region.get("run_bbox") or correction.get("run_bbox"),
                 "bbox": correction.get("bbox", region.get("bbox")),
                 "source_bbox": source_bbox,
                 "translated_text": correction.get("text", region.get("translated_text", "")),
@@ -149,6 +156,8 @@ def apply_saved_corrections(regions: List[Dict[str, Any]], corrections: List[Dic
         else:
             region = {
                 **region,
+                "region_uid": region.get("region_uid") or "",
+                "run_bbox": region.get("run_bbox"),
                 "source_bbox": region.get("source_bbox") or region.get("bbox"),
                 "modified": bool(region.get("modified", False)),
                 "auto_font_size": region.get("auto_font_size", True),
@@ -165,6 +174,10 @@ def apply_saved_corrections(regions: List[Dict[str, Any]], corrections: List[Dic
         bbox = correction.get("bbox") or [0, 0, 1, 1]
         merged.append({
             "index": correction_index,
+            # Una región que el humano dibujó no corrige ninguna región de la ejecución:
+            # su identidad la asignó el editor al crearla y viaja en la corrección.
+            "region_uid": correction.get("region_uid") or "",
+            "run_bbox": correction.get("run_bbox"),
             "bbox": bbox,
             "source_bbox": correction.get("source_bbox") or bbox,
             "original_text": correction.get("original_text", ""),
@@ -230,4 +243,5 @@ __all__ = [
     "page_items",
     "push_retranslated_page",
     "read_json",
+    "run_region_uid",
 ]

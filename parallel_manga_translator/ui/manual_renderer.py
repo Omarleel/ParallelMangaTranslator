@@ -37,6 +37,13 @@ class ManualRegion:
     text_offset_x: float = 0.0
     text_offset_y: float = 0.0
     ui_layout: Optional[Dict[str, Any]] = None
+    #: Identidad de la región de la ejecución que esta corrección corrige. La pone el
+    #: pipeline y sobrevive a reordenar, encoger, borrar y volver a renderizar. `index`
+    #: no sirve para eso: el editor lo reasigna.
+    region_uid: str = ""
+    #: Caja que detectó la ejecución, tal cual. `source_bbox` avanza en cada guardado;
+    #: esta no se toca nunca, y es la que permite medir el detector contra la corrección.
+    run_bbox: Optional[Box] = None
 
 
 @dataclass
@@ -45,6 +52,17 @@ class BrushStroke:
     radius: int = 18
     mode: str = "restore_clean"
     applied: bool = False
+
+
+def _raw_box(raw: Any) -> Optional[Box]:
+    """Caja sin recortar contra la imagen: es un dato histórico, no una zona a pintar."""
+    if not isinstance(raw, (list, tuple)) or len(raw) < 4:
+        return None
+    try:
+        x, y, w, h = (int(round(float(v))) for v in list(raw)[:4])
+    except (TypeError, ValueError):
+        return None
+    return (x, y, w, h)
 
 
 def _safe_box(raw: Sequence[Any], image_width: int, image_height: int) -> Box:
@@ -198,6 +216,8 @@ def parse_manual_regions(payload: Iterable[Dict[str, Any]], image_width: int, im
                 text_offset_x=_text_offset(item.get("text_offset_x", ui_layout.get("text_offset_x", 0.0) if ui_layout else 0.0)),
                 text_offset_y=_text_offset(item.get("text_offset_y", ui_layout.get("text_offset_y", 0.0) if ui_layout else 0.0)),
                 ui_layout=ui_layout,
+                region_uid=str(item.get("region_uid") or ""),
+                run_bbox=_raw_box(item.get("run_bbox")),
             )
         )
     return regions
@@ -911,6 +931,8 @@ def write_corrections(path: str | Path, regions: Sequence[ManualRegion], brush_s
                 "text_offset_x": region.text_offset_x,
                 "text_offset_y": region.text_offset_y,
                 "ui_layout": region.ui_layout,
+                "region_uid": region.region_uid,
+                "run_bbox": list(region.run_bbox) if region.run_bbox else None,
             }
             for region in regions
             if region.modified or region.manual or region.deleted
