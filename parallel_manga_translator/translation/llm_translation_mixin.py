@@ -21,6 +21,14 @@ from parallel_manga_translator.infrastructure.execution_control import JobContro
 logger = logging.getLogger(__name__)
 
 
+from parallel_manga_translator.translation.provider_rules import (
+    is_blank,
+    normalize_translation,
+    persistent_key,
+    same_language,
+)
+
+
 class LlmTranslationMixin:
     """Prompting, validación JSON estricta y traducción vía LLM."""
 
@@ -140,13 +148,21 @@ class LlmTranslationMixin:
         estimated = 192 + (96 * len(items)) + source_chars
         return max(384, min(1536, estimated))
 
+    def _same_language(self) -> bool:
+        return same_language(self.UI_LANGS, self.provider, self.idioma_entrada, self.idioma_salida)
+
+    def _persistent_key(self, texto: str, method: Optional[str] = None) -> str:
+        return persistent_key(
+            self.cache, texto, method or self.metodo, self.provider, self.idioma_entrada, self.idioma_salida
+        )
+
     def _finish_llm_failure(self, textos_actuales: Sequence[str], reason: str) -> List[str]:
         """Falla de forma explícita o usa fallback solo si el usuario lo habilitó."""
         reason = str(reason).strip()
         if getattr(self, "llm_fallback_to_traditional_on_error", False):
             self.llm_fallback_reason = f"{reason} Se usó el traductor tradicional por configuración."
             logger.warning("%s", self.llm_fallback_reason)
-            return self.traducir_textos_tradicional(textos_actuales)
+            return self.traditional.traducir_textos(textos_actuales)
 
         self.llm_fallback_reason = ""
         raise RuntimeError(reason)
@@ -208,11 +224,11 @@ class LlmTranslationMixin:
         salida = textos_actuales[:]
         items = []
         for i, t in enumerate(textos_actuales):
-            if self._is_blank(t):
+            if is_blank(t):
                 continue
             persistent = self.cache.get(self._persistent_key(t, "llm"))
             if persistent is not None:
-                salida[i] = self._normalize_translation(persistent)
+                salida[i] = normalize_translation(persistent)
             else:
                 metadata = items_metadata[i] if items_metadata and i < len(items_metadata) and isinstance(items_metadata[i], Mapping) else None
                 items.append(self._enrich_item_for_llm(i, t, metadata))
@@ -369,7 +385,7 @@ class LlmTranslationMixin:
                 # los reintentos.
                 if set(collected) == set(original_items_by_id):
                     for idx, traducido in collected.items():
-                        normalized = self._normalize_translation(traducido)
+                        normalized = normalize_translation(traducido)
                         normalized = self.glossary.apply_to_translation(textos_actuales[idx], normalized)
                         salida[idx] = normalized
                     for idx in collected:

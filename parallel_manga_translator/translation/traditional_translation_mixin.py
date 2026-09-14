@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import random
-import re
 import threading
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -105,6 +104,15 @@ def _resumen_texto(texto: str, limite: int = 60) -> str:
     return plano if len(plano) <= limite else plano[: limite - 1] + "..."
 
 
+from parallel_manga_translator.translation.provider_rules import (
+    is_blank,
+    normalize_translation,
+    persistent_key,
+    provider_lang_code,
+    same_language,
+)
+
+
 class TraditionalTranslationMixin:
     """Proveedor tradicional, cache y control de ritmo hacia el proveedor."""
 
@@ -112,25 +120,6 @@ class TraditionalTranslationMixin:
     traditional_min_interval: float = 0.5
     traditional_block_cooldown: float = 6.0
     traditional_block_max_wait: float = 180.0
-
-    def _provider_lang_code(self, ui_lang: str, provider: str) -> str:
-        code = self.UI_LANGS[ui_lang]
-
-        if provider == "google":
-            if code == "zh":
-                return "zh-CN"
-            return code
-
-        if provider == "deepl":
-            if code == "zh":
-                return "ZH"
-            if code == "pt":
-                return "PT-PT"
-            if code == "auto":
-                return "auto"
-            return code.upper()
-
-        raise ValueError(f"Proveedor no soportado: {provider}")
 
     def _build_traditional_translator(self):
         if DeeplTranslator is None or GoogleTranslator is None:
@@ -148,8 +137,8 @@ class TraditionalTranslationMixin:
         last_error = None
         for provider in preferred_order:
             try:
-                source = self._provider_lang_code(self.idioma_entrada, provider)
-                target = self._provider_lang_code(self.idioma_salida, provider)
+                source = provider_lang_code(self.UI_LANGS, self.idioma_entrada, provider)
+                target = provider_lang_code(self.UI_LANGS, self.idioma_salida, provider)
 
                 if provider == "deepl":
                     self.provider = "deepl"
@@ -175,34 +164,15 @@ class TraditionalTranslationMixin:
         raise RuntimeError(f"No se pudo inicializar ningún traductor: {last_error}")
 
     def _same_language(self) -> bool:
-        """Evita traducir cuando origen y destino son efectivamente iguales."""
-        if self.provider not in {"google", "deepl"}:
-            return False
-
-        src = self._provider_lang_code(self.idioma_entrada, self.provider)
-        tgt = self._provider_lang_code(self.idioma_salida, self.provider)
-
-        if src.lower() == "auto":
-            return False
-
-        return src.split("-")[0].lower() == tgt.split("-")[0].lower()
-
-    @staticmethod
-    def _is_blank(texto: Optional[str]) -> bool:
-        return texto is None or not str(texto).strip()
-
-    @staticmethod
-    def _normalize_translation(texto: str) -> str:
-        texto = str(texto or "")
-        texto = texto.replace("　", " ")
-        texto = re.sub(r"\s+", " ", texto).strip()
-        return texto
+        return same_language(self.UI_LANGS, self.provider, self.idioma_entrada, self.idioma_salida)
 
     def _cache_key(self, texto: str) -> Tuple[str, str, str, str]:
         return (self.provider or "unknown", self.idioma_entrada, self.idioma_salida, str(texto or ""))
 
     def _persistent_key(self, texto: str, method: Optional[str] = None) -> str:
-        return self.cache.hash_text(method or self.metodo, self.provider or "unknown", self.idioma_entrada, self.idioma_salida, texto)
+        return persistent_key(
+            self.cache, texto, method or self.metodo, self.provider, self.idioma_entrada, self.idioma_salida
+        )
 
     def _buscar_en_cache(self, texto: str) -> Optional[str]:
         cache_key = self._cache_key(texto)
@@ -211,7 +181,7 @@ class TraditionalTranslationMixin:
         persistent = self.cache.get(self._persistent_key(texto, "traditional"))
         if persistent is None:
             return None
-        persistent = self._normalize_translation(persistent)
+        persistent = normalize_translation(persistent)
         self._translation_cache[cache_key] = persistent
         return persistent
 
@@ -221,7 +191,7 @@ class TraditionalTranslationMixin:
         Cachear aquí, texto a texto, es lo que impide que el fallo de un texto obligue
         a repetir los que ya habían salido bien.
         """
-        salida = self._normalize_translation(traducido) if isinstance(traducido, str) and traducido else original
+        salida = normalize_translation(traducido) if isinstance(traducido, str) and traducido else original
         salida = self.glossary.apply_to_translation(original, salida)
         self._translation_cache[self._cache_key(original)] = salida
         self.cache.set(self._persistent_key(original, "traditional"), salida)
@@ -283,7 +253,7 @@ class TraditionalTranslationMixin:
         return None
 
     def traducir_texto(self, texto: str) -> str:
-        if self._is_blank(texto):
+        if is_blank(texto):
             return texto or ""
 
         if self._same_language():
@@ -342,7 +312,7 @@ class TraditionalTranslationMixin:
         if self._same_language():
             return textos[:]
 
-        indices = [i for i, t in enumerate(textos) if not self._is_blank(t)]
+        indices = [i for i, t in enumerate(textos) if not is_blank(t)]
         if not indices:
             return textos[:]
 

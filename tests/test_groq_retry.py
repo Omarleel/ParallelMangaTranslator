@@ -166,6 +166,17 @@ class _Client:
 from parallel_manga_translator.translation.llm_translation_mixin import LlmTranslationMixin
 
 
+class _RespaldoFalso:
+    """El proveedor tradicional que Groq compone, reducido a contar llamadas."""
+
+    def __init__(self, harness):
+        self.harness = harness
+
+    def traducir_textos(self, textos, **kwargs):
+        self.harness.traditional_calls += 1
+        return ["TRAD" for _ in textos]
+
+
 class _LlmHarness(LlmTranslationMixin):
     def __init__(self, outcomes, *, fallback=False):
         self.client = _Client(outcomes)
@@ -186,25 +197,16 @@ class _LlmHarness(LlmTranslationMixin):
         self.glossary = _Glossary()
         self.character_memory = _CharacterMemory()
         self.traditional_calls = 0
+        # El respaldo ya no es un metodo heredado del motor tradicional: es un colaborador,
+        # asi que el doble tambien lo es.
+        self.traditional = _RespaldoFalso(self)
 
     def _same_language(self):
         return False
 
     @staticmethod
-    def _is_blank(text):
-        return not str(text).strip()
-
-    @staticmethod
     def _persistent_key(text, method):
         return f"{method}:{text}"
-
-    @staticmethod
-    def _normalize_translation(text):
-        return str(text)
-
-    def traducir_textos_tradicional(self, textos):
-        self.traditional_calls += 1
-        return ["TRAD" for _ in textos]
 
 
 class GroqRetryIntegrationTests(unittest.TestCase):

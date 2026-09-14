@@ -14,16 +14,19 @@ from parallel_manga_translator.translation.glossary_manager import GlossaryManag
 from parallel_manga_translator.translation.llm_translation_mixin import LlmTranslationMixin
 from parallel_manga_translator.translation.providers.base import TranslationProviderConfig
 from parallel_manga_translator.translation.providers.traditional_provider import TraditionalTranslationProvider
-from parallel_manga_translator.translation.traditional_translation_mixin import TraditionalTranslationMixin
 
 logger = get_logger(__name__)
 
 
-class GroqTranslationProvider(TraditionalTranslationMixin, LlmTranslationMixin):
-    """Proveedor LLM Groq con fallback tradicional inyectado."""
+class GroqTranslationProvider(LlmTranslationMixin):
+    """Proveedor LLM Groq con el tradicional compuesto como respaldo.
+
+    Heredaba de `TraditionalTranslationMixin` para conseguir el motor al que cae cuando el
+    LLM falla: 258 lineas de motor por una llamada. Ahora lo tiene, que es lo que su propio
+    docstring decia desde el principio.
+    """
 
     UI_LANGS = TraditionalTranslationProvider.UI_LANGS
-    TRADITIONAL_EXCEPTIONS = TraditionalTranslationProvider.TRADITIONAL_EXCEPTIONS
 
     def __init__(self, config: TranslationProviderConfig) -> None:
         if config.source_language not in self.UI_LANGS:
@@ -60,8 +63,12 @@ class GroqTranslationProvider(TraditionalTranslationMixin, LlmTranslationMixin):
             max_context_pages=config.character_memory_max_context_pages,
         )
 
-        self.provider = None
-        self.translator = self._build_traditional_translator()
+        # El respaldo es un colaborador, no una herencia.
+        self.traditional = TraditionalTranslationProvider(config)
+        # `provider` entra en la clave de cache del LLM, y hasta ahora lo fijaba como
+        # efecto colateral la construccion del traductor tradicional. Se conserva: perderlo
+        # invalidaria en silencio las traducciones ya cacheadas.
+        self.provider = self.traditional.provider
         self.client = None
         if self.groq_api_key:
             if Groq is None:
@@ -81,6 +88,15 @@ class GroqTranslationProvider(TraditionalTranslationMixin, LlmTranslationMixin):
             self.llm_retry_max_wait_seconds,
             self.llm_fallback_to_traditional_on_error,
         )
+
+    @property
+    def translator(self):
+        """El backend tradicional vive en el proveedor compuesto: una sola fuente de verdad."""
+        return self.traditional.translator
+
+    @translator.setter
+    def translator(self, value) -> None:
+        self.traditional.translator = value
 
     def traducir_textos(
         self,
