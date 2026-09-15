@@ -32,7 +32,11 @@ from parallel_manga_translator.quality.eval_dataset import (
     build_ground_truth_page,
     compare_reports,
     compare_summaries,
+    BBOX_ORIGEN_GLOBO,
+    BBOX_ORIGEN_REGION,
+    convencion_de_cajas,
     detection_bbox,
+    ground_truth_region,
     discover_cases,
     resolve_prediction_jsons,
     score_case,
@@ -138,6 +142,45 @@ class GroundTruthShapeTests(unittest.TestCase):
         self.assertEqual(detection_bbox(region), balloon_box)
         self.assertEqual(detection_bbox({"bbox": layout_box}), layout_box)
 
+    def test_cada_region_declara_de_donde_sale_su_caja(self) -> None:
+        """Sin esto, comparar dos casos es comparar un globo con una región.
+
+        Y no es un matiz: la caja encogida mide ~0.42 del globo que la contiene, así que
+        un detector que acierte la una falla la otra a IoU 0.5.
+        """
+        con_globo = ground_truth_region(
+            {"bbox": [100, 100, 50, 40], "ui_layout": {"original_region_bbox": [90, 90, 80, 70]}}, 0
+        )
+        self.assertEqual(con_globo["bbox_origen"], BBOX_ORIGEN_GLOBO)
+        self.assertTrue(
+            con_globo["bbox_texto_maquetado"],
+            "Si existe la caja de globo aparte es que el editor rotuló, o sea que bbox_texto "
+            "es la caja de maquetación de la traducción.",
+        )
+
+        sin_globo = ground_truth_region({"bbox": [100, 100, 50, 40]}, 0)
+        self.assertEqual(sin_globo["bbox_origen"], BBOX_ORIGEN_REGION)
+        self.assertFalse(sin_globo["bbox_texto_maquetado"])
+
+    def test_la_convencion_del_caso_resume_sus_cajas(self) -> None:
+        self.assertEqual(convencion_de_cajas(0, 246), "region")
+        self.assertEqual(convencion_de_cajas(60, 0), "globo")
+        self.assertEqual(convencion_de_cajas(57, 47), "mixta")
+
+    def test_los_casos_del_banco_declaran_su_convencion(self) -> None:
+        """Un caso sin convención declarada no se puede usar para arbitrar detectores."""
+        for case in CASES:
+            with self.subTest(case=case.name):
+                self.assertIn(
+                    case.meta.get("convencion_cajas"),
+                    ("region", "globo", "mixta"),
+                    f"{case.name} no declara convencion_cajas; reconstruyelo con eval_dataset build.",
+                )
+                for gt_file in case.ground_truth_files():
+                    data = json.loads(gt_file.read_text(encoding="utf-8"))
+                    for region in data.get("regions") or []:
+                        self.assertIn(region.get("bbox_origen"), (BBOX_ORIGEN_GLOBO, BBOX_ORIGEN_REGION))
+
     def test_las_regiones_borradas_no_entran_en_la_verdad_de_referencia(self) -> None:
         page = {
             "index": 0,
@@ -178,16 +221,45 @@ class BaselineReproducibilityTests(unittest.TestCase):
                 self.assertEqual(report["by_type"], baseline["by_type"])
 
     def test_el_baseline_empareja_cajas_de_verdad(self) -> None:
-        """Si el IoU medio se desploma, la verdad de referencia dejó de ser comparable."""
+        """Si el emparejamiento se desploma, la verdad de referencia dejó de ser comparable.
+
+        El listón depende de **qué detector** produjo `prediccion_base/`. Si es el mismo del
+        que se corrigió el ground truth, las cajas son casi las mismas y el IoU medio tiene
+        que rondar 1: ahí un desplome delata `detection_bbox()`. Si es otro detector, el IoU
+        medio baja por convención de caja y no por calidad —rtdetr ciña al texto, yolo al
+        globo—, así que lo que se exige entonces es que siga emparejando la mayoría del
+        ground truth, que es lo que de verdad se rompería.
+        """
         for case in CASES:
             with self.subTest(case=case.name):
-                summary = (case.load_baseline() or {}).get("summary") or {}
-                self.assertGreater(
-                    summary.get("mean_iou", 0.0),
-                    0.8,
-                    "Las cajas emparejadas deberían ser casi idénticas; revisa detection_bbox().",
-                )
-                self.assertGreater(summary.get("matched_regions", 0), 0)
+                baseline = case.load_baseline() or {}
+                summary = baseline.get("summary") or {}
+                # Los casos anteriores a la opción no la registran: entonces era yolo.
+                origen_gt = str((case.meta.get("options") or {}).get("region_source") or "yolo")
+                origen_base = str(baseline.get("region_source") or "yolo")
+                emparejadas = summary.get("matched_regions", 0)
+                self.assertGreater(emparejadas, 0)
+
+                # La identidad casi exacta sólo cabe esperarla cuando el ground truth ES
+                # salida del detector (convención `globo`/`mixta`). Con convención `region`
+                # las cajas las corrigió una persona, así que ni el mismo detector las
+                # empareja a IoU 1: exigirlo ahí es exigir que el humano no corrigiera nada.
+                derivado_del_detector = case.meta.get("convencion_cajas") in ("globo", "mixta")
+                if origen_base == origen_gt and derivado_del_detector:
+                    self.assertGreater(
+                        summary.get("mean_iou", 0.0),
+                        0.8,
+                        "Mismo detector que el ground truth: las cajas deberían ser casi "
+                        "idénticas; revisa detection_bbox().",
+                    )
+                else:
+                    self.assertGreaterEqual(
+                        emparejadas / max(1, summary.get("gt_regions", 0)),
+                        0.5,
+                        f"El baseline de {case.name} ({origen_base!r}, cajas "
+                        f"{case.meta.get('convencion_cajas')!r}) no puede emparejar casi "
+                        "exactamente, pero tampoco perder la mitad del ground truth.",
+                    )
 
     def test_la_prediccion_base_no_regresa_contra_su_propio_baseline(self) -> None:
         for case in CASES:

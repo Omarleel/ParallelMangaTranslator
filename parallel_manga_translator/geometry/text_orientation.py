@@ -175,19 +175,45 @@ def _axial_distance(a: float, b: float) -> float:
     return min(delta, 180.0 - delta)
 
 
+#: Tolerancia en píxeles para considerar que un lado del polígono es horizontal o vertical.
+AXIS_ALIGNED_TOLERANCE_PX = 0.75
+
+
+def _is_axis_aligned(quad: "np.ndarray") -> bool:
+    """¿El polígono es un rectángulo alineado a los ejes?
+
+    Importa porque la inclinación se deduce de la **forma**: un detector que entrega
+    rectángulos rectos (RT-DETR) no lleva información de ángulo, y estimarlo de todos modos
+    devuelve 0 o ruido que acaba girando el texto rotulado.
+    """
+    for i in range(4):
+        dx = abs(float(quad[(i + 1) % 4][0] - quad[i][0]))
+        dy = abs(float(quad[(i + 1) % 4][1] - quad[i][1]))
+        if min(dx, dy) > AXIS_ALIGNED_TOLERANCE_PX:
+            return False
+    return True
+
+
 def estimate_text_rotation(detections: Iterable[Any]) -> Dict[str, Any]:
     """Combina varios polígonos OCR y devuelve una inclinación robusta.
 
     La media es axial (ángulos separados por 180° son equivalentes). Se eliminan
     detecciones claramente discordantes para que un pequeño falso positivo no gire
     todo el bloque traducido.
+
+    Si **todos** los polígonos son rectángulos rectos no hay ángulo que deducir, y se
+    devuelve 0 con confianza 0: "no lo sé" es una respuesta mejor que un cero disfrazado
+    de medida, porque quien la recibe distingue una de otra por la confianza.
     """
     samples: List[Tuple[float, float, List[List[float]]]] = []
+    todos_rectos = True
     for detection in detections or []:
         box, confidence = _detection_box_and_confidence(detection)
         quad = _ordered_quad(box)
         if quad is None:
             continue
+        if not _is_axis_aligned(quad):
+            todos_rectos = False
         angle = polygon_text_angle(quad)
         if angle is None:
             continue
@@ -201,6 +227,18 @@ def estimate_text_rotation(detections: Iterable[Any]) -> Dict[str, Any]:
             "confidence": 0.0,
             "polygons": [],
             "sample_count": 0,
+            "axis_aligned": False,
+        }
+
+    if todos_rectos:
+        # Se conservan los polígonos: la detección de disposición vertical CJK los usa y
+        # eso sí funciona con rectángulos.
+        return {
+            "angle": 0.0,
+            "confidence": 0.0,
+            "polygons": [row[2] for row in samples],
+            "sample_count": len(samples),
+            "axis_aligned": True,
         }
 
     def axial_mean(rows: Sequence[Tuple[float, float, List[List[float]]]]) -> Tuple[float, float]:
@@ -221,6 +259,7 @@ def estimate_text_rotation(detections: Iterable[Any]) -> Dict[str, Any]:
         "confidence": round(float(strength), 4),
         "polygons": [row[2] for row in filtered],
         "sample_count": len(filtered),
+        "axis_aligned": False,
     }
 
 

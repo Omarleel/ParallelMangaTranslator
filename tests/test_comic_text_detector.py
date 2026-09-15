@@ -21,7 +21,7 @@ from parallel_manga_translator.detection.comic_text_detector import (
     ComicTextDetectorWeights,
 )
 from parallel_manga_translator.detection.ctd_region_source import CtdRegionSource
-from parallel_manga_translator.detection.region_source_factory import create_region_source
+from parallel_manga_translator.detection.region_source_factory import REGION_SOURCES, create_region_source
 
 
 class _FakeDetector:
@@ -186,8 +186,11 @@ def test_both_yaml_files_expose_the_new_keys() -> None:
     root = Path(__file__).resolve().parents[1]
     for name in ("config.yaml", "config.example.yaml"):
         data = yaml.safe_load((root / name).read_text(encoding="utf-8"))
-        assert data["quality"]["region_source"] in {"yolo", "comic_text_detector"}
+        # Contra el registro, no contra una copia de la lista: al añadir una fuente, una
+        # lista literal aquí se queda vieja y el test pasa a mentir.
+        assert data["quality"]["region_source"] in REGION_SOURCES
         assert "comic_text_detector_conf" in data["quality"]
+        assert "rtdetr_text_conf" in data["quality"], "El ejemplo y el real no deben divergir."
         assert data["vlm"]["enabled"] is False, "El VLM cuesta por página: apagado por defecto."
         # Sin modelo por defecto: ninguno del catálogo de la cuenta acepta imágenes, y
         # apuntar a uno que devuelve 404 rompería en la primera página.

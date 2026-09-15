@@ -22,6 +22,7 @@ from parallel_manga_translator.quality.detector_benchmark import (
     match_greedy,
     score_detector,
     structural_diagnostics,
+    _aviso_para,
 )
 
 
@@ -145,3 +146,35 @@ def test_the_report_always_carries_the_bias_warning() -> None:
     texto = format_report(informe)
     assert "AVISO" in texto and "manual" in texto
     assert "globo/todas" in texto and "texto/todas" in texto and "cobertura/todas" in texto
+
+
+def test_the_warning_depends_on_what_the_ground_truth_boxes_are() -> None:
+    """Un mismo aviso para los dos tipos de caso es peor que ninguno.
+
+    En un caso `region` el subconjunto 'todas' se puede leer; en uno `globo`/`mixta` esas
+    cajas son la salida del detector que genero el caso y favorecen a ese lado.
+    """
+    limpio = _aviso_para("region")
+    sesgado = _aviso_para("mixta")
+
+    assert "todas" in limpio and "OJO" not in limpio
+    assert "OJO" in sesgado and "manual" in sesgado
+    assert sesgado != limpio
+    # Un caso sin declararla no debe pasar por bueno en silencio.
+    assert "desconocida" in _aviso_para("").lower() or "reconstruye" in _aviso_para("")
+
+
+def test_the_case_exposes_the_box_convention(tmp_path) -> None:
+    case_dir = tmp_path / "xx_02"
+    (case_dir / "ground_truth").mkdir(parents=True)
+    (case_dir / "case.json").write_text(json.dumps({
+        "name": "xx_02",
+        "options": {"source_language": "Japonés"},
+        "convencion_cajas": "region",
+        "pages": [],
+    }), encoding="utf-8")
+
+    assert BenchmarkCase(case_dir).box_convention == "region"
+
+    (case_dir / "case.json").write_text(json.dumps({"name": "xx_02", "pages": []}), encoding="utf-8")
+    assert BenchmarkCase(case_dir).box_convention == "desconocida"

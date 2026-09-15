@@ -272,7 +272,21 @@ class BubbleTextRulesMixin:
         confidence: float,
         image_shape,
         looks_sfx: bool,
+        localizer_reads_text: bool = True,
     ) -> Tuple[bool, str]:
+        """¿Se conserva este grupo como texto libre?
+
+        ``localizer_reads_text`` distingue dos mundos. Con EasyOCR/Paddle la pista trae
+        texto y casi todos los filtros de aquí miran ese texto: cuántos caracteres con
+        significado hay, cuántos símbolos, si son sólo dígitos. Un localizador que **no
+        lee** —RT-DETR devuelve cajas y confianza, no transcripción— deja todas esas
+        cuentas a cero, y entonces `only_digits_or_symbols` es cierto para todo y estos
+        filtros rechazarían **cada** región de texto libre.
+
+        Así que con un localizador que no lee se aplican sólo los límites geométricos y la
+        confianza del propio detector, que además es mejor señal: la de EasyOCR estaba
+        medida como poco separadora (medianas 0.197 frente a 0.119).
+        """
         img_height, img_width = image_shape[:2]
         img_area = max(1, img_height * img_width)
         bx, by, bw, bh = text_box
@@ -316,7 +330,7 @@ class BubbleTextRulesMixin:
         # Filtro específico para texto libre: no conviertas números/símbolos
         # solitarios en regiones a limpiar. Los globos reales ya están cubiertos por
         # el detector YOLO; aquí solo queremos texto huérfano confiable.
-        if not looks_sfx:
+        if not looks_sfx and localizer_reads_text:
             if only_digits_or_symbols:
                 return False, "solo_numeros_o_simbolos_ocr_ruido"
 
@@ -359,8 +373,11 @@ class BubbleTextRulesMixin:
             or width_ratio > self.free_text.max_width_ratio
             or height_ratio > self.free_text.max_height_ratio
         )
-        if is_large and (not has_signal or confidence < self.free_text.large_min_confidence):
-            return False, "region_grande_sin_senal_ocr_fiable"
+        if is_large:
+            # Sin transcripción no hay "señal textual" que evaluar: decide la confianza.
+            sin_respaldo = (not has_signal) if localizer_reads_text else False
+            if sin_respaldo or confidence < self.free_text.large_min_confidence:
+                return False, "region_grande_sin_senal_ocr_fiable"
 
         return True, "aceptado"
 

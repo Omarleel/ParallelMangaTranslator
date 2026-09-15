@@ -117,13 +117,36 @@ class QualityConfig:
     ocr_crop_debug_dir: str = ""
     bubble_detector: str = "yolo11-seg"
     require_yolo: bool = True
-    # Fuente de regiones: "yolo" (globos segmentados + texto libre por OCR) o
-    # "comic_text_detector" (detector de texto que ve globo y fuera de globo).
-    # Ninguna es heurística: las dos son modelos entrenados.
+    # Fuente de regiones: "rtdetr" (detector de bloques de texto y globos, por defecto),
+    # "comic_text_detector" u "yolo" (globos segmentados + texto libre por OCR). Ninguna
+    # es heurística: las tres son modelos entrenados.
+    #
+    # El defecto es yolo: es el único que da **polígono** del globo, y la limpieza está
+    # construida sobre él. RT-DETR localiza el texto bastante mejor, pero como fuente de
+    # regiones limpia peor —probado sobre material real— porque sólo da cajas. Su sitio es
+    # `ocr.detection_engine: rtdetr`, donde aporta la localización sin tocar la forma.
     region_source: str = "yolo"
     comic_text_detector_model_path: str = ""
     comic_text_detector_conf: float = 0.40
     comic_text_detector_mask_threshold: float = 0.30
+    # RT-DETR-v2 (ogkalu/comic-text-and-bubble-detector). Necesita el extra opcional
+    # `onnxruntime`: este modelo no se puede cargar con cv2.dnn.
+    rtdetr_text_model_path: str = ""
+    # 0.30 sale de medir el banco: por encima se pierden bloques de texto libre, que es
+    # justo donde este detector aporta; por debajo entran cajas sin tinta.
+    rtdetr_text_conf: float = 0.30
+    # La clase `bubble` no crea regiones, solo mide el solape dentro/fuera, así que su
+    # umbral puede ser más exigente.
+    rtdetr_bubble_conf: float = 0.50
+    # Derivar la envolvente de la tinta dentro de cada caja en vez de usar la caja como
+    # zona segura. Apagarlo devuelve el problema medido del recorte de OCR (CER x170).
+    rtdetr_text_polygon: bool = True
+    # Dónde buscar la tinta de un bloque que cae dentro de un globo. La caja de texto de
+    # este modelo cubre solo ~0.66 del bloque real (medido en ja_02), así que buscar solo
+    # dentro de ella deja columnas sin borrar; el globo que el propio modelo predice lo
+    # cubre entero. No cambia `region.bbox`, solo la zona de búsqueda.
+    rtdetr_bubble_search_zone: bool = True
+    rtdetr_bubble_search_min_overlap: float = 0.80
     # De donde sale la tinta que se borra: solo derivada, o derivada + detector de texto
     # (union, nunca sustitucion, con fallback a la derivada cuando el detector no ve tinta).
     ink_mask_source: str = "derivada"
@@ -146,6 +169,10 @@ class QualityConfig:
     inpaint_mode: str = "auto"
     split_merged_bubbles: bool = True
     bubble_split_min_ocr_groups: int = 2
+    # Con un localizador que entrega bloques (RT-DETR), dos grupos dentro de un globo ya
+    # son dos bloques: la prueba del hueco sobra y de hecho los rechaza, porque un bloque
+    # es mucho más ancho que la línea para la que se calibró.
+    bubble_split_trust_text_blocks: bool = True
     bubble_split_min_gap_px: int = 18
     bubble_split_gap_ratio: float = 0.70
     bubble_split_cluster_min_gap_px: int = 12

@@ -57,19 +57,20 @@ MIN_HULL_RATIO = 0.08
 CROP_MARGIN_PX = 24
 
 
-def text_block_polygon(image: np.ndarray, box: Box) -> Tuple[Optional[np.ndarray], str]:
-    """Envolvente del bloque de texto contenido en ``box``.
+def _tinta_en_caja(image: np.ndarray, box: Box):
+    """Tinta limpia dentro de ``box``, en coordenadas del recorte.
 
-    Devuelve ``(None, motivo)`` cuando no se ve un bloque de texto creíble, para descartar
-    la caja en lugar de emitir una región mal formada.
+    Devuelve ``(limpia, (x0, y0), area_caja, motivo)``. Es la parte común de
+    `text_block_polygon` (que la envuelve) y `text_block_ink` (que la devuelve tal cual):
+    tenerla una sola vez evita que las dos versiones de "qué cuenta como tinta" diverjan.
     """
     if image is None or image.size == 0:
-        return None, "imagen vacia"
+        return None, (0, 0), 0.0, "imagen vacia"
 
     height, width = image.shape[:2]
     x, y, w, h = BoxGeometry.clip(tuple(int(v) for v in box), width, height)
     if w <= 4 or h <= 4:
-        return None, "caja degenerada"
+        return None, (0, 0), 0.0, "caja degenerada"
 
     area_caja = float(w * h)
     x0, y0 = max(0, x - CROP_MARGIN_PX), max(0, y - CROP_MARGIN_PX)
@@ -77,33 +78,58 @@ def text_block_polygon(image: np.ndarray, box: Box) -> Tuple[Optional[np.ndarray
     y1 = min(height, y + h + CROP_MARGIN_PX)
     recorte = image[y0:y1, x0:x1]
     if recorte.size == 0:
-        return None, "recorte vacio"
+        return None, (x0, y0), area_caja, "recorte vacio"
 
     safe = np.zeros(recorte.shape[:2], dtype=np.uint8)
     cv2.rectangle(safe, (x - x0, y - y0), (x - x0 + w, y - y0 + h), 255, -1)
 
-    # La caja hace de zona segura y de ancla a la vez: es lo que hace el pipeline con el
-    # texto libre, y `_estimate_ink_candidates` ya contempla ese caso muestreando el
-    # anillo que rodea la zona para estimar el fondo.
     tinta = TextInkMaskRefiner.refine(recorte, safe, safe)
     if tinta is None or cv2.countNonZero(tinta) == 0:
-        return None, "sin tinta"
+        return None, (x0, y0), area_caja, "sin tinta"
 
-    # Fuera las motas sueltas del arte antes de envolver.
     num, labels, stats, _ = cv2.connectedComponentsWithStats((tinta > 0).astype(np.uint8), 8)
     if num <= 1:
-        return None, "sin tinta"
+        return None, (x0, y0), area_caja, "sin tinta"
     areas = stats[1:, cv2.CC_STAT_AREA]
     minima = max(4.0, area_caja * MIN_COMPONENT_RATIO, float(areas.max()) * MIN_COMPONENT_VS_LARGEST)
     limpia = np.zeros_like(tinta)
     for i in range(1, num):
         if stats[i, cv2.CC_STAT_AREA] >= minima:
             limpia[labels == i] = 255
+    if cv2.countNonZero(limpia) == 0:
+        return None, (x0, y0), area_caja, "solo motas"
+    return limpia, (x0, y0), area_caja, "ok"
+
+
+def text_block_ink(image: np.ndarray, box: Box) -> Tuple[Optional[np.ndarray], str]:
+    """Máscara de tinta del bloque, a resolución de página.
+
+    A diferencia de `text_block_polygon`, **no** aplica los límites de proporción de tinta:
+    esos existen para decidir si la envolvente es creíble como forma de región, no para
+    decidir qué píxeles son tinta. Un globo negro con texto blanco llena la caja de tinta y
+    su envolvente no sirve, pero su tinta sí.
+    """
+    limpia, (x0, y0), _area, motivo = _tinta_en_caja(image, box)
+    if limpia is None:
+        return None, motivo
+    pagina = np.zeros(image.shape[:2], dtype=np.uint8)
+    alto, ancho = limpia.shape[:2]
+    pagina[y0:y0 + alto, x0:x0 + ancho] = limpia
+    return pagina, "ok"
+
+
+def text_block_polygon(image: np.ndarray, box: Box) -> Tuple[Optional[np.ndarray], str]:
+    """Envolvente del bloque de texto contenido en ``box``.
+
+    Devuelve ``(None, motivo)`` cuando no se ve un bloque de texto creíble, para descartar
+    la caja en lugar de emitir una región mal formada.
+    """
+    limpia, (x0, y0), area_caja, motivo = _tinta_en_caja(image, box)
+    if limpia is None:
+        return None, motivo
 
     pintados = cv2.countNonZero(limpia)
-    if pintados == 0:
-        return None, "solo motas"
-    ratio_tinta = pintados / area_caja
+    ratio_tinta = pintados / max(1.0, area_caja)
     if ratio_tinta < MIN_INK_RATIO:
         return None, "tinta insuficiente"
     if ratio_tinta > MAX_INK_RATIO:

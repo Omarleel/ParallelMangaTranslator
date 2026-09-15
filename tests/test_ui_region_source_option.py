@@ -1,9 +1,9 @@
 """La fuente de regiones se elige por trabajo desde la UI.
 
-Se elige por trabajo y no en `config.yaml` porque su ventaja depende del material: medido
-en `dataset_eval`, el detector de texto sube la precisión en el caso japonés con mucho
-texto suelto y regresa en los ingleses con texto libre legítimo. Esa decisión es del
-humano que conoce su tomo, no un default global.
+El defecto es `yolo` y conviene saber por qué, porque estuvo en `rtdetr` un rato: **yolo es
+el único que da el polígono del globo**, y la limpieza está construida sobre él. RT-DETR
+localiza el texto bastante mejor pero sólo da cajas, y como fuente de regiones limpia peor
+sobre material real. Su sitio es `ocr.detection_engine`, no éste.
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ from parallel_manga_translator.ui.job_manager import JobManager, JobOptions, Job
 STATIC = Path(__file__).resolve().parents[1] / "parallel_manga_translator" / "ui" / "static"
 
 
-def test_the_default_is_the_current_pipeline() -> None:
+def test_the_default_is_the_one_that_gives_the_bubble_polygon() -> None:
+    """La limpieza depende del polígono del globo, y sólo yolo lo da."""
     assert JobOptions().region_source == "yolo"
 
 
@@ -68,8 +69,10 @@ def test_the_form_offers_the_choice_and_sends_it() -> None:
 
     assert 'id="regionSource"' in html and 'name="region_source"' in html
     assert 'value="comic_text_detector"' in html
-    # El aviso importa tanto como el desplegable: sin el, se elige a ciegas.
-    assert "empeora el resultado final" in html
+    # El aviso importa tanto como el desplegable: sin el, se elige a ciegas. Y lo que hay
+    # que explicar es que esta opcion NO es donde se mejora la localizacion del texto.
+    assert "polígono del globo" in html
+    assert "OCR de" in html and "detección" in html, "Debe decir dónde SÍ se cambia el localizador."
     assert "data.append('region_source', regionSource?.value || 'yolo');" in javascript
 
 

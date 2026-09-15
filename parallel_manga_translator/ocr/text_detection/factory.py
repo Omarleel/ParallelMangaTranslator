@@ -6,6 +6,7 @@ from parallel_manga_translator.ocr.text_detection.base import TextDetectionEngin
 from parallel_manga_translator.ocr.text_detection.easyocr_detector import EasyOcrTextDetector
 from parallel_manga_translator.ocr.text_detection.paddle_detector import PaddleTextDetector
 from parallel_manga_translator.ocr.text_detection.paddle_subprocess_detector import PaddleSubprocessTextDetector
+from parallel_manga_translator.ocr.text_detection.rtdetr_detector import RtDetrTextDetectionEngine
 
 
 class TextDetectionFactory:
@@ -49,3 +50,4 @@ class TextDetectionFactory:
 TextDetectionFactory.register("easyocr", EasyOcrTextDetector)
 TextDetectionFactory.register("paddleocr", PaddleTextDetector)
 TextDetectionFactory.register("paddle_subprocess", PaddleSubprocessTextDetector)
+TextDetectionFactory.register("rtdetr", RtDetrTextDetectionEngine)

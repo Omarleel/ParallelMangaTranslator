@@ -29,13 +29,47 @@ class TextDetectionEngine(Protocol):
     def detect_text_boxes(self, image: np.ndarray) -> List[TextDetection]:
         ...
 
+    @property
+    def emits_oriented_polygons(self) -> bool:
+        """¿Los polígonos siguen la inclinación del texto?
+
+        Quien estima la rotación la deduce de la **forma** del polígono, así que un motor
+        que devuelve rectángulos alineados a los ejes no puede aportar ángulo: devolvería
+        cero o un valor arbitrario, y pisaría el que ya hubiera. No es un detalle de
+        calidad, es una capacidad que se tiene o no se tiene.
+        """
+        ...
+
+    @property
+    def emits_text_blocks(self) -> bool:
+        """¿Cada detección es un bloque de texto completo, o un fragmento de línea?
+
+        El partidor de globos fusionados exige un hueco entre grupos para no separar dos
+        columnas del mismo bloque. Ese riesgo sólo existe con fragmentos: si el motor ya
+        entrega bloques, dos detecciones dentro de un globo **son** dos bloques.
+        """
+        ...
+
 
 class TextDetectionEngineBase(OcrEngineBase):
     """Utilidades comunes para motores de localización de texto."""
 
+    #: Por defecto se asume un OCR clásico: polígonos que siguen la inclinación del texto
+    #: y detecciones a nivel de línea/palabra. Un detector de bloques declara lo contrario.
+    EMITS_ORIENTED_POLYGONS = True
+    EMITS_TEXT_BLOCKS = False
+
     def __init__(self, settings: TextDetectionSettings) -> None:
         super().__init__(settings.as_ocr_settings())
         self.detector_settings = settings
+
+    @property
+    def emits_oriented_polygons(self) -> bool:
+        return self.EMITS_ORIENTED_POLYGONS
+
+    @property
+    def emits_text_blocks(self) -> bool:
+        return self.EMITS_TEXT_BLOCKS
 
     @staticmethod
     def enhance_for_detection(image: np.ndarray) -> np.ndarray:

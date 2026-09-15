@@ -131,6 +131,7 @@
                 <span>OCR para detección/localización</span>
                 <select id="detectionEngine" name="detection_engine">
                   <option value="auto" selected>Auto</option>
+                  <option value="rtdetr">RT-DETR · detector de texto de cómic</option>
                   <option value="easyocr">EasyOCR</option>
                   <option value="paddleocr">PaddleOCR</option>
                   <option value="paddle_subprocess">PaddleOCR subprocess</option>
@@ -147,19 +148,23 @@
                 </select>
               </label>
             </div>
-            <p class="hint">Auto usa la mejor opción disponible según idioma y proceso. La detección/localización no usa MangaOCR porque no entrega cajas.</p>
+            <p class="hint">Auto usa la mejor opción disponible según idioma y proceso. La
+            detección/localización no usa MangaOCR porque no entrega cajas. <strong>RT-DETR</strong>
+            está entrenado para texto de cómic y localiza bastante mejor que el OCR, sobre todo
+            fuera de globo; no transcribe, de eso sigue encargándose el OCR de transcripción.</p>
 
             <label class="field compact">
               <span>Fuente de regiones</span>
               <select id="regionSource" name="region_source">
-                <option value="yolo" selected>Globos YOLO + texto libre (recomendado)</option>
+                <option value="yolo" selected>Globos YOLO (recomendado)</option>
                 <option value="comic_text_detector">Detector de texto (comic-text-detector)</option>
+                <option value="rtdetr">Detector de texto y globos (RT-DETR)</option>
               </select>
             </label>
-            <p class="hint">Medido en el banco de regresión: el detector de texto localiza mejor el
-            texto suelto, pero en material con texto libre legítimo empeora el resultado final.
-            Cambia esto solo si tu tomo tiene mucha onomatopeya o rótulo fuera de globo y el
-            resultado por defecto no te convence.</p>
+            <p class="hint">Quién decide las regiones y les da forma. YOLO es el único que da el
+            polígono del globo, y la limpieza está construida sobre él. Para mejorar la
+            localización del texto no cambies esto: elige RT-DETR arriba, en el OCR de
+            detección, que aporta las cajas sin tocar la forma del globo.</p>
 
             <div class="grid-fields two">
               <label class="field compact">

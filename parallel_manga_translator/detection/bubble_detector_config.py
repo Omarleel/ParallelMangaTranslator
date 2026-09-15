@@ -15,6 +15,7 @@ BUBBLE_SPLIT_DEBUG_VERSION = "v7_bubble_onomatopoeia_translation_2026_06_11"
 class BubbleSplitSettings:
     enabled: bool
     min_ocr_groups: int
+    trust_text_blocks: bool
     min_gap_px: int
     gap_ratio: float
     cluster_min_gap_px: int
@@ -28,6 +29,7 @@ class BubbleSplitSettings:
         return cls(
             enabled=quality.split_merged_bubbles,
             min_ocr_groups=quality.bubble_split_min_ocr_groups,
+            trust_text_blocks=quality.bubble_split_trust_text_blocks,
             min_gap_px=quality.bubble_split_min_gap_px,
             gap_ratio=quality.bubble_split_gap_ratio,
             cluster_min_gap_px=quality.bubble_split_cluster_min_gap_px,

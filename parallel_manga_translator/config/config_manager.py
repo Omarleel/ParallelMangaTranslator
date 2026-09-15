@@ -236,10 +236,15 @@ class ConfigManager:
                 f"quality.ink_mask_source no soportado: {ink_mask_source!r}. "
                 "Usa 'derivada' o 'derivada+ctd'."
             )
+        # Contra el registro, no contra una lista literal: esta validacion se quedo vieja
+        # al anadir la tercera fuente y rechazaba el propio valor por defecto.
+        from parallel_manga_translator.detection.region_source_factory import REGION_SOURCES
+
         region_source = str(q.get("region_source", "yolo")).strip().lower() or "yolo"
-        if region_source not in {"yolo", "comic_text_detector"}:
+        if region_source not in REGION_SOURCES:
+            soportados = ", ".join(sorted(REGION_SOURCES))
             raise ValueError(
-                f"quality.region_source no soportado: {region_source!r}. Usa 'yolo' o 'comic_text_detector'."
+                f"quality.region_source no soportado: {region_source!r}. Soportados: {soportados}."
             )
 
         return QualityConfig(
@@ -249,6 +254,12 @@ class ConfigManager:
             comic_text_detector_mask_threshold=max(
                 0.01, float_value(q.get("comic_text_detector_mask_threshold", 0.30), 0.30)
             ),
+            rtdetr_text_model_path=str(q.get("rtdetr_text_model_path", "")).strip(),
+            rtdetr_text_conf=max(0.01, float_value(q.get("rtdetr_text_conf", 0.30), 0.30)),
+            rtdetr_bubble_conf=max(0.01, float_value(q.get("rtdetr_bubble_conf", 0.50), 0.50)),
+            rtdetr_text_polygon=bool_value(q.get("rtdetr_text_polygon", True), True),
+            rtdetr_bubble_search_zone=bool_value(q.get("rtdetr_bubble_search_zone", True), True),
+            rtdetr_bubble_search_min_overlap=float_value(q.get("rtdetr_bubble_search_min_overlap", 0.80), 0.80),
             ink_mask_source=ink_mask_source,
             bubble_detection=bool_value(q.get("bubble_detection", True), True),
             bubble_fill=bool_value(q.get("bubble_fill", True), True),

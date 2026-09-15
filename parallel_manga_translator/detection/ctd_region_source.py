@@ -25,6 +25,7 @@ from parallel_manga_translator.architecture.ports import RegionSourcePort  # noq
 from parallel_manga_translator.config.app_config import ProcessingConfig, QualityConfig
 from parallel_manga_translator.detection.bubble_detector import BubbleDetector
 from parallel_manga_translator.detection.comic_text_detector import ComicTextDetection, ComicTextDetector
+from parallel_manga_translator.detection.region_reading_order import order_and_number
 from parallel_manga_translator.infrastructure.logging_config import get_logger
 from parallel_manga_translator.layout.panel_order_resolver import PanelAwareReadingOrderResolver, PanelOrderConfig
 from parallel_manga_translator.layout.reading_order_resolver import ReadingOrderResolver
@@ -176,20 +177,10 @@ class CtdRegionSource:
         return regions
 
     def _order_and_number(self, image: np.ndarray, regions: List[TextRegion]) -> List[TextRegion]:
-        if not regions:
-            return []
-        try:
-            ordered = self.panel_order_resolver.sort_regions(image, regions)
-        except Exception as exc:  # pragma: no cover - depende de la detección de viñetas
-            logger.warning("Orden por viñetas no disponible (%s); se usa el orden de página.", exc)
-            ordered = self.reading_order_resolver.sort_regions(regions)
-
-        flow = "rtl_vertical" if self.reading_order_resolver.page_reads_right_to_left else "ltr_horizontal"
-        for index, region in enumerate(ordered):
-            region.metadata["reading_order_index"] = index
-            region.metadata["reading_order_language"] = self.idioma_entrada
-            region.metadata["reading_order_flow"] = flow
-            # Identificador estable y legible por humanos: es el que se dibuja sobre la
-            # página anotada y el que el VLM devuelve para cada bloque.
-            region.metadata["region_id"] = index + 1
-        return ordered
+        return order_and_number(
+            image,
+            regions,
+            panel_resolver=self.panel_order_resolver,
+            reading_resolver=self.reading_order_resolver,
+            idioma_entrada=self.idioma_entrada,
+        )

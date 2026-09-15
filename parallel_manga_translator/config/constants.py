@@ -70,6 +70,10 @@ URL_MODELO_AOT = "https://github.com/zyddnys/manga-image-translator/releases/dow
 # que lama y aot. Se usa la exportacion ONNX porque corre en `cv2.dnn`, que ya es
 # dependencia: no anade paquetes ni compite por la GPU con YOLO/OCR/inpainting.
 URL_MODELO_COMIC_TEXT_DETECTOR = "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/comictextdetector.pt.onnx"
+# Detector de bloques de texto y globos (RT-DETR-v2, Apache-2.0). A diferencia del
+# anterior NO corre en `cv2.dnn` —el importador ONNX de OpenCV falla en el nodo CumSum
+# del encoder—, asi que necesita el extra opcional `onnxruntime`.
+URL_MODELO_RTDETR_COMIC_TEXT = "https://huggingface.co/ogkalu/comic-text-and-bubble-detector/resolve/main/detector.onnx"
 
 # COLORES
 COLOR_BLANCO = (255, 255, 255)

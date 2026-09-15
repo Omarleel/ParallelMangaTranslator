@@ -19,6 +19,9 @@ huggingface_hub>=0.23.0
 # Evita que manga-ocr instale una versión de transformers que exige torch >= 2.4.
 transformers>=4.30,<4.46
 opencv-python-headless>=4.8
+# Ejecuta el detector de regiones por defecto (quality.region_source: rtdetr). No vale
+# cv2.dnn: el importador ONNX de OpenCV falla en el nodo CumSum del encoder de ese modelo.
+onnxruntime>=1.17
 pytest
 # UI web local para revisión humana.
 fastapi>=0.110

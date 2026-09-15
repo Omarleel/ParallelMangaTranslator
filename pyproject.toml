@@ -27,6 +27,10 @@ dependencies = [
   "huggingface-hub>=0.23.0",
   "transformers>=4.30,<4.46",
   "opencv-python-headless>=4.8",
+  # Ejecuta el detector de regiones por defecto (quality.region_source: rtdetr). No es
+  # opcional porque es la ruta por defecto, y no vale cv2.dnn: el importador ONNX de
+  # OpenCV falla en el nodo CumSum del encoder de ese modelo.
+  "onnxruntime>=1.17",
   "fastapi>=0.110",
   "uvicorn[standard]>=0.27",
   "python-multipart>=0.0.9",

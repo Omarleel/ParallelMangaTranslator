@@ -1046,6 +1046,7 @@ function regionSourceLabel(value) {
   return {
     yolo: 'Globos YOLO',
     comic_text_detector: 'Detector de texto',
+    rtdetr: 'Detector RT-DETR',
   }[value] || value;
 }
 

@@ -45,11 +45,32 @@ def _build_comic_text_detector_source(idioma_entrada: str, quality: QualityConfi
     )
 
 
+def _build_rtdetr_source(idioma_entrada: str, quality: QualityConfig, processing: ProcessingConfig):
+    from parallel_manga_translator.detection.rtdetr_region_source import RtDetrRegionSource
+    from parallel_manga_translator.detection.rtdetr_text_detector import (
+        RtDetrTextDetector,
+        RtDetrTextDetectorWeights,
+    )
+
+    detector = RtDetrTextDetector(
+        weights=RtDetrTextDetectorWeights(model_path=quality.rtdetr_text_model_path),
+        conf_threshold=quality.rtdetr_text_conf,
+        bubble_conf_threshold=quality.rtdetr_bubble_conf,
+    )
+    return RtDetrRegionSource(
+        idioma_entrada=idioma_entrada,
+        quality_config=quality,
+        processing_config=processing,
+        detector=detector,
+    )
+
+
 #: Los constructores se importan perezosamente: elegir CTD no debe cargar ultralytics,
 #: y elegir YOLO no debe tocar el .onnx de 95 MB.
 REGION_SOURCES: Dict[str, Callable[..., object]] = {
     "yolo": _build_yolo_source,
     "comic_text_detector": _build_comic_text_detector_source,
+    "rtdetr": _build_rtdetr_source,
 }
 
 

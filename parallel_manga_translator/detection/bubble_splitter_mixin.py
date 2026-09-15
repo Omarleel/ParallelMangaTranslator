@@ -15,6 +15,10 @@ logger = get_logger(__name__)
 class BubbleSplitterMixin:
     """Responsabilidad única: decidir y ejecutar la división de globos fusionados."""
 
+    #: Fracción de la caja menor que pueden compartir dos bloques y seguir siendo dos.
+    #: Por encima se asumen fragmentos del mismo bloque.
+    BLOCK_MAX_OVERLAP_RATIO = 0.10
+
     def _split_group_decisions(
         self,
         group_boxes: Sequence[Box],
@@ -22,6 +26,7 @@ class BubbleSplitterMixin:
         min_gap_px: Optional[int] = None,
         gap_ratio: Optional[float] = None,
         decision_scope: str = "ocr_groups",
+        disjoint_blocks: bool = False,
     ) -> List[Dict[str, object]]:
         """Decide si cajas de texto representan globos distintos.
 
@@ -51,13 +56,29 @@ class BubbleSplitterMixin:
                 separated_horizontal = gap_x >= horizontal_gap_limit and y_overlap >= 0.08
                 separated_vertical = gap_y >= vertical_gap_limit and x_overlap >= 0.08
                 separated_diagonal = gap_x >= min_gap and gap_y >= min_gap
-                split = bool(separated_horizontal or separated_vertical or separated_diagonal)
+                # Cuarta vía, sólo para detecciones que ya son bloques. Las tres de arriba
+                # piden un eje limpio: separación horizontal con solape vertical, o al revés,
+                # o hueco en los dos. Dos bloques dispuestos en DIAGONAL no cumplen ninguna
+                # —se rozan en un eje y no se solapan en el otro— y sin embargo sus cajas ni
+                # se tocan. Medido en una página real: `(33,311,283,517)` y `(314,76,152,209)`
+                # tienen intersección cero y quedaban sin partir.
+                separated_blocks = False
+                if disjoint_blocks:
+                    inter = self.geometry.intersection_area(a, b)
+                    menor = max(1, min(self.geometry.area(a), self.geometry.area(b)))
+                    separated_blocks = (
+                        inter / menor <= self.BLOCK_MAX_OVERLAP_RATIO
+                        and max(gap_x, gap_y) >= min_gap
+                    )
+                split = bool(separated_horizontal or separated_vertical or separated_diagonal or separated_blocks)
                 if separated_horizontal:
                     reason = "separacion_horizontal_entre_globos"
                 elif separated_vertical:
                     reason = "separacion_vertical_entre_globos"
                 elif separated_diagonal:
                     reason = "separacion_diagonal_entre_globos"
+                elif separated_blocks:
+                    reason = "bloques_sin_solape"
                 else:
                     reason = "distancia_insuficiente_para_dividir"
                 decisions.append({
@@ -79,7 +100,24 @@ class BubbleSplitterMixin:
                 })
         return decisions
 
-    def _should_split_region_from_groups(self, region: TextRegion, grouped_detections: Sequence[Sequence]) -> Tuple[bool, List[Dict[str, object]], str]:
+    def _should_split_region_from_groups(
+        self,
+        region: TextRegion,
+        grouped_detections: Sequence[Sequence],
+        localizer_emits_blocks: bool = False,
+    ) -> Tuple[bool, List[Dict[str, object]], str]:
+        """¿Este globo contiene más de un bloque de texto?
+
+        ``localizer_emits_blocks`` cambia la evidencia disponible. La prueba del hueco
+        existe para no partir dos **columnas del mismo bloque**, y ese riesgo sólo aparece
+        cuando el localizador entrega fragmentos de línea. Si ya entrega bloques, que
+        `_group_detections` haya dejado dos grupos significa que no supo unirlos: son dos
+        bloques, y exigirles además un hueco proporcional a su tamaño los rechaza casi
+        siempre, porque un bloque es mucho más ancho que una línea.
+
+        Medido sobre un trabajo real de 69 globos: con fragmentos se partían 6, con bloques
+        sólo 4, y 25 se quedaban en "grupos_demasiado_cercanos".
+        """
         if not self.split.enabled:
             return False, [], "split_desactivado"
         if region.kind not in {"dialogue", "narration", "unknown"}:
@@ -89,6 +127,24 @@ class BubbleSplitterMixin:
         group_boxes = [self.geometry.detections_box(group) for group in grouped_detections if group]
         if len(group_boxes) < max(2, self.split.min_ocr_groups):
             return False, [], "cajas_ocr_insuficientes"
+        if localizer_emits_blocks and self.split.trust_text_blocks:
+            # Se conserva la prueba del hueco, pero sólo su parte ABSOLUTA. La relativa
+            # (`gap_ratio` por el tamaño medio de la caja) está calibrada para líneas de
+            # OCR y no traslada a bloques: dos bloques apilados de 100 px de alto tendrían
+            # que separarse 35 px, cuando dos líneas de 20 px sólo piden 7. Medido sobre un
+            # trabajo real de 69 globos, con la parte relativa se parten 4 —lo mismo que sin
+            # esta rama— y sin ninguna prueba se parten 29, que es indefendible.
+            decisions = self._split_group_decisions(
+                group_boxes,
+                min_gap_px=self.split.cluster_min_gap_px,
+                gap_ratio=0.0,
+                decision_scope="text_blocks",
+                disjoint_blocks=True,
+            )
+            should_split = any(bool(item.get("split")) for item in decisions)
+            return should_split, decisions, (
+                "division_por_bloques_de_texto" if should_split else "bloques_demasiado_cercanos"
+            )
         decisions = self._split_group_decisions(group_boxes)
         should_split = any(bool(item.get("split")) for item in decisions)
         return should_split, decisions, "division_por_grupos_ocr" if should_split else "grupos_demasiado_cercanos"
@@ -249,6 +305,7 @@ class BubbleSplitterMixin:
         image: np.ndarray,
         regions: Sequence[TextRegion],
         detections_by_region: Dict[int, List],
+        localizer_emits_blocks: bool = False,
     ) -> Tuple[List[TextRegion], List[Dict[str, object]]]:
         split_regions: List[TextRegion] = []
         debug_records: List[Dict[str, object]] = []
@@ -259,7 +316,9 @@ class BubbleSplitterMixin:
             grouped_detections = self._group_detections(assigned_detections, trace_decisions=merge_trace) if assigned_detections else []
             raw_pair_decisions, raw_pair_truncated = self._debug_pairwise_raw_merge_decisions(assigned_detections)
             group_boxes = [self.geometry.detections_box(group) for group in grouped_detections if group]
-            should_split, pair_decisions, reason = self._should_split_region_from_groups(region, grouped_detections)
+            should_split, pair_decisions, reason = self._should_split_region_from_groups(
+                region, grouped_detections, localizer_emits_blocks
+            )
 
             record: Dict[str, object] = {
                 "region_index": idx,
@@ -313,11 +372,16 @@ class BubbleSplitterMixin:
                 debug_records.append(record)
                 continue
 
+            # Segunda prueba del hueco, ahora sobre los clusters. Con bloques vale el mismo
+            # razonamiento que arriba: el término relativo está calibrado para líneas y aquí
+            # rechazaba 2 de los 6 globos que la primera puerta sí dejaba pasar.
+            usa_bloques = localizer_emits_blocks and self.split.trust_text_blocks
             cluster_decisions = self._split_group_decisions(
                 cluster_boxes,
                 min_gap_px=self.split.cluster_min_gap_px,
-                gap_ratio=self.split.cluster_gap_ratio,
+                gap_ratio=0.0 if usa_bloques else self.split.cluster_gap_ratio,
                 decision_scope="clusters_logicos",
+                disjoint_blocks=usa_bloques,
             )
             record["cluster_pair_decisions"] = cluster_decisions
             if not any(bool(item.get("split")) for item in cluster_decisions):

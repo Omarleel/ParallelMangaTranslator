@@ -8,10 +8,18 @@ propio ground truth. Cualquier otro detector pierde por construcción.
 
 Este módulo arregla las tres cosas que lo impedían:
 
-1. **Objetivo neutral.** Se puntúa contra `bbox_texto` —dónde está el texto— además de
-   contra la caja de globo. Medido sobre `en_02`: contra globo el detector actual gana
-   70-39; contra texto pierde 23-59. La conclusión dependía por completo de la
-   convención, así que se reportan las dos y nunca una sola.
+1. **Dos objetivos, no uno.** Se puntúa contra `bbox_texto` además de contra la caja de
+   globo. Medido sobre `en_02`: contra globo el detector actual gana 70-39; contra texto
+   pierde 23-59. La conclusión dependía por completo de la convención, así que se reportan
+   las dos y nunca una sola.
+
+   **Pero `bbox_texto` no es "dónde está el texto", y creerlo lleva a conclusiones falsas.**
+   Es `region["bbox"]` del manifest, o sea la caja de **maquetación de la traducción**:
+   medido el 2026-09-15, está contenida dentro de la caja de globo al ~0.42 de su área en
+   los tres casos generados con `modo: traducir`. Sirve como proxy del área de texto, no
+   como verdad. El único caso cuyo ground truth no arrastra esa contaminación es `ja_02`,
+   generado en `modo: limpiar_transcribir`, donde nunca hubo rotulado y por tanto tampoco
+   caja de maquetación.
 
 2. **Subconjunto sin sesgo.** Las regiones con `origen: manual` las dibujó una persona
    sin ver la salida de ningún detector. Son 47 en `ja_01`, 8 en `en_01` y 13 en `en_02`,
@@ -215,6 +223,16 @@ class BenchmarkCase:
     def source_language(self) -> str:
         return str((self.meta.get("options") or {}).get("source_language") or "Japonés")
 
+    @property
+    def box_convention(self) -> str:
+        """De qué son las cajas del ground truth: "region", "globo" o "mixta".
+
+        Lo escribe `eval_dataset` al construir el caso. Un caso "globo" o "mixta" no puede
+        arbitrar entre detectores con el subconjunto "todas": sus cajas son las del detector
+        que lo generó. Ahí solo el subconjunto "manual" significa algo.
+        """
+        return str(self.meta.get("convencion_cajas") or "desconocida")
+
     def pages(self, limit: int = 0) -> List[Tuple[str, Path]]:
         """(stem de la página, ruta de la imagen). Las imágenes no se versionan."""
         filas = self.meta.get("pages") or []
@@ -336,6 +354,24 @@ def score_detector(
     return resultados
 
 
+def _aviso_para(convencion: str) -> str:
+    """El aviso depende de qué son las cajas del caso, no es el mismo para todos."""
+    base = "Mide localizacion, no resultado final de pagina."
+    if convencion == "region":
+        return (
+            f"{base} Las cajas del ground truth son de REGION (el trabajo no rotulo, asi que "
+            "no hay encogido de maquetacion): el subconjunto 'todas' es interpretable."
+        )
+    if convencion in {"globo", "mixta"}:
+        return (
+            f"{base} OJO: las cajas del ground truth son de GLOBO, salida del detector que "
+            "genero el caso, y su 'bbox_texto' es la caja de maquetacion de la traduccion. "
+            "El subconjunto 'todas' favorece a ese detector por construccion; solo 'manual' "
+            "compara de verdad."
+        )
+    return f"{base} Convencion de cajas desconocida: reconstruye el caso con eval_dataset build."
+
+
 def benchmark_case(
     case: BenchmarkCase,
     detectors: Sequence[str],
@@ -358,11 +394,8 @@ def benchmark_case(
         "iou_threshold": iou_threshold,
         "coverage_threshold": coverage_threshold,
         "generated_at": time.time(),
-        "aviso": (
-            "Mide localizacion, no resultado final de pagina. El subconjunto 'manual' es el "
-            "unico no derivado del detector actual; 'todas' favorece al detector que genero "
-            "el ground truth."
-        ),
+        "convencion_cajas": case.box_convention,
+        "aviso": _aviso_para(case.box_convention),
         "detectores": {},
     }
     for detector in detectors:
@@ -390,7 +423,7 @@ def format_report(informe: Mapping[str, Any]) -> str:
     detectores = list(informe.get("detectores") or {})
     lineas.append(
         f"Caso {informe['case']} ({informe['pages']} paginas, {informe['gt_regions']} regiones GT, "
-        f"{informe['gt_manual_regions']} dibujadas a mano)"
+        f"{informe['gt_manual_regions']} dibujadas a mano, cajas={informe.get('convencion_cajas', '?')})"
     )
     if not detectores:
         return "\n".join(lineas)

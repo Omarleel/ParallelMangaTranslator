@@ -36,6 +36,11 @@ ocr:
   # - transcription_engine lee/transcribe el texto final dentro de cada región.
   # detection_engine: auto | easyocr | paddle | paddle_subprocess
   # transcription_engine: auto | easyocr | mangaocr | paddle | paddle_subprocess
+  # detection_engine tambien acepta `rtdetr`: localiza el texto bastante mejor que el OCR
+  # (sobre las regiones dibujadas a mano del banco empareja 0.45-0.78 donde el segmentador
+  # de globos saca 0.000) y no compite por la GPU. No transcribe: la lectura la sigue
+  # haciendo transcription_engine. Combinalo con region_source: yolo, que es quien pone el
+  # poligono del globo del que depende la limpieza.
   detection_engine: auto
   transcription_engine: auto
   # Para PaddleOCR GPU + YOLO GPU, usa subprocess para aislar Paddle de PyTorch.
@@ -44,11 +49,17 @@ ocr:
   fast_mode: false
 
 quality:
-  # Fuente de regiones. Las dos son modelos entrenados, aqui no hay heuristica:
-  #   yolo                -> globos segmentados + texto libre recuperado por el OCR global
+  # Fuente de regiones. Las tres son modelos entrenados, aqui no hay heuristica:
+  #   rtdetr              -> RT-DETR-v2 de texto y globos (por defecto)
   #   comic_text_detector -> detector de texto (ve globo y fuera de globo) como fuente unica
-  # Con comic_text_detector el OCR global deja de crear regiones: el detector ya cubre
-  # lo que aportaba, y era la fuente de la mayoria de falsos positivos.
+  #   yolo                -> globos segmentados + texto libre recuperado por el OCR global
+  # Con rtdetr y con comic_text_detector el OCR global deja de crear regiones: el detector
+  # ya cubre lo que aportaba, y era la fuente de la mayoria de falsos positivos.
+  #
+  # Ojo al comparar: rtdetr emite cajas del tamano del TEXTO y yolo del tamano del GLOBO.
+  # Medido contra `bbox_texto` (donde esta el texto, libre de convencion) rtdetr gana en
+  # los cuatro casos del banco; medido contra la caja de globo pierde en los tres casos
+  # legado, que tienen el ground truth con la convencion antigua. No son dos calidades.
   region_source: yolo
   # Carpeta donde volcar los recortes que recibe el OCR (enmascarado y preprocesado),
   # para medir variantes de preproceso sin reconstruir regiones fuera del pipeline.
@@ -59,6 +70,23 @@ quality:
   comic_text_detector_model_path: ""
   comic_text_detector_conf: 0.40
   comic_text_detector_mask_threshold: 0.30
+  # RT-DETR-v2 (ogkalu/comic-text-and-bubble-detector, Apache-2.0). Vacio = se descarga a
+  # models/detection/ la primera vez (~168 MB). Necesita el extra opcional onnxruntime:
+  # este modelo NO se puede cargar con cv2.dnn (falla en el nodo CumSum del encoder).
+  #   pip install onnxruntime      (o: pip install parallel-manga-translator[onnx])
+  rtdetr_text_model_path: ""
+  rtdetr_text_conf: 0.30
+  rtdetr_bubble_conf: 0.50
+  # Deriva la envolvente de la tinta dentro de cada caja y la usa como zona segura. Este
+  # modelo da cajas, no mascaras, y una caja como zona segura llena el recorte de OCR de
+  # arte vecino: medido en su dia, CER 0.0015 -> 0.2584. Apagalo solo para comparar.
+  rtdetr_text_polygon: true
+  # Donde buscar la tinta de un bloque que cae dentro de un globo. La caja de texto de este
+  # modelo cubre solo ~0.66 del bloque real, asi que buscar solo dentro de ella deja
+  # columnas sin borrar; el globo que el propio modelo predice lo cubre entero. No cambia
+  # la caja de la region, solo la zona de busqueda.
+  rtdetr_bubble_search_zone: true
+  rtdetr_bubble_search_min_overlap: 0.80
   # De donde sale la tinta que se borra:
   #   derivada      -> umbral + componentes conectados anclados al OCR (el de siempre)
   #   derivada+ctd  -> ademas, la tinta que ve comic-text-detector. UNION, nunca

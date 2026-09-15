@@ -101,6 +101,25 @@ def _int_box(value: Any) -> Optional[List[int]]:
         return None
 
 
+#: De dónde salió la caja `bbox` de una región de la verdad de referencia. No es un detalle
+#: de formato: decide si esa caja se puede comparar con la de otro detector.
+BBOX_ORIGEN_GLOBO = "original_region_bbox"   # caja de globo que emitió el detector
+BBOX_ORIGEN_REGION = "region_bbox"           # caja de la región tal como quedó en el editor
+
+
+def detection_bbox_con_origen(region: Mapping[str, Any]) -> tuple[Optional[List[int]], str]:
+    """Como `detection_bbox`, pero diciendo de qué campo salió la caja.
+
+    Importa porque las dos procedencias no son comparables entre sí: ver `detection_bbox`.
+    """
+    layout = region.get("ui_layout")
+    if isinstance(layout, Mapping):
+        box = _int_box(layout.get("original_region_bbox"))
+        if box is not None and box[2] > 0 and box[3] > 0:
+            return box, BBOX_ORIGEN_GLOBO
+    return _int_box(region.get("bbox")), BBOX_ORIGEN_REGION
+
+
 def detection_bbox(region: Mapping[str, Any]) -> Optional[List[int]]:
     """Caja comparable con la que emite el detector.
 
@@ -121,7 +140,7 @@ def detection_bbox(region: Mapping[str, Any]) -> Optional[List[int]]:
 
 def ground_truth_region(region: Mapping[str, Any], index: int) -> Optional[Dict[str, Any]]:
     """Convierte una región corregida del manifest en una región de verdad de referencia."""
-    bbox = detection_bbox(region)
+    bbox, bbox_origen = detection_bbox_con_origen(region)
     if bbox is None or bbox[2] <= 0 or bbox[3] <= 0:
         return None
     return {
@@ -130,8 +149,15 @@ def ground_truth_region(region: Mapping[str, Any], index: int) -> Optional[Dict[
         # sólo la posición en esta lista: sirve para leer el archivo, no para emparejar.
         "region_uid": str(region.get("region_uid") or ""),
         "bbox": bbox,
+        # De qué campo salió `bbox`. Sin esto, comparar dos casos entre sí es comparar la
+        # caja de un globo con la de una región, y el número resultante no significa nada.
+        "bbox_origen": bbox_origen,
         "bbox_run": _int_box(region.get("run_bbox")),
         "bbox_texto": _int_box(region.get("bbox")),
+        # `bbox_texto` es la caja de MAQUETACIÓN de la traducción siempre que el trabajo
+        # haya rotulado, y eso se sabe justo por que exista la caja de globo aparte. Cuando
+        # no rotuló (modo limpiar_transcribir) no hay encogido y es la caja de la región.
+        "bbox_texto_maquetado": bbox_origen == BBOX_ORIGEN_GLOBO,
         "origen": "manual" if region.get("manual") else "pipeline",
         "tipo": _effective_type(region),
         "tipo_original": region.get("type") or "",
@@ -171,7 +197,28 @@ def build_ground_truth_page(page: Mapping[str, Any]) -> Dict[str, Any]:
         "brush_strokes": len(page.get("brush_strokes") or []),
         "descartadas_por_humano": deleted,
         "anadidas_por_humano": manual,
+        "cajas_de_globo": sum(1 for r in kept if r["bbox_origen"] == BBOX_ORIGEN_GLOBO),
+        "cajas_de_region": sum(1 for r in kept if r["bbox_origen"] == BBOX_ORIGEN_REGION),
     }
+
+
+#: Cómo leer `convencion_cajas` de un caso:
+#:   "region"  -> el trabajo no rotó, no hay caja de maquetación: apto para comparar detectores
+#:   "globo"   -> las cajas son del detector que generó el caso: sesgado hacia él
+#:   "mixta"   -> las manuales son de región y el resto de globo (lo habitual en los casos
+#:                antiguos): solo el subconjunto manual es comparable
+CONVENCION_REGION = "region"
+CONVENCION_GLOBO = "globo"
+CONVENCION_MIXTA = "mixta"
+
+
+def convencion_de_cajas(cajas_de_globo: int, cajas_de_region: int) -> str:
+    """Clasifica de qué son las cajas de un caso, que es lo que decide si es comparable."""
+    if cajas_de_globo and cajas_de_region:
+        return CONVENCION_MIXTA
+    if cajas_de_globo:
+        return CONVENCION_GLOBO
+    return CONVENCION_REGION
 
 
 def build_case_from_ui_job(
@@ -236,6 +283,8 @@ def build_case_from_ui_job(
                 "descartadas_por_humano": gt_page["descartadas_por_humano"],
                 "anadidas_por_humano": gt_page["anadidas_por_humano"],
                 "brush_strokes": gt_page["brush_strokes"],
+                "cajas_de_globo": gt_page["cajas_de_globo"],
+                "cajas_de_region": gt_page["cajas_de_region"],
             }
         )
 
@@ -254,7 +303,13 @@ def build_case_from_ui_job(
             "descartadas_por_humano": sum(r["descartadas_por_humano"] for r in page_rows),
             "anadidas_por_humano": sum(r["anadidas_por_humano"] for r in page_rows),
             "brush_strokes": sum(r["brush_strokes"] for r in page_rows),
+            "cajas_de_globo": sum(r["cajas_de_globo"] for r in page_rows),
+            "cajas_de_region": sum(r["cajas_de_region"] for r in page_rows),
         },
+        "convencion_cajas": convencion_de_cajas(
+            sum(r["cajas_de_globo"] for r in page_rows),
+            sum(r["cajas_de_region"] for r in page_rows),
+        ),
         "built_at": time.time(),
     }
     (case_dir / CASE_FILENAME).write_text(json.dumps(case, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -410,11 +465,16 @@ def score_case(
     return report
 
 
-def write_baseline(case: EvalCase, report: Mapping[str, Any]) -> Path:
+def write_baseline(case: EvalCase, report: Mapping[str, Any], region_source: str = "") -> Path:
     payload = {
         "case": case.name,
         "summary": dict(report.get("summary") or {}),
         "by_type": {k: dict(v) for k, v in (report.get("by_type") or {}).items()},
+        # Qué detector produjo `prediccion_base/`. Importa porque las fuentes no ajustan la
+        # caja igual: si coincide con el detector del que se corrigió el ground truth, las
+        # cajas emparejan casi exactamente; si no, un IoU medio bajo es lo esperable y no
+        # una señal de que algo se rompió.
+        "region_source": str(region_source or "").strip().lower() or "desconocido",
         "generated_at": report.get("generated_at", time.time()),
         "note": "Puntuación de prediccion_base/ contra ground_truth/. Regenerar solo cuando se acepte un nuevo nivel de calidad.",
     }
@@ -600,6 +660,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p_baseline = sub.add_parser("refresh-baseline", help="Regenera baseline.json desde prediccion_base/.")
     p_baseline.add_argument("--case", default="", help="Nombre del caso; si se omite, todos.")
     p_baseline.add_argument("--iou", type=float, default=None)
+    p_baseline.add_argument(
+        "--region-source",
+        default="",
+        help="Detector que produjo prediccion_base/. Por defecto, el del dataclass de configuración.",
+    )
 
     args = parser.parse_args(argv)
     settings = evaluation_settings()
@@ -647,9 +712,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 2
 
     if args.command == "refresh-baseline":
+        from parallel_manga_translator.config.app_config import QualityConfig
+
+        region_source = str(getattr(args, "region_source", "") or "").strip() or QualityConfig().region_source
         for case in cases:
             report = score_case(case, config=EvaluationConfig(iou_threshold=iou))
-            path = write_baseline(case, report)
+            path = write_baseline(case, report, region_source=region_source)
             print(f"{case.name}: baseline escrito en {path}")
             print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
         return 0

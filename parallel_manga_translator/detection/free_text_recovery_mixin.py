@@ -44,6 +44,11 @@ class FreeTextRecoveryMixin:
     def _free_text_regions_from_detections(self, image: np.ndarray, detections: Sequence) -> List[TextRegion]:
         free_regions: List[TextRegion] = []
 
+        # Misma deducción que en `build_regions_from_bubbles_and_text`, y por el mismo
+        # motivo: casi todos los filtros de `_should_keep_free_text_group` miran la pista
+        # de texto, y un localizador de bloques no la trae.
+        localizer_reads_text = any(self.geometry.text(det).strip() for det in detections or [])
+
         grouped_detections = self._group_detections(detections)
         try:
             grouped_detections = self.reading_order_resolver.sort_detection_groups(grouped_detections, self.geometry.to_rect)
@@ -67,6 +72,7 @@ class FreeTextRecoveryMixin:
                 conf,
                 image.shape,
                 looks_sfx,
+                localizer_reads_text=localizer_reads_text,
             )
             if not keep:
                 logger.debug(
@@ -295,9 +301,18 @@ class FreeTextRecoveryMixin:
         detections: Sequence,
     ) -> List[TextRegion]:
         regions = list(bubble_regions or [])
+        # Un localizador que no transcribe entrega bloques de texto, no fragmentos de
+        # línea. Eso cambia qué evidencia hay para partir un globo fusionado y qué filtros
+        # de texto libre tienen sentido. Se deduce una vez por página: que una caja suelta
+        # salga sin texto no significa que el motor no lea.
+        localizer_emits_blocks = bool(detections) and not any(
+            self.geometry.text(det).strip() for det in detections
+        )
         if regions:
             assigned, detections_by_region = self._assign_text_detections_to_regions(regions, detections)
-            regions, debug_records = self._split_merged_bubble_regions(image, regions, detections_by_region)
+            regions, debug_records = self._split_merged_bubble_regions(
+                image, regions, detections_by_region, localizer_emits_blocks
+            )
         else:
             assigned, detections_by_region, debug_records = set(), {}, []
         remaining = []
