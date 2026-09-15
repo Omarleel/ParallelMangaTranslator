@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import cv2
 import numpy as np
 
 from parallel_manga_translator.config.app_config import OcrConfig, ProcessingConfig, QualityConfig
@@ -264,3 +265,83 @@ def test_overlapping_blocks_are_still_one_block() -> None:
 
     assert not parte
     assert motivo == "bloques_demasiado_cercanos"
+
+
+# ---------------------------------------------------------------------------------
+# Angulo deducido de la tinta: lo que puede y lo que no
+# ---------------------------------------------------------------------------------
+
+def _fila(angulo_grados: float) -> np.ndarray:
+    import math
+
+    img = np.full((300, 400, 3), 255, dtype=np.uint8)
+    for i in range(9):
+        y = 160 - int(i * 28 * math.tan(math.radians(angulo_grados)))
+        cv2.circle(img, (40 + i * 28, y), 7, (10, 10, 10), -1)
+    return img
+
+
+def test_a_tilted_row_of_glyphs_gives_its_angle() -> None:
+    from parallel_manga_translator.quality.text_block_polygon import text_block_ink_angle
+
+    medida = text_block_ink_angle(_fila(20.0), (20, 40, 340, 200))
+
+    assert medida is not None
+    angulo, confianza = medida
+    assert abs(abs(angulo) - 20.0) < 2.0
+    assert confianza > 0.0
+
+
+def test_a_single_tall_glyph_is_not_a_direction() -> None:
+    """Una letra alta daba 89° al mirar la forma de su tinta. Un glifo no es una hilera."""
+    from parallel_manga_translator.quality.text_block_polygon import text_block_ink_angle
+
+    img = np.full((60, 40, 3), 255, dtype=np.uint8)
+    cv2.rectangle(img, (14, 8), (22, 48), (10, 10, 10), -1)
+
+    assert text_block_ink_angle(img, (5, 2, 32, 54)) is None
+
+
+def _bloque(angulo_grados: float, filas: int) -> np.ndarray:
+    import math
+
+    img = np.full((360, 460, 3), 255, dtype=np.uint8)
+    for fila in range(filas):
+        for i in range(7):
+            dx = i * 32
+            y = 70 + fila * 60 - int(dx * math.tan(math.radians(angulo_grados)))
+            cv2.circle(img, (60 + dx, y), 8, (10, 10, 10), -1)
+    return img
+
+
+def test_a_multi_line_block_also_reports_its_direction() -> None:
+    """Lo que importa para RT-DETR: sus cajas son bloques de varias líneas.
+
+    Mirando el bloque entero su eje principal es el del apilado y salía 89°. Midiendo el
+    salto de cada glifo a su vecino se obtiene la dirección de lectura.
+    """
+    from parallel_manga_translator.quality.text_block_polygon import text_block_ink_angle
+
+    medida = text_block_ink_angle(_bloque(0.0, 4), (30, 30, 400, 320))
+
+    assert medida is not None
+    angulo, _conf = medida
+    assert abs(angulo) < 2.0, "Un bloque horizontal no está girado."
+
+
+def test_a_tilted_multi_line_block_keeps_its_tilt() -> None:
+    """El caso que rompia segmentar renglones: a 18° un renglón sube más que su separación."""
+    from parallel_manga_translator.quality.text_block_polygon import text_block_ink_angle
+
+    medida = text_block_ink_angle(_bloque(18.0, 4), (30, 30, 400, 320))
+
+    assert medida is not None
+    angulo, _conf = medida
+    assert 14.0 <= abs(angulo) <= 22.0, f"Inclinacion fuera de rango: {angulo}"
+
+
+def test_an_implausible_tilt_is_refused() -> None:
+    """Cerca de 90° casi siempre es el artefacto del apilado, y girar un globo así se ve."""
+    from parallel_manga_translator.quality import text_block_polygon as tbp
+
+    assert tbp.INK_ANGLE_MAX_ABS <= 45.0

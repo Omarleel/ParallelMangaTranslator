@@ -339,14 +339,11 @@ class ManualEditService:
             from parallel_manga_translator.ocr.text_detection import TextDetectionFactory
 
             detector = TextDetectionFactory.create(config.translation.idioma_entrada, config.ocr)
-            # La rotación se deduce de la FORMA del polígono. Un motor que devuelve
-            # rectángulos alineados a los ejes (RT-DETR) no puede aportarla: daría cero o
-            # ruido, y ese valor acabaría girando el texto rotulado. Mejor no estimar y
-            # dejar 0 con confianza 0, que es lo que significa "no lo sé".
-            if getattr(detector, "emits_oriented_polygons", True):
-                rotation = estimate_text_rotation(detector.detect_text_boxes(crop))
-                rotation_angle = float(rotation.get("angle", 0.0) or 0.0)
-                rotation_confidence = float(rotation.get("confidence", 0.0) or 0.0)
+            # Se pasa el recorte: cuando el motor devuelve rectángulos rectos (RT-DETR) el
+            # ángulo no está en la forma de la caja, pero sí en la tinta de dentro.
+            rotation = estimate_text_rotation(detector.detect_text_boxes(crop), image=crop)
+            rotation_angle = float(rotation.get("angle", 0.0) or 0.0)
+            rotation_confidence = float(rotation.get("confidence", 0.0) or 0.0)
         except Exception:
             pass
         translated_text = ""

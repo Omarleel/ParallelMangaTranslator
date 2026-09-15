@@ -194,7 +194,28 @@ def _is_axis_aligned(quad: "np.ndarray") -> bool:
     return True
 
 
-def estimate_text_rotation(detections: Iterable[Any]) -> Dict[str, Any]:
+def _ink_angles(image: Any, detections: Sequence[Any]) -> List[Tuple[float, float]]:
+    """Inclinación deducida de la tinta de cada detección: ``[(angulo, confianza)]``.
+
+    Import perezoso: esto vive en `quality/` porque necesita el refinador de tinta, y
+    `geometry/` no debería depender de esa capa al importarse.
+    """
+    from parallel_manga_translator.geometry.box_geometry import BoxGeometry
+    from parallel_manga_translator.quality.text_block_polygon import text_block_ink_angle
+
+    salida: List[Tuple[float, float]] = []
+    for detection in detections or []:
+        try:
+            box = BoxGeometry.from_detection(detection)
+        except Exception:
+            continue
+        medida = text_block_ink_angle(image, box)
+        if medida is not None:
+            salida.append(medida)
+    return salida
+
+
+def estimate_text_rotation(detections: Iterable[Any], image: Any = None) -> Dict[str, Any]:
     """Combina varios polígonos OCR y devuelve una inclinación robusta.
 
     La media es axial (ángulos separados por 180° son equivalentes). Se eliminan
@@ -231,8 +252,26 @@ def estimate_text_rotation(detections: Iterable[Any]) -> Dict[str, Any]:
         }
 
     if todos_rectos:
-        # Se conservan los polígonos: la detección de disposición vertical CJK los usa y
-        # eso sí funciona con rectángulos.
+        # La caja no lleva ángulo, pero la TINTA de dentro sí. Es la única vía que funciona
+        # con un detector de bloques, y de paso mejora la clásica: con EasyOCR el ángulo
+        # salía de la forma de la caja de línea, que también es indirecta.
+        medidas = _ink_angles(image, list(detections or [])) if image is not None else []
+        if medidas:
+            x = sum(peso * math.cos(math.radians(ang * 2.0)) for ang, peso in medidas)
+            y = sum(peso * math.sin(math.radians(ang * 2.0)) for ang, peso in medidas)
+            total = max(1e-8, sum(peso for _, peso in medidas))
+            fuerza = min(1.0, math.hypot(x, y) / total)
+            medio = math.degrees(math.atan2(y, x)) / 2.0
+            return {
+                "angle": round(normalize_rotation_angle(medio), 3),
+                "confidence": round(float(fuerza), 4),
+                "polygons": [row[2] for row in samples],
+                "sample_count": len(medidas),
+                "axis_aligned": True,
+                "angle_source": "ink",
+            }
+        # Sin tinta creíble: 0 con confianza 0, que es "no lo sé". Se conservan los
+        # polígonos porque la detección de disposición vertical CJK sí funciona con ellos.
         return {
             "angle": 0.0,
             "confidence": 0.0,
@@ -365,9 +404,11 @@ def text_rotation_metadata(
     source: str = "ocr_polygons",
     source_language: Any = "",
     layout_hint: Any = "",
+    image: Any = None,
 ) -> Dict[str, Any]:
+    """``image`` permite deducir el ángulo de la tinta cuando las cajas son rectas."""
     rows = list(detections or [])
-    result = estimate_text_rotation(rows)
+    result = estimate_text_rotation(rows, image=image)
     detected_angle = result["angle"]
     vertical_cjk = is_vertical_cjk_layout(
         rows,
@@ -379,7 +420,7 @@ def text_rotation_metadata(
         "text_rotation_angle": effective_angle,
         "text_rotation_detected_angle": detected_angle,
         "text_rotation_confidence": result["confidence"],
-        "text_rotation_source": source,
+        "text_rotation_source": f"{source}+ink" if result.get("angle_source") == "ink" else source,
         "text_polygons": result["polygons"],
         "text_rotation_samples": result["sample_count"],
         "text_rotation_suppressed": vertical_cjk,

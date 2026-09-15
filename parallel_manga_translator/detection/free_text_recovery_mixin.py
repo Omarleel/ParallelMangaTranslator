@@ -112,6 +112,7 @@ class FreeTextRecoveryMixin:
                 source="free_text_ocr_polygons",
                 source_language=self.idioma_entrada,
                 layout_hint=layout_hint,
+                image=image,
             ))
             if filter_reason == "cjk_vertical_bbox_retry_ocr":
                 metadata.update({
@@ -309,7 +310,7 @@ class FreeTextRecoveryMixin:
             self.geometry.text(det).strip() for det in detections
         )
         if regions:
-            assigned, detections_by_region = self._assign_text_detections_to_regions(regions, detections)
+            assigned, detections_by_region = self._assign_text_detections_to_regions(regions, detections, image)
             regions, debug_records = self._split_merged_bubble_regions(
                 image, regions, detections_by_region, localizer_emits_blocks
             )

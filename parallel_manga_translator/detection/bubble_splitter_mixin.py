@@ -423,6 +423,7 @@ class BubbleSplitterMixin:
                     group,
                     source="split_cluster_ocr_polygons",
                     source_language=self.idioma_entrada,
+                    image=image,
                 ))
                 created_regions.append(TextRegion(
                     bbox=bbox,

@@ -21,7 +21,8 @@ excluye las zonas de la caja donde solo hay arte.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+import math
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -116,6 +117,94 @@ def text_block_ink(image: np.ndarray, box: Box) -> Tuple[Optional[np.ndarray], s
     alto, ancho = limpia.shape[:2]
     pagina[y0:y0 + alto, x0:x0 + ancho] = limpia
     return pagina, "ok"
+
+
+#: Glifos mínimos para que un renglón tenga dirección. Con menos no hay hilera.
+INK_ANGLE_MIN_GLYPHS = 3
+
+#: Concentración mínima de los saltos entre glifos para aceptar que hay una dirección.
+INK_ANGLE_MIN_CONFIDENCE = 0.55
+
+#: Inclinación máxima que se acepta como rotulado. Por encima se asume artefacto: un bloque
+#: de líneas apiladas puede parecer una columna, y girar un globo 89° es muy visible.
+INK_ANGLE_MAX_ABS = 30.0
+
+
+def _vecinos_mas_proximos(centroides: np.ndarray) -> List[Tuple[float, float]]:
+    """Dirección y longitud del salto de cada glifo a su vecino más próximo.
+
+    Es el paso que hace innecesario segmentar renglones, que era donde se atascaba: dentro
+    de una línea los glifos están más cerca entre sí que de la línea de al lado, así que el
+    salto al vecino más próximo apunta en la dirección del texto. Y funciona igual con el
+    bloque inclinado, que es justo donde la proyección horizontal se entremezclaba: a 18° un
+    renglón sube más que lo que separa a dos renglones.
+    """
+    n = len(centroides)
+    if n < 2:
+        return []
+    difs = centroides[:, None, :] - centroides[None, :, :]
+    distancias = np.hypot(difs[:, :, 0], difs[:, :, 1])
+    np.fill_diagonal(distancias, np.inf)
+    salida: List[Tuple[float, float]] = []
+    for i in range(n):
+        j = int(np.argmin(distancias[i]))
+        d = float(distancias[i, j])
+        if not np.isfinite(d) or d <= 0.5:
+            continue
+        dx, dy = float(centroides[j][0] - centroides[i][0]), float(centroides[j][1] - centroides[i][1])
+        salida.append((math.degrees(math.atan2(dy, dx)), d))
+    return salida
+
+
+def text_block_ink_angle(image: np.ndarray, box: Box) -> Optional[Tuple[float, float]]:
+    """Inclinación del texto dentro de ``box``, medida glifo a glifo.
+
+    Devuelve ``(angulo, confianza)`` o ``None`` si no hay evidencia creíble.
+
+    Cuatro cosas que costaron una medición cada una, y por qué acaba midiéndose así:
+
+    - No vale la forma de la **caja**: el eje largo de una caja alta es el vertical, y salía
+      89° sobre texto horizontal.
+    - No vale la forma de la **tinta** en bruto: una sola letra alta (9x23 px) daba 89°,
+      porque el glifo es más alto que ancho. Un glifo no es una dirección.
+    - No vale la nube de **centroides del bloque**: su eje principal es el del apilado de
+      líneas, no el de lectura. Cajas de 138x125 px daban 89°.
+    - Y segmentar renglones por proyección horizontal se rompe con el bloque inclinado, que
+      es precisamente el caso que importa: a 18° un renglón sube más de lo que separa a dos.
+
+    Lo que queda en pie es local: **el salto de cada glifo a su vecino más próximo**. Dentro
+    de una línea los glifos están más juntos que entre líneas, así que esos saltos apuntan a
+    donde va el texto, sin necesidad de saber dónde empieza cada renglón.
+    """
+    limpia, (_x0, _y0), _area, _motivo = _tinta_en_caja(image, box)
+    if limpia is None:
+        return None
+
+    num, _etiquetas, _stats, centroides = cv2.connectedComponentsWithStats(
+        (limpia > 0).astype(np.uint8), 8
+    )
+    puntos = centroides[1:num].astype(np.float32)
+    if len(puntos) < INK_ANGLE_MIN_GLYPHS:
+        return None
+
+    saltos = _vecinos_mas_proximos(puntos)
+    if len(saltos) < INK_ANGLE_MIN_GLYPHS:
+        return None
+
+    # Media axial: el salto al vecino puede ir hacia delante o hacia atrás, y 180° aparte es
+    # la misma recta. El peso es la longitud del salto.
+    x = sum(peso * math.cos(math.radians(ang * 2.0)) for ang, peso in saltos)
+    y = sum(peso * math.sin(math.radians(ang * 2.0)) for ang, peso in saltos)
+    total = max(1e-8, sum(peso for _, peso in saltos))
+    confianza = min(1.0, math.hypot(x, y) / total)
+    if confianza < INK_ANGLE_MIN_CONFIDENCE:
+        # Saltos que apuntan a todas partes: no hay una dirección, hay una nube.
+        return None
+    angulo = math.degrees(math.atan2(y, x)) / 2.0
+    angulo = ((angulo + 90.0) % 180.0) - 90.0
+    if abs(angulo) > INK_ANGLE_MAX_ABS:
+        return None
+    return float(angulo), float(confianza)
 
 
 def text_block_polygon(image: np.ndarray, box: Box) -> Tuple[Optional[np.ndarray], str]:

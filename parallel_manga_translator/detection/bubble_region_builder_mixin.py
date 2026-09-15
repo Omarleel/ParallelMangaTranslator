@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -201,7 +201,14 @@ class BubbleRegionBuilderMixin:
             return -1.0
         return inter * 2.4 + (1.2 if center_in_mask else 0.0) + (0.35 if center_in_box else 0.0)
 
-    def _assign_text_detections_to_regions(self, regions: List[TextRegion], detections: Sequence) -> Tuple[set[int], Dict[int, List]]:
+    def _assign_text_detections_to_regions(
+        self,
+        regions: List[TextRegion],
+        detections: Sequence,
+        image: Optional[np.ndarray] = None,
+    ) -> Tuple[set[int], Dict[int, List]]:
+        """``image`` sólo se usa para deducir la inclinación de la tinta; sin ella se
+        conserva el comportamiento anterior."""
         assigned: set[int] = set()
         grouped: dict[int, List] = {idx: [] for idx in range(len(regions))}
         for det_idx, det in enumerate(detections or []):
@@ -255,6 +262,7 @@ class BubbleRegionBuilderMixin:
                 group,
                 source="assigned_ocr_polygons",
                 source_language=self.idioma_entrada,
+                image=image,
             ))
         return assigned, grouped
 
