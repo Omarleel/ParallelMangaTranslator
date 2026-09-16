@@ -466,6 +466,12 @@ def score_case(
 
 
 def write_baseline(case: EvalCase, report: Mapping[str, Any], region_source: str = "") -> Path:
+    # Si no se dice, lo sabe el propio caso: es la opción con la que corrió el trabajo del
+    # que se construyó. Sin esto, `build --baseline` dejaba "desconocido" y el guardián de
+    # reproducibilidad no podía saber si baseline y verdad de referencia vienen del mismo
+    # detector, que es lo que decide cuánto IoU es razonable exigir.
+    if not str(region_source or "").strip():
+        region_source = str((case.meta.get("options") or {}).get("region_source") or "")
     payload = {
         "case": case.name,
         "summary": dict(report.get("summary") or {}),
