@@ -104,7 +104,9 @@ class CleanOnomatopoeiaGuardMixin:
             crop = canvas
         return self._prepare_crop_for_clean_guard_ocr(crop)
 
-    def _region_crop_for_specialized_ocr_guard(self, imagen: np.ndarray, region: TextRegion) -> np.ndarray:
+    def _region_crop_for_specialized_ocr_guard(
+        self, imagen: np.ndarray, region: TextRegion, *, preprocesar: bool = True
+    ) -> np.ndarray:
         """Prepara el recorte que decide si una región realmente debe procesarse.
 
         La limpieza borra antes de traducir; por eso no basta con que el detector de
@@ -128,7 +130,7 @@ class CleanOnomatopoeiaGuardMixin:
             canvas[local_mask > 0] = crop[local_mask > 0]
             crop = canvas
 
-        return self._prepare_crop_for_clean_guard_ocr(crop)
+        return self._prepare_crop_for_clean_guard_ocr(crop) if preprocesar else crop
 
     def _get_clean_guard_ocr_manager(self):
         manager = getattr(self, "_clean_guard_ocr_manager", None)
@@ -160,6 +162,20 @@ class CleanOnomatopoeiaGuardMixin:
                 manager = self._get_clean_guard_ocr_manager()
                 textos = manager.extract_texts([crop])
                 texto = str(textos[0] if textos else "").strip()
+                if not texto:
+                    # El preproceso binariza con un bloque grande, y sobre glifos densos
+                    # —chino, sobre todo— arrasa los trazos: medido en una página real, 6
+                    # de 7 regiones se leían hasta ese paso y ninguna después. Como aquí un
+                    # "no leo nada" BORRA la región, antes de eso se reintenta con el
+                    # recorte sin preparar. Sólo puede conservar regiones, nunca añadirlas.
+                    plano = self._region_crop_for_specialized_ocr_guard(
+                        imagen, region, preprocesar=False
+                    )
+                    if plano.size:
+                        textos = manager.extract_texts([plano])
+                        texto = str(textos[0] if textos else "").strip()
+                        if texto and isinstance(metadata, dict):
+                            metadata["specialized_ocr_guard_crop"] = "sin_preproceso"
             except Exception as exc:
                 logger.debug("No se pudo verificar región con OCR especializado antes de limpiar: %s", exc)
                 return None
