@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+from functools import lru_cache
 from dataclasses import dataclass
 
 from parallel_manga_translator.config.app_config import OcrConfig
@@ -11,6 +13,20 @@ PADDLE_LANGS = {
     "Español": "es",
     "Japonés": "japan",
 }
+
+#: CJK que no es japones. MangaOCR solo lee japones y EasyOCR lee mal estos dos, tanto
+#: localizando como transcribiendo. Medido sobre un tomo chino real: al transcribir, de 31
+#: regiones EasyOCR leyo 8 y Paddle 20; al localizar, EasyOCR propone 21 cajas de las que
+#: las reglas de texto libre tiran 12 por "ruido OCR" -no porque no haya texto, sino porque
+#: no sabe leerlo- y Paddle propone 5 sin que se descarte ninguna.
+PADDLE_PREFERRED_LANGUAGES = frozenset({"Chino", "Coreano"})
+
+
+@lru_cache(maxsize=1)
+def paddle_disponible() -> bool:
+    """Esta instalado PaddleOCR? Es un extra opcional, y el defecto no puede exigirlo."""
+    return importlib.util.find_spec("paddleocr") is not None
+
 
 #: Idiomas cuyo rotulado de comic se escribe convencionalmente en MAYUSCULAS. El OCR los
 #: devuelve en minuscula o mezclado, y eso es la mayor parte de su error medido.

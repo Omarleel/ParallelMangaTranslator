@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 
 from parallel_manga_translator.config.app_config import OcrConfig
 from parallel_manga_translator.ocr.engines import OcrFactory
@@ -52,3 +53,95 @@ class OcrRefactorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AutoEngineForLanguageTests(unittest.TestCase):
+    """Qué motor elige `auto`, que es lo que usa casi todo el mundo."""
+
+    def test_japanese_keeps_mangaocr(self):
+        self.assertEqual(OcrFactory._auto_engine_for("Japonés"), "mangaocr_auto")
+
+    def test_latin_keeps_easyocr(self):
+        for idioma in ("Inglés", "Español"):
+            with self.subTest(idioma=idioma):
+                self.assertEqual(OcrFactory._auto_engine_for(idioma), "easyocr")
+
+    def test_chinese_and_korean_prefer_paddle(self):
+        """EasyOCR no lee bien estos dos, y el guardián de OCR borra lo que no se lee.
+
+        Medido sobre un tomo chino real: de 31 regiones EasyOCR leyó 8 y Paddle 20. La
+        diferencia no es peor transcripción, son regiones que desaparecen de la página.
+        """
+        from parallel_manga_translator.ocr import settings as ajustes
+
+        ajustes.paddle_disponible.cache_clear()
+        try:
+            with unittest.mock.patch.object(ajustes.importlib.util, "find_spec", return_value=object()):
+                for idioma in ("Chino", "Coreano"):
+                    with self.subTest(idioma=idioma):
+                        self.assertEqual(OcrFactory._auto_engine_for(idioma), "paddleocr")
+        finally:
+            ajustes.paddle_disponible.cache_clear()
+
+    def test_without_paddle_installed_it_falls_back_instead_of_breaking(self):
+        """Paddle es un extra opcional: el valor por defecto no puede exigirlo."""
+        from parallel_manga_translator.ocr import settings as ajustes
+
+        ajustes.paddle_disponible.cache_clear()
+        try:
+            with unittest.mock.patch.object(ajustes.importlib.util, "find_spec", return_value=None):
+                self.assertEqual(OcrFactory._auto_engine_for("Chino"), "easyocr")
+        finally:
+            ajustes.paddle_disponible.cache_clear()
+
+    def test_on_gpu_chinese_goes_through_the_subprocess(self):
+        """Paddle y YOLO en la misma GPU rompen CUDA; por eso existe el subproceso."""
+        settings = OcrSettings("Chino", gpu=True, paddle_subprocess="auto")
+
+        self.assertEqual(
+            OcrFactory._resolve_engine_name("auto", "Chino", settings), "paddle_subprocess"
+        )
+
+
+class AutoLocalizerForLanguageTests(unittest.TestCase):
+    """Qué localizador elige `auto`. Importa más de lo que parece.
+
+    Las reglas de texto libre deciden a partir del texto que el localizador cree leer, así
+    que un localizador que no sabe leer el idioma no transcribe peor: hace que se descarten
+    regiones que sí tienen texto.
+    """
+
+    def test_chinese_and_korean_prefer_paddle(self):
+        from parallel_manga_translator.ocr import settings as ajustes
+
+        ajustes.paddle_disponible.cache_clear()
+        try:
+            with unittest.mock.patch.object(ajustes.importlib.util, "find_spec", return_value=object()):
+                for idioma in ("Chino", "Coreano"):
+                    with self.subTest(idioma=idioma):
+                        self.assertEqual(TextDetectionFactory._auto_engine_for(idioma), "paddleocr")
+        finally:
+            ajustes.paddle_disponible.cache_clear()
+
+    def test_japanese_and_latin_keep_easyocr(self):
+        for idioma in ("Japonés", "Inglés", "Español"):
+            with self.subTest(idioma=idioma):
+                self.assertEqual(TextDetectionFactory._auto_engine_for(idioma), "easyocr")
+
+    def test_without_paddle_installed_it_falls_back(self):
+        from parallel_manga_translator.ocr import settings as ajustes
+
+        ajustes.paddle_disponible.cache_clear()
+        try:
+            with unittest.mock.patch.object(ajustes.importlib.util, "find_spec", return_value=None):
+                self.assertEqual(TextDetectionFactory._auto_engine_for("Chino"), "easyocr")
+        finally:
+            ajustes.paddle_disponible.cache_clear()
+
+    def test_on_gpu_it_goes_through_the_subprocess(self):
+        """Paddle y YOLO en la misma GPU rompen CUDA; por eso existe el subproceso."""
+        settings = OcrSettings("Chino", gpu=True, paddle_subprocess="auto")
+
+        self.assertEqual(
+            TextDetectionFactory._resolve_engine_name("auto", settings), "paddle_subprocess"
+        )
