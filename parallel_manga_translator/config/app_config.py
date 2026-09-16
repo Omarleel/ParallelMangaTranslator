@@ -100,6 +100,10 @@ class QualityConfig:
     bubble_fill_edge_margin: int = 5
     bubble_fill_text_dilate: int = 2
     bubble_ink_without_ocr_max_ratio: float = 0.35
+    # Si las cajas del localizador cubren menos de esta fracción del interior del globo, se
+    # exploran el interior igual que si no hubiera devuelto ninguna: una caja que cubre el
+    # 8% de un globo no es mejor evidencia que ninguna, y deja el resto del texto sin borrar.
+    bubble_text_zone_min_ratio: float = 0.12
     bubble_fill_feather: float = 1.0
     bubble_fill_flat_max_rectangularity: float = 0.86
     bubble_fill_strategy: str = "inpaint"

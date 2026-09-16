@@ -287,10 +287,30 @@ class CleanMaskStrategy:
             text_zone = cv2.bitwise_or(text_zone, raw_text_mask)
 
         zone_source = "text_ink_inside_bubble"
-        if cv2.countNonZero(text_zone) == 0:
-            text_zone = self.bubble_interior_text_zone(imagen, safe_mask)
-            if cv2.countNonZero(text_zone) > 0:
-                zone_source = "bubble_interior_ink_without_ocr"
+        interior_px = cv2.countNonZero(safe_mask)
+        cobertura_minima = float(getattr(self, "bubble_text_zone_min_ratio", 0.12))
+        zona_vacia = cv2.countNonZero(text_zone) == 0
+        zona_insuficiente = (
+            not zona_vacia
+            and interior_px > 0
+            and cv2.countNonZero(text_zone) < interior_px * cobertura_minima
+        )
+        if zona_vacia or zona_insuficiente:
+            # El rescate saltaba sólo con CERO cajas del localizador. Pero una caja
+            # diminuta deja la zona "no vacía" y la limpieza se ciñe a ella: medido en una
+            # página china, un globo de 289x596 recibió una única caja de 44x50 -el 8% de
+            # su alto- y se borró sólo esa franja. Una caja que cubre una porción ridícula
+            # del globo no es mejor evidencia que ninguna.
+            interior = self.bubble_interior_text_zone(imagen, safe_mask)
+            if cv2.countNonZero(interior) > cv2.countNonZero(text_zone):
+                text_zone = interior
+                zone_source = "bubble_interior_ink_rescue" if zona_insuficiente else "bubble_interior_ink_without_ocr"
+                if zona_insuficiente:
+                    # Y se deja de anclar a la máscara fina del localizador. Es la misma
+                    # evidencia que acabamos de declarar insuficiente, y el refinador la usa
+                    # para tirar las componentes que no la tocan: medido, la tinta pasaba de
+                    # 10.506 px recién derivada a 2.304 tras anclarla a una caja de 44x50.
+                    raw_text_mask = np.zeros_like(raw_text_mask)
 
         clean_mask = self.text_ink_mask(imagen, text_zone, safe_mask, self.bubble_fill_text_dilate)
         if getattr(self, "ink_mask_refinement", True):
