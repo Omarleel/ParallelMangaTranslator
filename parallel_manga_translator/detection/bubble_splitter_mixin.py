@@ -313,7 +313,14 @@ class BubbleSplitterMixin:
         for idx, region in enumerate(regions):
             assigned_detections = detections_by_region.get(idx, [])
             merge_trace: List[Dict[str, object]] = []
-            grouped_detections = self._group_detections(assigned_detections, trace_decisions=merge_trace) if assigned_detections else []
+            if localizer_emits_blocks and self.split.trust_text_blocks:
+                # Cada deteccion YA es un bloque: agruparlas funde bloques distintos y el
+                # globo se queda sin partir. Medido sobre `en_03`, de los 29 globos que
+                # contienen 2+ regiones del ground truth, en 12 la agrupacion las dejaba en
+                # un solo grupo y la puerta del partidor ni llegaba a evaluarse.
+                grouped_detections = [[det] for det in assigned_detections]
+            else:
+                grouped_detections = self._group_detections(assigned_detections, trace_decisions=merge_trace) if assigned_detections else []
             raw_pair_decisions, raw_pair_truncated = self._debug_pairwise_raw_merge_decisions(assigned_detections)
             group_boxes = [self.geometry.detections_box(group) for group in grouped_detections if group]
             should_split, pair_decisions, reason = self._should_split_region_from_groups(
