@@ -70,6 +70,12 @@ class PaddleOcrSubprocess:
             return
 
         env = os.environ.copy()
+        # El padre lee el canal como UTF-8 (ver `Popen` más abajo), así que el hijo tiene
+        # que escribirlo igual. En Windows su stdout sería cp1252 por defecto y el `print`
+        # del worker revienta en cuanto el texto no cabe ahí: con chino eso vaciaba TODAS
+        # las transcripciones, y el guardián de OCR borraba luego todas las regiones. Con
+        # inglés no se notaba porque es ASCII.
+        env["PYTHONIOENCODING"] = "utf-8"
         env.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
         env.setdefault("FLAGS_allocator_strategy", "auto_growth")
         env.setdefault("FLAGS_fraction_of_gpu_memory_to_use", "0.45")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import json
 import os
 import re
@@ -16,6 +17,24 @@ os.environ.setdefault("FLAGS_allocator_strategy", "auto_growth")
 os.environ.setdefault("FLAGS_fraction_of_gpu_memory_to_use", "0.45")
 
 from parallel_manga_translator.ocr.paddle_result import normalize_paddle_result
+
+
+def _configurar_salida_utf8() -> None:
+    """El canal con el proceso padre es UTF-8, pase lo que pase.
+
+    `_emit` escribe el texto reconocido tal cual (`ensure_ascii=False`), y en Windows el
+    stdout por defecto es cp1252: con chino el `print` lanza UnicodeEncodeError, el worker
+    no responde y la transcripción se queda vacía. El padre ya fija `PYTHONIOENCODING`,
+    pero esto protege también si alguien lanza el worker a mano.
+    """
+    for canal in (sys.stdout, sys.stderr):
+        reconfigurar = getattr(canal, "reconfigure", None)
+        if reconfigurar is not None:
+            with contextlib.suppress(Exception):
+                reconfigurar(encoding="utf-8", errors="replace")
+
+
+_configurar_salida_utf8()
 
 
 def _emit(payload: dict[str, Any]) -> None:
